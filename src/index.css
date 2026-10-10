@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans:
+    "Pretendard", "Segoe UI", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic",
+    sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+
+  --color-surface: #16181d;
+  --color-surface-raised: #1e2128;
+  --color-border: #2b2f38;
+  --color-text: #e6e8ec;
+  --color-text-muted: #8b919c;
+  --color-accent: #6ea8fe;
+}
+
+:root {
+  /* Native controls (select, scrollbars) follow the dark theme. */
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
