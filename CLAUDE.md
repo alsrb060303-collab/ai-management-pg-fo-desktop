@@ -31,3 +31,8 @@ Run `pnpm lint`, `pnpm build`, and the cargo checks before committing.
 - When writing Claude Code settings files (e.g. `.claude/settings.local.json`), read-merge-write and keep unknown keys.
 - Do not use "Claude" or "Anthropic" in the product name or branding.
 - UI strings are Korean for now; English i18n comes before the public release.
+
+## Subagents
+
+- Web research subagents (WebSearch/WebFetch): use model `haiku`.
+- Verification / fact-check subagents: use model `sonnet`.

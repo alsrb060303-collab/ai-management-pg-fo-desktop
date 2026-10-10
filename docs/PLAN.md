@@ -26,7 +26,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | 대상 AI 도구 | Claude Code만 (다른 도구는 나중에) | |
 | 문서 생성 | 템플릿 + 로컬 `claude` CLI headless 호출 | 사용자 구독 그대로 사용, 비용 0 |
 | 메모 저장 | 로컬 SQLite가 원본 + 교체 가능한 동기화 어댑터 | 오프라인에서도 동작 |
-| 동기화 백엔드 | **검토 중**: Firebase(중앙 프로젝트 + 사용자 계정) 1순위 후보 | 6장 참고 |
+| 동기화 | **무료: 로컬만 / 유료 고객: Firebase 동기화** | 중앙 프로젝트의 공유 한도·악용 문제를 유료 고객으로 한정해서 해결 (research.md 4장) |
+| 동기화 로그인 | GitHub 로그인 → Firebase (`GithubAuthProvider.credential`) | GitHub 연동 로그인과 통합. Device Flow 토큰을 Firebase가 받는지는 PoC 필요 |
 | git | 설치된 `git` CLI 실행 | worktree·push·인증(GCM)까지 레퍼런스 동작 |
 | GitHub | GitHub App + Device Flow 로그인 | 클라이언트 시크릿 불필요(오픈소스 OK), 레포 단위 권한 |
 | 배포 | GitHub Releases + Tauri updater, NSIS 설치 파일 | 무료 |
@@ -111,6 +112,13 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 ### 3.7 메모 & 동기화
 - 로컬 SQLite가 원본. 프로젝트는 정규화한 git remote URL로 식별(없으면 경로).
 - 동기화는 어댑터 인터페이스로 분리해서 백엔드를 갈아끼울 수 있게 한다.
+- 무료 사용자는 로컬만, **유료 고객만 Firebase 동기화**를 쓴다.
+  - Firestore 경로: `users/{uid}/repos/{repoKey}/branches/{branchKey}/items/{itemId}` (repoKey = 정규화한 remote URL의 SHA-256)
+  - 보안 규칙: 본인 uid + **유료 권한 확인** + 크기·필드 검증. `match /users/{userId}/{document=**}` 사용.
+  - 충돌: `updatedAt`(+deviceId) 비교를 규칙에서 강제한다. Firestore 자체 LWW는 도착 순서 기준이라 그대로 쓰면 안 됨.
+  - 읽기·쓰기 절약: `updatedAt > lastSync` 증분 조회, 쓰기는 모아서 전송.
+- 로그인: GitHub(Device Flow) 토큰 → `GithubAuthProvider.credential(token)` → `signInWithCredential`. 앱 안 팝업 로그인은 안 되므로 쓰지 않는다.
+- 유료 권한 부여에는 결제 웹훅을 받을 서버 코드가 필요하다(Cloud Functions는 Blaze 요금제 필요, 또는 다른 호스팅).
 
 ## 4. 로드맵
 
@@ -128,7 +136,9 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 
 | 항목 | 상태 |
 |---|---|
-| 동기화 백엔드 (Firebase 여부) | 검증 진행 중 |
+| 유료 플랜: 결제 수단(Paddle·Lemon Squeezy·Stripe 등), 가격, 사업자 등록·세금, 유료 기능 범위 | Phase 6 전에 결정 |
+| 유료 사용자가 늘면 Firebase Blaze(종량제) 전환 필요. Firestore·Auth에는 지출 상한이 없음 | Phase 6 전에 결정 |
+| GitHub Device Flow 토큰 → Firebase 로그인 동작 여부 | PoC 필요 |
 | 도킹 PoC: owner 지정, 포커스, DPI, 관리자 권한 터미널 | 실제 Windows에서 테스트 필요 |
 | 정식 앱 이름 | 미정 |
 | UI 다국어(영어) | 오픈소스 공개 전에 추가 |
