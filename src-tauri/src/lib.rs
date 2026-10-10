@@ -1,3 +1,4 @@
+mod claude_config;
 mod dock;
 mod tray;
 
@@ -15,12 +16,14 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             dock::dock_status,
             dock::dock_set_enabled,
             dock::dock_set_pinned,
             dock::sidebar_hide,
+            claude_config::claude_config_scan,
         ])
         .setup(|app| {
             let handle = app.handle();
