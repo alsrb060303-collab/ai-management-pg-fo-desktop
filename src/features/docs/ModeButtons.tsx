@@ -1,7 +1,7 @@
 import type { Mode } from "../../store/library";
 
 export const smallButton =
-  "shrink-0 rounded border border-border px-1.5 py-0.5 text-[11px] hover:border-text-muted disabled:opacity-50";
+  "shrink-0 rounded border border-border px-1.5 py-0.5 text-[11px] hover:border-border-strong disabled:opacity-50";
 
 /** A pair of buttons for the personal ("나만") and team ("팀") variants of an action. */
 export function ModeButtons({

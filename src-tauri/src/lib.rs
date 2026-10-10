@@ -1,6 +1,7 @@
 mod claude_config;
 mod dock;
 mod library;
+mod shell;
 mod tray;
 
 use tauri::{Manager, WindowEvent};
@@ -10,10 +11,10 @@ use dock::{Dock, SIDEBAR_LABEL};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // Must be registered first: a second launch just shows the running sidebar.
+        // Must be registered first: a second launch just shows the running app.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(dock) = app.try_state::<Dock>() {
-                dock.set_visible(app, true);
+            if app.try_state::<shell::Shell>().is_some() {
+                shell::reveal(app);
             }
         }))
         .plugin(tauri_plugin_opener::init())
@@ -33,18 +34,23 @@ pub fn run() {
             library::library_import,
             library::library_forget,
             library::config_set_enabled,
+            shell::view_mode,
+            shell::view_switch,
         ])
         .setup(|app| {
             let handle = app.handle();
             Dock::manage(handle);
+            shell::Shell::manage(handle);
             library::Library::manage(handle)?;
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);
+            shell::restore(handle);
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the sidebar hides it to the tray; quit from the tray menu.
+            // Closing the sidebar hides it to the tray; quit from the tray menu. The
+            // main window really closes and is created again when reopened.
             if let WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == SIDEBAR_LABEL
             {

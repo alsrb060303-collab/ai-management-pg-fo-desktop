@@ -31,9 +31,9 @@ const SCOPE_LABELS: Record<ConfigScope, string> = {
 };
 
 const STATE_STYLES: Record<ConfigState, { label: string; className: string }> = {
-  active: { label: "사용 중", className: "text-emerald-400" },
-  conditional: { label: "조건부", className: "text-sky-400" },
-  limited: { label: "제한", className: "text-amber-400" },
+  active: { label: "사용 중", className: "text-success" },
+  conditional: { label: "조건부", className: "text-info" },
+  limited: { label: "제한", className: "text-warning" },
   off: { label: "꺼짐", className: "text-text-muted" },
   shadowed: { label: "가려짐", className: "text-text-muted" },
   notLoaded: { label: "안 읽힘", className: "text-text-muted" },
@@ -60,9 +60,9 @@ export function ConfigMapPanel() {
         onSelect={select}
         onRefresh={refresh}
       />
-      {error && <p className="rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
       {libraryError && (
-        <p className="rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">{libraryError}</p>
+        <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{libraryError}</p>
       )}
       {current && loading && !map && <p className="text-xs text-text-muted">읽는 중…</p>}
       {!current && (
@@ -176,7 +176,7 @@ function ConfigRow({ item }: { item: ConfigItem }) {
   const canImport = kind !== null && (item.scope === "user" || item.scope === "project");
 
   return (
-    <li className="rounded-md border border-border bg-surface-raised hover:border-text-muted">
+    <li className="rounded-md border border-border bg-surface-raised hover:border-border-strong">
       <button
         type="button"
         onClick={reveal}
@@ -190,7 +190,7 @@ function ConfigRow({ item }: { item: ConfigItem }) {
           >
             {item.name}
           </span>
-          <span className="shrink-0 rounded bg-border px-1 text-[10px] text-text-muted">
+          <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-muted">
             {SCOPE_LABELS[item.scope]}
           </span>
           <span className={`shrink-0 text-[10px] ${state.className}`}>{state.label}</span>
@@ -200,7 +200,7 @@ function ConfigRow({ item }: { item: ConfigItem }) {
         )}
         {item.detail && <p className="mt-0.5 text-[10px] text-text-muted/80">{item.detail}</p>}
         {failed && (
-          <p className="mt-0.5 text-[10px] text-red-300">
+          <p className="mt-0.5 text-[10px] text-danger">
             파일을 열 수 없습니다. 다시 읽기(↻)를 눌러 주세요.
           </p>
         )}
@@ -243,7 +243,7 @@ function ConfigRow({ item }: { item: ConfigItem }) {
 }
 
 const buttonClass =
-  "shrink-0 rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-text-muted disabled:opacity-50";
+  "shrink-0 rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-border-strong disabled:opacity-50";
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;

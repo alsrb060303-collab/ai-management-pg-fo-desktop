@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import { StatusBar } from "./components/StatusBar";
-import { TabNav } from "./components/TabNav";
-import { TitleBar } from "./components/TitleBar";
-import { DocsTab } from "./features/docs/DocsTab";
-import { subscribeDockStatus } from "./store/dock";
-import { type TabId, useUiStore } from "./store/ui";
+import { DocsTab } from "../features/docs/DocsTab";
+import { subscribeDockStatus } from "../store/dock";
+import { type TabId, useUiStore } from "../store/ui";
+import { StatusBar } from "./StatusBar";
+import { TabNav } from "./TabNav";
+import { TitleBar } from "./TitleBar";
 
 // Each tab is a placeholder until its phase in docs/PLAN.md is implemented.
 const PANELS: Record<TabId, { title: string; items: string[] }> = {
@@ -26,7 +26,7 @@ const PANELS: Record<TabId, { title: string; items: string[] }> = {
   },
 };
 
-export default function App() {
+export default function SidebarApp() {
   const activeTab = useUiStore((s) => s.activeTab);
   const panel = PANELS[activeTab];
 
@@ -38,7 +38,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col text-[13px]">
       <TitleBar />
       <TabNav />
       <main className="flex-1 overflow-y-auto p-4">

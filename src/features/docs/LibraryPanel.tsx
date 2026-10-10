@@ -4,10 +4,10 @@ import { useProjectStore } from "../../store/project";
 import { ModeButtons, smallButton } from "./ModeButtons";
 
 const STATUS_TEXT: Record<ApplyStatus, { label: string; className: string }> = {
-  current: { label: "적용됨", className: "text-emerald-400" },
-  outdated: { label: "업데이트 있음", className: "text-sky-400" },
-  modified: { label: "프로젝트에서 수정됨", className: "text-amber-400" },
-  missing: { label: "복사본 없음", className: "text-amber-400" },
+  current: { label: "적용됨", className: "text-success" },
+  outdated: { label: "업데이트 있음", className: "text-info" },
+  modified: { label: "프로젝트에서 수정됨", className: "text-warning" },
+  missing: { label: "복사본 없음", className: "text-warning" },
   conflict: { label: "같은 이름이 이미 있음", className: "text-text-muted" },
 };
 
@@ -46,7 +46,7 @@ export function LibraryPanel() {
         </p>
       </div>
 
-      {error && <p className="rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+      {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
       {!current && (
         <p className="text-xs text-text-muted">
           설정 지도에서 프로젝트를 고르면 항목을 그 프로젝트에 적용하거나 뺄 수 있습니다.
@@ -94,7 +94,7 @@ function LibraryRow({ item }: { item: LibraryItem }) {
           {item.name}
         </span>
         {item.mode && (
-          <span className="shrink-0 rounded bg-border px-1 text-[10px] text-text-muted">
+          <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-muted">
             {item.mode === "personal" ? "나만" : "팀"}
           </span>
         )}

@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub use layout::Side;
 
-pub const SIDEBAR_LABEL: &str = "main";
+pub const SIDEBAR_LABEL: &str = "sidebar";
 /// Sidebar size in logical pixels.
 pub const SIDEBAR_WIDTH: f64 = 360.0;
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -75,12 +75,13 @@ pub struct Dock {
 
 impl Dock {
     /// Registers the dock as managed state. Call `start` afterwards, once anything
-    /// that listens for status events (the tray) is set up.
+    /// that listens for status events (the tray) is set up. The sidebar starts
+    /// hidden; the shell shows it when the sidebar is the current view.
     pub fn manage(app: &AppHandle) {
         let settings = Settings {
             enabled: true,
             pinned: false,
-            visible: true,
+            visible: false,
         };
         app.manage(Dock {
             settings: Mutex::new(settings),

@@ -6,8 +6,9 @@ use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use crate::dock::{Dock, STATUS_EVENT};
+use crate::shell;
 
-/// Shows or hides the sidebar from anywhere.
+/// Shows or hides the current window (main or sidebar) from anywhere.
 pub const TOGGLE_SHORTCUT: &str = "CommandOrControl+Alt+Space";
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
@@ -19,6 +20,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         true,
         Some(TOGGLE_SHORTCUT),
     )?;
+    let main = MenuItem::with_id(app, "main", "메인 창 열기", true, None::<&str>)?;
+    let sidebar = MenuItem::with_id(app, "sidebar", "사이드바로 전환", true, None::<&str>)?;
     let dock_item = CheckMenuItem::with_id(
         app,
         "dock",
@@ -32,6 +35,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         app,
         &[
             &toggle,
+            &main,
+            &sidebar,
+            &PredefinedMenuItem::separator(app)?,
             &dock_item,
             &PredefinedMenuItem::separator(app)?,
             &quit,
@@ -45,7 +51,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| {
             let dock = app.state::<Dock>();
             match event.id().as_ref() {
-                "toggle" => dock.toggle_visible(app),
+                "toggle" => shell::toggle(app),
+                "main" => shell::show_main(app),
+                "sidebar" => shell::show_sidebar(app),
                 "dock" => dock.set_enabled(app, !dock.settings().enabled),
                 "quit" => app.exit(0),
                 _ => {}
@@ -58,8 +66,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                app.state::<Dock>().toggle_visible(app);
+                shell::reveal(tray.app_handle());
             }
         });
     if let Some(icon) = app.default_window_icon() {
@@ -83,7 +90,7 @@ pub fn register_shortcut(app: &AppHandle) {
         .global_shortcut()
         .on_shortcut(TOGGLE_SHORTCUT, |app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                app.state::<Dock>().toggle_visible(app);
+                shell::toggle(app);
             }
         });
     if let Err(err) = result {
