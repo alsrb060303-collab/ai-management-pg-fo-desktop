@@ -64,7 +64,45 @@
 - 토큰 저장: `keyring` 4.x(Windows 자격 증명 관리자). Tauri Stronghold는 v3에서 제거 예정.
 - octocrab 0.54: `authenticate_as_device`로 Device Flow를 지원한다.
 
-## 4. 경쟁 도구
+## 4. Firebase 동기화 검토
+
+출처: [Firestore quotas](https://firebase.google.com/docs/firestore/quotas), [error codes](https://docs.cloud.google.com/firestore/docs/understand-error-codes), [pricing plans](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans), [Auth limits](https://firebase.google.com/docs/auth/limits), [Auth users](https://firebase.google.com/docs/auth/users), [API keys](https://firebase.google.com/docs/projects/api-keys), [App Check](https://firebase.google.com/docs/app-check), [reCAPTCHA billing](https://docs.cloud.google.com/recaptcha/docs/billing-information), [JS SDK environments](https://firebase.google.com/docs/web/environments-js-sdk), [offline persistence](https://firebase.google.com/docs/firestore/manage-data/enable-offline), [Tauri discussion #4805](https://github.com/tauri-apps/tauri/discussions/4805), [Google Cloud Terms](https://cloud.google.com/terms)
+
+**무료 한도와 초과 시 동작 (Spark 요금제)**
+- Firestore: 저장 1GiB, 하루 쓰기 2만, 읽기 5만, 삭제 2만 회. 프로젝트 단위라서 **모든 사용자가 같이 쓴다**.
+- 초과하면 `RESOURCE_EXHAUSTED` 오류가 나고, 미국 태평양 시간 자정(한국 시간 오후 4~5시)까지 **프로젝트 전체가 동기화 불가**다.
+- 결제 계정을 연결하지 않으면 과금은 없다. 결제 계정을 연결하거나 Google Cloud 서비스를 쓰면 자동으로 유료(Blaze)로 바뀐다. Firestore와 Auth에는 지출 상한 기능이 없다.
+- Auth: 기본 Auth는 사용자 수 제한이 없다. Identity Platform으로 업그레이드하면 하루 3,000명 제한이 생기므로 업그레이드하지 않는다. 비밀번호 재설정 메일은 하루 150통, 이메일 링크 로그인은 하루 5통, 계정 생성은 IP당 시간당 100개다. SMS 로그인은 유료 플랜 전용이다.
+- 2026-02부터 Spark 요금제에서는 Cloud Storage를 쓸 수 없다(첨부 파일 기능을 만들면 걸림).
+
+**중앙 프로젝트에서 공개 가입을 받을 때 문제**
+- 웹 설정 키는 공개해도 된다(Google 공식). 다만 할당량은 보호되지 않는다.
+- 0원으로 쓸 수 있는 악용 방어 수단이 없다.
+  - App Check는 데스크탑(Windows/Tauri)용 공급자가 없다.
+  - reCAPTCHA 무료 한도는 월 1만 회인데, 상시 실행 기기 7대 정도면 소진된다.
+  - Cloud Functions는 유료 플랜이 필요하다.
+- 회원가입 차단 설정은 있다(Authentication 설정에서 사용자 작업 비활성화). 이걸 켜면 개발자 혼자만 쓰는 프로젝트로 만들 수 있다.
+- 다른 사람 데이터를 보관하면 개인정보 고지·동의 책임이 프로젝트 소유자에게 있다(Google Cloud Terms 3.2). Auth 데이터는 미국에만 저장되고, 소유자는 콘솔에서 데이터를 볼 수 있다.
+- 여러 무료 프로젝트로 사용자를 나눠서 한도를 피하는 건 약관 위반이다(3.3(d)(iii)). 각 사용자가 **자기 프로젝트를 쓰는 것(BYO)**은 문제없다.
+
+**Tauri 웹뷰 안에서 Firebase 쓰기**
+- 공식 지원 환경 목록에 Tauri/WebView2는 없다. 브라우저가 아닌 환경에서는 팝업/리다이렉트 로그인이 지원되지 않는다.
+- Tauri(wry 0.53+)는 Windows에서 `window.open` 팝업을 기본으로 막는다. Google 정책도 앱이 제어하는 내장 웹뷰에서 OAuth 하는 걸 금지한다. 결국 **앱 안에서 Google/GitHub 팝업 로그인은 안 된다.**
+- 이메일/비밀번호가 가장 안전한 선택지다. `getAuth()` 대신 `initializeAuth(app, { persistence: indexedDBLocalPersistence })`를 쓴다(팝업 리졸버 제외). 실제 Windows 빌드에서 테스트가 필요하다.
+- Google 로그인: 시스템 브라우저 + loopback(`127.0.0.1:port`) + PKCE → `signInWithCredential`. `tauri-plugin-oauth` 2.1.0이 이 방식을 지원한다.
+- GitHub 로그인: Firebase 문서에 "GitHub 토큰 → `GithubAuthProvider.credential(token)`" 경로가 있다. Device Flow 토큰도 받아주는지는 미검증이다.
+- API 키에 HTTP referrer 제한을 걸면 `tauri.localhost`에서 차단될 수 있다. API 대상 제한만 쓴다.
+- Windows `useHttpsScheme`을 바꾸면 IndexedDB 위치가 바뀌어서 로그인이 풀린다. 첫 출시 전에 값을 고정한다.
+- CSP를 켜면 `identitytoolkit.googleapis.com`, `securetoken.googleapis.com`, `firestore.googleapis.com`를 허용해야 한다.
+- firebase JS SDK 13.0.0이 2026-10-07에 나왔다. 버전은 정확히 고정한다.
+
+**동기화 설계 시 주의**
+- Firestore의 "마지막 쓰기 우선"은 **서버 도착 순서** 기준이다. 오프라인이던 기기가 나중에 옛 수정을 올리면 새 수정을 덮는다. `updatedAt` 비교를 보안 규칙이나 트랜잭션에서 직접 해야 한다.
+- 오프라인 캐시 없이 리스너를 쓰면 재연결할 때마다 전체를 다시 읽어서 읽기 한도를 빨리 쓴다. `updatedAt > lastSync` 증분 조회로 하고, 쓰기는 모아서(디바운스) 보낸다.
+- 보안 규칙: 하위 컬렉션까지 덮으려면 `match /users/{userId}/{document=**}`를 쓴다. 공식 예시는 create에 uid 검사가 빠져 있으니 추가한다. 문서 크기와 필드도 검증한다.
+- 오프라인 상태에서 `setDoc`을 `await`하면 서버가 응답할 때까지 안 끝난다. SQLite outbox 방식으로 처리한다.
+
+## 5. 경쟁 도구
 
 | 도구 | 스택 · 라이선스 | 겹치는 부분 | 없는 부분 |
 |---|---|---|---|
