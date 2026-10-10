@@ -42,6 +42,7 @@ const STATE_STYLES: Record<ConfigState, { label: string; className: string }> = 
 export function ConfigMapPanel() {
   const { current, recent, map, loading, error, choose, select, refresh } = useProjectStore();
   const loadLibrary = useLibraryStore((s) => s.load);
+  const libraryError = useLibraryStore((s) => s.error);
 
   // The library knows which items this app turned off in the project.
   useEffect(() => {
@@ -60,6 +61,9 @@ export function ConfigMapPanel() {
         onRefresh={refresh}
       />
       {error && <p className="rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+      {libraryError && (
+        <p className="rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">{libraryError}</p>
+      )}
       {current && loading && !map && <p className="text-xs text-text-muted">읽는 중…</p>}
       {!current && (
         <p className="text-xs text-text-muted">
@@ -217,6 +221,8 @@ function ConfigRow({ item }: { item: ConfigItem }) {
             <ModeButtons
               label="끄기"
               disabled={busy}
+              // A personal skill isn't in teammates' checkouts, so a team rule would mean nothing.
+              personalOnly={item.scope === "user"}
               onPick={(mode) => setEnabled(kind, item.name, false, mode)}
             />
           )}

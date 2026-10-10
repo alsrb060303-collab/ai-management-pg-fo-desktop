@@ -287,18 +287,20 @@ fn status_of(
     let Some(record) = record else {
         return dest.exists().then_some(ApplyStatus::Conflict);
     };
-    let Some(dest_hash) = ops::hash_path(&dest) else {
-        return Some(ApplyStatus::Missing);
-    };
-    if dest_hash != record.hash {
-        return Some(ApplyStatus::Modified);
+    match ops::hash_path(&dest) {
+        Ok(None) => return Some(ApplyStatus::Missing),
+        Ok(Some(h)) if h == record.hash => {}
+        // Edited, or unreadable: either way not safe to treat as ours.
+        _ => return Some(ApplyStatus::Modified),
     }
     let src_hash = ops::hash_path(&source_path(library, item.kind, &item.id));
-    Some(if src_hash.as_deref() == Some(record.hash.as_str()) {
-        ApplyStatus::Current
-    } else {
-        ApplyStatus::Outdated
-    })
+    Some(
+        if src_hash.ok().flatten().as_deref() == Some(record.hash.as_str()) {
+            ApplyStatus::Current
+        } else {
+            ApplyStatus::Outdated
+        },
+    )
 }
 
 fn project_key(project: &Path) -> String {
@@ -361,19 +363,53 @@ fn apply(lib: &Library, project: &Path, kind: ItemKind, id: &str, mode: Mode) ->
     check_id(id)?;
     let mut state = lib.lock();
     let src = source_path(&lib.dir(&state), kind, id);
-    let hash = ops::hash_path(&src).ok_or_else(|| format!("라이브러리에 없습니다: {id}"))?;
+    if ops::hash_path(&src)?.is_none() {
+        return Err(format!("라이브러리에 없습니다: {id}"));
+    }
     let dest = project_path(project, kind, id);
-    if dest.exists() {
+    let key = project_key(project);
+    // Linked worktrees share one exclude file, so a personal exclude would also
+    // hide a teammate-visible copy applied to a sibling worktree.
+    if mode == Mode::Personal
+        && let Some(file) = ops::exclude_file_for(&dest)
+        && state.records.iter().any(|r| {
+            r.project != key
+                && r.kind == kind
+                && r.id == id
+                && r.mode == Mode::Team
+                && ops::exclude_file_for(&project_path(Path::new(&r.project), kind, id)).as_ref()
+                    == Some(&file)
+        })
+    {
+        return Err(
+            "같은 저장소의 다른 worktree에 '팀'으로 적용되어 있어 '나만'으로 적용할 수 없습니다"
+                .into(),
+        );
+    }
+    if std::fs::symlink_metadata(&dest).is_ok() {
         return Err(format!(
             "프로젝트에 같은 이름이 이미 있습니다: {}",
             dest.display()
         ));
     }
     ops::copy_new(&src, &dest)?;
-    if mode == Mode::Personal {
-        ops::exclude_add(&dest, kind == ItemKind::Skill)?;
+    // Record what is actually in the project, so status compares like with like.
+    let hash = match ops::hash_path(&dest) {
+        Ok(Some(hash)) => hash,
+        other => {
+            let _ = ops::remove_path(&dest);
+            return Err(other
+                .err()
+                .unwrap_or_else(|| "복사본을 확인할 수 없습니다".into()));
+        }
+    };
+    if mode == Mode::Personal
+        && let Err(e) = ops::exclude_add(&dest, kind == ItemKind::Skill)
+    {
+        // Roll back: a copy git would see is not what the user asked for.
+        let _ = ops::remove_path(&dest);
+        return Err(e);
     }
-    let key = project_key(project);
     state
         .records
         .retain(|r| !(r.project == key && r.kind == kind && r.id == id));
@@ -395,7 +431,7 @@ fn remove(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
         .cloned()
         .ok_or_else(|| "이 앱이 적용한 항목이 아닙니다".to_string())?;
     let dest = project_path(project, kind, id);
-    if !force && ops::hash_path(&dest).is_some_and(|h| h != record.hash) {
+    if !force && !unchanged(&dest, &record.hash) {
         return Err(format!(
             "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다"
         ));
@@ -422,25 +458,57 @@ fn remove(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
     lib.save(&state)
 }
 
+/// `dest` holds exactly what we recorded, or nothing at all. Unreadable counts
+/// as changed, so nothing is deleted on a guess.
+fn unchanged(dest: &Path, hash: &str) -> bool {
+    match ops::hash_path(dest) {
+        Ok(None) => true,
+        Ok(Some(h)) => h == hash,
+        Err(_) => false,
+    }
+}
+
+/// Drops the record of a copy that is gone from the project, without touching
+/// any project files.
+fn forget(lib: &Library, project: &Path, kind: ItemKind, id: &str) -> ops::Result<()> {
+    check_id(id)?;
+    let mut state = lib.lock();
+    let key = project_key(project);
+    let dest = project_path(project, kind, id);
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return Err("프로젝트에 아직 파일이 있습니다. '빼기'를 사용해 주세요".into());
+    }
+    let before = state.records.len();
+    state
+        .records
+        .retain(|r| !(r.project == key && r.kind == kind && r.id == id));
+    if state.records.len() == before {
+        return Err("이 앱이 적용한 항목이 아닙니다".into());
+    }
+    lib.save(&state)
+}
+
 fn update(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) -> ops::Result<()> {
     check_id(id)?;
     let mut state = lib.lock();
     let key = project_key(project);
     let src = source_path(&lib.dir(&state), kind, id);
-    let hash = ops::hash_path(&src).ok_or_else(|| format!("라이브러리에 없습니다: {id}"))?;
+    if ops::hash_path(&src)?.is_none() {
+        return Err(format!("라이브러리에 없습니다: {id}"));
+    }
     let dest = project_path(project, kind, id);
     let record = state
         .records
         .iter_mut()
         .find(|r| r.project == key && r.kind == kind && r.id == id)
         .ok_or_else(|| "이 앱이 적용한 항목이 아닙니다".to_string())?;
-    if !force && ops::hash_path(&dest).is_some_and(|h| h != record.hash) {
+    if !force && !unchanged(&dest, &record.hash) {
         return Err(format!(
             "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다"
         ));
     }
     ops::copy_over(&src, &dest)?;
-    record.hash = hash;
+    record.hash = ops::hash_path(&dest)?.ok_or("복사본을 확인할 수 없습니다")?;
     lib.save(&state)
 }
 
@@ -506,12 +574,11 @@ fn turn_off(
         },
         ItemKind::Agent => Change::AgentDeny { name, deny: true },
     };
-    ops::apply_change(&file, change)?;
-    // Claude Code only git-excludes settings.local.json when it creates the
-    // file itself, so do it here for a file we created.
-    if mode == Mode::Personal && created {
-        ops::exclude_add(&file, false)?;
+    if previous.as_deref() == Some("off") || !ops::apply_change(&file, change)? {
+        // Already off by someone else's rule: nothing of ours to undo later.
+        return Err("이미 이 설정 파일에서 꺼져 있습니다".into());
     }
+    // Record before anything else can fail, so the change can always be undone.
     state.toggles.push(Toggle {
         project: key,
         kind,
@@ -519,7 +586,13 @@ fn turn_off(
         mode,
         previous,
     });
-    lib.save(&state)
+    lib.save(&state)?;
+    // Claude Code only git-excludes settings.local.json when it creates the
+    // file itself, so do it here for a file we created.
+    if mode == Mode::Personal && created {
+        ops::exclude_add(&file, false)?;
+    }
+    Ok(())
 }
 
 /// Undoes a `turn_off` of this app. Rules the user wrote are never touched.
@@ -581,8 +654,17 @@ fn read_frontmatter(path: &Path) -> std::collections::BTreeMap<String, String> {
     frontmatter::parse(&text).unwrap_or_default()
 }
 
+/// Reads app state. A file that exists but does not parse is moved aside
+/// (`*.corrupt`) instead of being silently overwritten with empty state.
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+    let bytes = fs::read(path).ok()?;
+    match serde_json::from_slice(&bytes) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            let _ = fs::rename(path, path.with_extension("json.corrupt"));
+            None
+        }
+    }
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> ops::Result<()> {
@@ -664,6 +746,16 @@ pub async fn library_update(
         update(lib, Path::new(&project), kind, &id, force)
     })
     .await
+}
+
+#[tauri::command]
+pub async fn library_forget(
+    app: AppHandle,
+    project: String,
+    kind: ItemKind,
+    id: String,
+) -> Result<(), String> {
+    blocking(app, move |lib| forget(lib, Path::new(&project), kind, &id)).await
 }
 
 #[tauri::command]
@@ -919,5 +1011,55 @@ mod tests {
         ] {
             assert!(apply(&f.lib, &f.project, ItemKind::Skill, bad, Mode::Team).is_err());
         }
+    }
+
+    #[test]
+    fn turning_off_an_already_off_item_is_refused() {
+        let f = fixture();
+        ops::write_atomic(
+            &f.project.join(".claude/settings.json"),
+            r#"{"permissions": {"deny": ["Agent(reviewer)"]}, "skillOverrides": {"deploy": "off"}}"#,
+        )
+        .unwrap();
+        assert!(turn_off(&f.lib, &f.project, ItemKind::Agent, "reviewer", Mode::Team).is_err());
+        assert!(turn_off(&f.lib, &f.project, ItemKind::Skill, "deploy", Mode::Team).is_err());
+        assert!(overview(&f.lib, Some(&f.project)).toggled_off.is_empty());
+    }
+
+    #[test]
+    fn forget_only_drops_records_of_missing_copies() {
+        let f = fixture();
+        apply(&f.lib, &f.project, ItemKind::Skill, "deploy", Mode::Team).unwrap();
+        assert!(forget(&f.lib, &f.project, ItemKind::Skill, "deploy").is_err());
+        fs::remove_dir_all(f.project.join(".claude/skills/deploy")).unwrap();
+        assert_eq!(
+            status(&f, ItemKind::Skill, "deploy"),
+            Some(ApplyStatus::Missing)
+        );
+        forget(&f.lib, &f.project, ItemKind::Skill, "deploy").unwrap();
+        assert_eq!(status(&f, ItemKind::Skill, "deploy"), None);
+    }
+
+    #[test]
+    fn personal_apply_refused_when_a_sibling_worktree_has_a_team_copy() {
+        let f = fixture();
+        let wt_git = f.project.join(".git").join("worktrees").join("feature");
+        fs::create_dir_all(&wt_git).unwrap();
+        fs::write(wt_git.join("commondir"), "../..").unwrap();
+        let wt = f._tmp.path().join("feature");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_git.display())).unwrap();
+        apply(&f.lib, &wt, ItemKind::Skill, "deploy", Mode::Team).unwrap();
+        assert!(
+            apply(
+                &f.lib,
+                &f.project,
+                ItemKind::Skill,
+                "deploy",
+                Mode::Personal
+            )
+            .is_err()
+        );
+        assert!(!f.project.join(".claude/skills/deploy").exists());
     }
 }

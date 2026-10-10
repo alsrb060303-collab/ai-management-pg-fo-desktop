@@ -31,6 +31,7 @@ pub fn run() {
             library::library_remove,
             library::library_update,
             library::library_import,
+            library::library_forget,
             library::config_set_enabled,
         ])
         .setup(|app| {

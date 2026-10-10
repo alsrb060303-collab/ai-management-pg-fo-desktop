@@ -7,10 +7,13 @@ export const smallButton =
 export function ModeButtons({
   label,
   disabled,
+  personalOnly,
   onPick,
 }: {
   label: string;
   disabled?: boolean;
+  /** Hides the team variant, e.g. for items that only exist on this machine. */
+  personalOnly?: boolean;
   onPick: (mode: Mode) => void;
 }) {
   return (
@@ -24,15 +27,17 @@ export function ModeButtons({
       >
         {label} · 나만
       </button>
-      <button
-        type="button"
-        className={smallButton}
-        disabled={disabled}
-        title="커밋해서 팀과 공유"
-        onClick={() => onPick("team")}
-      >
-        {label} · 팀
-      </button>
+      {!personalOnly && (
+        <button
+          type="button"
+          className={smallButton}
+          disabled={disabled}
+          title="커밋해서 팀과 공유"
+          onClick={() => onPick("team")}
+        >
+          {label} · 팀
+        </button>
+      )}
     </>
   );
 }

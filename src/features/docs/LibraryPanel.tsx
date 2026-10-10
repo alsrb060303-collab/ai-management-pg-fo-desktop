@@ -83,7 +83,7 @@ function Section({ title, items }: { title: string; items: LibraryItem[] }) {
 
 function LibraryRow({ item }: { item: LibraryItem }) {
   const current = useProjectStore((s) => s.current);
-  const { busy, apply, remove, update } = useLibraryStore();
+  const { busy, apply, remove, update, forget } = useLibraryStore();
   const status = item.status ? STATUS_TEXT[item.status] : null;
   const applied = item.status !== null && item.status !== "conflict";
 
@@ -135,7 +135,7 @@ function LibraryRow({ item }: { item: LibraryItem }) {
               type="button"
               className={smallButton}
               disabled={busy}
-              onClick={() => remove(item)}
+              onClick={() => (item.status === "missing" ? forget(item) : remove(item))}
             >
               {item.status === "missing" ? "기록 지우기" : "빼기"}
             </button>
