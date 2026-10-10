@@ -131,3 +131,41 @@
 **참고할 점**
 - Claude Code **mods**(v2.1.287+): plugin이 터미널과 데스크탑 Code 탭 안에 패널을 그릴 수 있다. 나중에 연동 확장으로 검토한다.
 - AGPL 프로젝트(opcode 등)의 코드는 가져오지 않는다. MIT 프로젝트는 참고할 수 있다.
+
+## 6. 메인 창 · 문서 작성기 (2026-10-10 조사, sonnet 검증)
+
+**노드 그래프 라이브러리**: `@xyflow/react` 12.12.0 (MIT, 2026-09-24 릴리스, React 19 호환, 타입 포함)
+- 핸들 여러 개, `isValidConnection`으로 연결 검사(포트 타입 시스템은 없어서 핸들 id로 직접 구현), MiniMap·Controls·Background, `colorMode`, `toObject()`. https://reactflow.dev/api-reference/react-flow
+- 실행 취소는 없음. 공식 예제는 Pro 라이선스라 코드 복사 금지. https://reactflow.dev/examples/interaction/undo-and-redo/
+- 오른쪽 아래 "React Flow" 표시는 라이선스 의무가 아니라 요청 사항. https://reactflow.dev/remove-attribution
+- WebKitGTK에서 HTML5 드래그 앤 드롭 버그(bug 265857): `dataTransfer.setData()`를 꼭 호출해야 동작. 블록 목록 → 캔버스 끌어놓기는 포인터 이벤트로 구현하는 게 안전. Tauri의 `dragDropEnabled`(기본 true)는 Windows에서 HTML5 DnD를 막는다. https://bugs.webkit.org/show_bug.cgi?id=265857 · https://v2.tauri.app/reference/config/
+- 대안: Rete.js v2 (MIT, history 플러그인 있음). 제외: litegraph(아카이브), Flume(React 18 전용), Reaflow(2025-04 이후 멈춤).
+
+**Tauri 창 2개**
+- `tauri.conf.json` 창에 `"create": false`를 두고 `WebviewWindowBuilder::from_config`로 필요할 때 생성. 동기 command·이벤트 핸들러 안에서 창을 만들면 Windows에서 교착 → `async_runtime::spawn` 또는 async command에서 생성. https://docs.rs/tauri/latest/tauri/webview/struct.WebviewWindowBuilder.html
+- capability의 `windows`는 라벨로 매칭. 앱 command를 창별로 제한하려면 `build.rs`에 `AppManifest`가 필요. https://v2.tauri.app/security/capabilities/
+- 숨긴 창은 작업 표시줄에서 빠지고 WebView가 살아 있으므로 메인 창은 닫으면 파괴, 다시 열 때 생성.
+- `parent()`(owner)는 쓰지 않는다(owner와 함께 파괴·항상 위). 도킹 추적기는 자기 프로세스 창을 무시하므로 메인 창이 도킹 대상이 되지 않는다.
+- window-state 플러그인은 앱 종료 시에만 디스크에 저장(강제 종료 시 유실).
+
+**Claude Code 파일 규칙** (https://code.claude.com/docs/en/memory, /skills, /sub-agents, /output-styles)
+- CLAUDE.md는 200줄 이하 권장. `@path` import는 문서 정리용일 뿐 컨텍스트를 줄이지 않음(최대 4단계, 작업 폴더 밖이면 승인 창). 코드 블록·코드 스팬 안의 `@`는 import 아님 → 블록 본문의 `@`는 이스케이프 필요.
+- 블록 수준 HTML 주석은 CLAUDE.md를 컨텍스트에 넣을 때 제거됨 → 관리 구역 표시용으로 적합(다른 파일 종류는 명시 없음).
+- `.claude/rules/*.md`: 하위 폴더까지 읽음. `paths` 없으면 항상 로드, 있으면 맞는 파일을 다룰 때만. `paths`가 유일한 frontmatter.
+- SKILL.md: 이식 가능한 frontmatter는 name·description·license·compatibility·metadata·allowed-tools. name은 소문자·숫자·하이픈 1~64자, 폴더명과 같게. description ≤1024자. 본문 500줄 이하 권장. skill도 `paths`로 범위 지정 가능(Claude Code 전용).
+- subagent: name·description 필수. 본문이 시스템 프롬프트. `skills` 필드로 skill 미리 로드. 설명 합계 15,000토큰 넘으면 경고.
+- AGENTS.md는 CLAUDE.md가 없을 때만 읽힘. 같이 쓰려면 CLAUDE.md에 `@AGENTS.md` (심볼릭 링크 비권장).
+- `claude -p`(--bare 아님)는 신뢰 확인 없이 프로젝트 hooks·MCP를 실행 → 다듬기 기능은 `--tools ""`, `--setting-sources user` 등으로 제한.
+
+**블록 출처 라이선스** (각 LICENSE 파일 확인)
+- 사용 가능(Apache-2.0/MIT): anthropics/skills의 14개 폴더(폰트·스크립트 제외, Markdown만), anthropics/claude-plugins-official의 개별 plugin(각 LICENSE 확인, claude-security 등 예외 있음), obra/superpowers, wshobson/agents, VoltAgent/awesome-claude-code-subagents, davila7/claude-code-templates(단 Anthropic 문서 skill 복사본 제외), mattpocock/skills, shanraisshan/claude-code-best-practice, PatrickJS/awesome-cursorrules(CC0).
+- 사용 불가: anthropics/skills의 docx·pdf·pptx·xlsx(독점), anthropics/claude-code 저장소(All Rights Reserved), Claude Code 문서 본문(인용 대신 요약 + 링크), hesreallyhim/awesome-claude-code(CC BY-NC-ND), 라이선스 없는 항목.
+- 라이선스는 저장소가 아니라 **항목(파일) 단위**로 확인. 앱이 넣는 항목엔 출처·라이선스·커밋 SHA를 기록하고 THIRD_PARTY_NOTICES에 포함.
+- 보안: plugin은 사용자 권한으로 임의 코드를 실행할 수 있음(https://code.claude.com/docs/en/plugins/security). 블록은 Markdown 본문만 가져오고 hooks·scripts·`.mcp.json`·실행 관련 frontmatter는 뺀다.
+
+**비슷한 도구**: 블록을 골라 CLAUDE.md를 조립하는 GUI는 찾지 못함. CC Workflow Studio(React Flow, agent·command 출력, 확장은 AGPL), Ruler·rulesync(규칙 파일 변환·분배, MIT), claude-code-templates(카탈로그·설치, MIT), cc-switch(프롬프트 통째 전환). 노드 편집기 주의점: 문서는 순서가 중요하므로 순서를 명시적으로 보여주고, 200줄 초과·서로 모순되는 블록을 경고.
+
+**디자인 참고** (https://claude.com/docs/connectors/building/mcp-apps/design-guidelines)
+- 공식 색 토큰 예: 배경 #FFFFFF / #F5F4ED / #FAF9F5, 다크 #30302E / #262624 / #141413, 글자 #141413 / #3D3D3A / #73726C, 테두리는 반투명. 모서리 4~12px, 기본 버튼은 거의 검정.
+- 폰트(Anthropic Sans/Serif, Styrene, Tiempos)는 독점 → OFL 대체: Hanken Grotesk·Inter, Source Serif 4, JetBrains Mono. 한글은 Pretendard(OFL).
+- 로고·"Claude" 이름·전용 폰트·공식 색 이름(Clay, Ivory 등)은 쓰지 않고, 강조색은 직접 정한다. https://www.anthropic.com/legal/trademark-guidelines
