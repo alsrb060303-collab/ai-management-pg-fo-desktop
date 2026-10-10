@@ -196,108 +196,150 @@ pub fn exclude_remove(path: &Path, is_dir: bool) -> Result<()> {
     write_atomic(&file, &out)
 }
 
-/// Whether git tracks `path` (best effort: looks for it in the index file).
+/// Whether git tracks `path`. Asks git itself; without git the answer is "no".
 pub fn is_tracked(path: &Path) -> bool {
     let Some(root) = repo_root(path) else {
         return false;
     };
-    let Some(index) =
-        exclude_file(&root).and_then(|f| f.parent()?.parent().map(|g| g.join("index")))
-    else {
+    let Ok(rel) = path.strip_prefix(&root) else {
         return false;
     };
-    let (Ok(bytes), Ok(rel)) = (fs::read(index), path.strip_prefix(&root)) else {
-        return false;
-    };
-    let needle = rel.to_string_lossy().replace('\\', "/");
-    bytes
-        .windows(needle.len() + 1)
-        .any(|w| w[..needle.len()] == *needle.as_bytes() && w[needle.len()] == 0)
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(&root)
+        .args(["ls-files", "--error-unmatch", "--"])
+        .arg(rel)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: no console flash from a GUI app.
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.status().is_ok_and(|s| s.success())
+}
+
+/// The shared `info/exclude` file `path` would be excluded through, if any.
+/// Linked worktrees of one repository share it.
+pub fn exclude_file_for(path: &Path) -> Option<PathBuf> {
+    let file = exclude_file(&repo_root(path)?)?;
+    // Normalize `worktrees/<name>/../..` so worktrees compare equal.
+    let git_dir = file.parent()?.parent()?;
+    Some(
+        fs::canonicalize(git_dir)
+            .map(|d| d.join("info").join("exclude"))
+            .unwrap_or(file),
+    )
 }
 
 // ---------------------------------------------------------------------------
 // Claude Code settings
 
-/// What a settings toggle turns off.
+/// One edit to a Claude Code settings file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Target<'a> {
-    Skill(&'a str),
-    Agent(&'a str),
+pub enum Change<'a> {
+    /// Set `skillOverrides[name]` to `value`, or remove the key for `None`.
+    SkillOverride {
+        name: &'a str,
+        value: Option<&'a str>,
+    },
+    /// Add (`deny = true`) or remove the `Agent(name)` rule in `permissions.deny`.
+    AgentDeny { name: &'a str, deny: bool },
 }
 
-/// Turns a skill or subagent off (`enabled = false`) or back on in one settings
-/// file, keeping every other key. Skills use `skillOverrides`, subagents a
-/// `permissions.deny` rule, as documented by Claude Code.
-pub fn set_enabled(settings_file: &Path, target: Target, enabled: bool) -> Result<()> {
-    let mut root = match fs::read(settings_file) {
-        Ok(bytes) => {
-            let text = String::from_utf8_lossy(&bytes);
-            let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-            if text.trim().is_empty() {
-                Map::new()
-            } else {
-                match serde_json::from_str::<Value>(text) {
-                    Ok(Value::Object(map)) => map,
-                    // Never overwrite a file we cannot parse.
-                    _ => {
-                        return Err(format!(
-                            "{}을(를) 읽을 수 없어 바꾸지 않았습니다 (JSON 오류)",
-                            settings_file.display()
-                        ));
-                    }
-                }
-            }
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Map::new(),
-        Err(e) => return Err(io_err("읽기", settings_file, e)),
-    };
+/// Current `skillOverrides[name]` in a settings file.
+pub fn skill_override(settings_file: &Path, name: &str) -> Result<Option<String>> {
+    let root = read_settings(settings_file)?;
+    Ok(root
+        .get("skillOverrides")
+        .and_then(|o| o.get(name))
+        .and_then(Value::as_str)
+        .map(str::to_string))
+}
 
-    match target {
-        Target::Skill(name) => {
+/// Applies `change` to a settings file, keeping every other key. Writes only
+/// when something changed, and only removes a container this edit emptied.
+/// Returns whether the file was written.
+pub fn apply_change(settings_file: &Path, change: Change) -> Result<bool> {
+    let mut root = read_settings(settings_file)?;
+    let changed = match change {
+        Change::SkillOverride { name, value } => {
+            let had_container = root.contains_key("skillOverrides");
             let overrides = object_entry(&mut root, "skillOverrides")?;
-            if enabled {
-                if overrides.get(name).and_then(Value::as_str) == Some("off") {
+            let before = overrides.get(name).cloned();
+            match value {
+                Some(v) => {
+                    overrides.insert(name.to_string(), Value::from(v));
+                }
+                None => {
                     overrides.remove(name);
                 }
-            } else {
-                overrides.insert(name.to_string(), Value::from("off"));
             }
-            if overrides.is_empty() {
+            let changed = overrides.get(name).cloned() != before;
+            if overrides.is_empty() && (!had_container || changed) {
                 root.remove("skillOverrides");
             }
+            changed
         }
-        Target::Agent(name) => {
-            let rule = format!("Agent({name})");
+        Change::AgentDeny { name, deny } => {
+            let rule = Value::from(format!("Agent({name})"));
+            let had_permissions = root.contains_key("permissions");
             let permissions = object_entry(&mut root, "permissions")?;
-            let deny = match permissions
+            let had_deny = permissions.contains_key("deny");
+            let list = match permissions
                 .entry("deny")
                 .or_insert_with(|| Value::Array(Vec::new()))
             {
                 Value::Array(list) => list,
                 _ => return Err("permissions.deny가 배열이 아니라 바꾸지 않았습니다".into()),
             };
-            let legacy = format!("Task({name})");
-            deny.retain(|v| {
-                let s = v.as_str();
-                !(enabled && (s == Some(rule.as_str()) || s == Some(legacy.as_str())))
-                    && !(!enabled && s == Some(rule.as_str()))
-            });
-            if !enabled {
-                deny.push(Value::from(rule));
+            let present = list.contains(&rule);
+            let changed = present != deny;
+            if deny && !present {
+                list.push(rule);
+            } else if !deny && present {
+                list.retain(|v| *v != rule);
             }
-            if deny.is_empty() {
+            if list.is_empty() && (!had_deny || changed) {
                 permissions.remove("deny");
             }
-            if permissions.is_empty() {
+            if permissions.is_empty() && (!had_permissions || changed) {
                 root.remove("permissions");
             }
+            changed
         }
+    };
+    if !changed {
+        return Ok(false);
     }
-
     let mut text = serde_json::to_string_pretty(&Value::Object(root))
         .map_err(|e| format!("JSON 쓰기 실패: {e}"))?;
     text.push('\n');
-    write_atomic(settings_file, &text)
+    write_atomic(settings_file, &text)?;
+    Ok(true)
+}
+
+/// Parses a settings file; a missing or empty file is an empty object. A file
+/// that does not parse is an error, so it is never overwritten.
+fn read_settings(settings_file: &Path) -> Result<Map<String, Value>> {
+    let bytes = match fs::read(settings_file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(e) => return Err(io_err("읽기", settings_file, e)),
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    if text.trim().is_empty() {
+        return Ok(Map::new());
+    }
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(map)) => Ok(map),
+        _ => Err(format!(
+            "{}을(를) 읽을 수 없어 바꾸지 않았습니다 (JSON 오류)",
+            settings_file.display()
+        )),
+    }
 }
 
 fn object_entry<'a>(
@@ -390,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn toggles_skills_and_agents_keeping_other_keys() {
+    fn changes_keep_other_keys_and_user_rules() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join(".claude").join("settings.local.json");
         write_atomic(
@@ -399,9 +441,20 @@ mod tests {
         )
         .unwrap();
 
-        set_enabled(&file, Target::Skill("deploy"), false).unwrap();
-        set_enabled(&file, Target::Agent("reviewer"), false).unwrap();
-        set_enabled(&file, Target::Agent("reviewer"), false).unwrap();
+        let skill_off = Change::SkillOverride {
+            name: "deploy",
+            value: Some("off"),
+        };
+        let agent_off = Change::AgentDeny {
+            name: "reviewer",
+            deny: true,
+        };
+        assert!(apply_change(&file, skill_off).unwrap());
+        assert!(apply_change(&file, agent_off).unwrap());
+        assert!(
+            !apply_change(&file, agent_off).unwrap(),
+            "no rewrite when nothing changes"
+        );
         let v: Value = serde_json::from_str(&read(&file)).unwrap();
         assert_eq!(v["model"], "opus");
         assert_eq!(v["skillOverrides"]["deploy"], "off");
@@ -409,18 +462,49 @@ mod tests {
             v["permissions"]["deny"],
             serde_json::json!(["Task(old)", "Agent(reviewer)"])
         );
-        // Key order of the original file is kept.
         assert!(
             read(&file).find("\"model\"").unwrap() < read(&file).find("\"permissions\"").unwrap()
         );
 
-        set_enabled(&file, Target::Skill("deploy"), true).unwrap();
-        set_enabled(&file, Target::Agent("reviewer"), true).unwrap();
-        set_enabled(&file, Target::Agent("old"), true).unwrap();
+        apply_change(
+            &file,
+            Change::SkillOverride {
+                name: "deploy",
+                value: None,
+            },
+        )
+        .unwrap();
+        apply_change(
+            &file,
+            Change::AgentDeny {
+                name: "reviewer",
+                deny: false,
+            },
+        )
+        .unwrap();
         let v: Value = serde_json::from_str(&read(&file)).unwrap();
         assert!(v.get("skillOverrides").is_none());
-        assert!(v["permissions"].get("deny").is_none());
-        assert_eq!(v["permissions"]["allow"], serde_json::json!(["Bash(ls)"]));
+        // The user's own legacy rule stays.
+        assert_eq!(v["permissions"]["deny"], serde_json::json!(["Task(old)"]));
+        assert_eq!(skill_override(&file, "deploy").unwrap(), None);
+    }
+
+    #[test]
+    fn untouched_file_is_not_rewritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("settings.json");
+        let original = "{\n\t\"skillOverrides\": {},\n\t\"x\": 1\n}\n";
+        fs::write(&file, original).unwrap();
+        let changed = apply_change(
+            &file,
+            Change::SkillOverride {
+                name: "lint",
+                value: None,
+            },
+        )
+        .unwrap();
+        assert!(!changed);
+        assert_eq!(read(&file), original);
     }
 
     #[test]
@@ -428,7 +512,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("settings.json");
         fs::write(&file, "{ broken").unwrap();
-        assert!(set_enabled(&file, Target::Skill("x"), false).is_err());
+        let change = Change::SkillOverride {
+            name: "x",
+            value: Some("off"),
+        };
+        assert!(apply_change(&file, change).is_err());
         assert_eq!(read(&file), "{ broken");
     }
 }

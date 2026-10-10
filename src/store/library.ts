@@ -18,10 +18,18 @@ export interface LibraryItem {
   status: ApplyStatus | null;
 }
 
+export interface ToggledOff {
+  kind: ItemKind;
+  name: string;
+  mode: Mode;
+}
+
 export interface Overview {
   dir: string;
   isDefault: boolean;
   items: LibraryItem[];
+  /** Items this app turned off in the selected project; only these can be turned back on. */
+  toggledOff: ToggledOff[];
 }
 
 const MODIFIED = "MODIFIED:";

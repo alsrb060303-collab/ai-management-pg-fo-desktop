@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::claude_config::frontmatter;
-use ops::Target;
+use ops::Change;
 
 /// Error prefix the UI uses to ask before discarding the user's edits.
 const MODIFIED_ERROR: &str = "MODIFIED:";
@@ -63,6 +63,43 @@ struct Record {
     hash: String,
 }
 
+/// A skill or subagent this app turned off, so turning it back on only undoes
+/// what the app wrote.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Toggle {
+    project: String,
+    kind: ItemKind,
+    /// Name as Claude Code sees it (frontmatter `name`).
+    name: String,
+    mode: Mode,
+    /// `skillOverrides` value before we set "off", restored on enable.
+    previous: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Applied {
+    copies: Vec<Record>,
+    toggles: Vec<Toggle>,
+}
+
+/// `applied.json` from before toggles were tracked was a bare list of copies.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AppliedFile {
+    Current(Applied),
+    Legacy(Vec<Record>),
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToggledOff {
+    pub kind: ItemKind,
+    pub name: String,
+    pub mode: Mode,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Config {
@@ -89,6 +126,8 @@ pub struct Overview {
     pub dir: String,
     pub is_default: bool,
     pub items: Vec<LibraryItem>,
+    /// Items this app turned off in the selected project.
+    pub toggled_off: Vec<ToggledOff>,
 }
 
 pub struct Library {
@@ -99,16 +138,28 @@ pub struct Library {
 struct State {
     config: Config,
     records: Vec<Record>,
+    toggles: Vec<Toggle>,
 }
 
 impl Library {
     pub fn manage(app: &AppHandle) -> tauri::Result<()> {
         let data_dir = app.path().app_data_dir()?;
         let config = read_json(&data_dir.join("config.json")).unwrap_or_default();
-        let records = read_json(&data_dir.join("applied.json")).unwrap_or_default();
+        let applied = match read_json(&data_dir.join("applied.json")) {
+            Some(AppliedFile::Current(a)) => a,
+            Some(AppliedFile::Legacy(copies)) => Applied {
+                copies,
+                toggles: Vec::new(),
+            },
+            None => Applied::default(),
+        };
         app.manage(Library {
             data_dir,
-            state: Mutex::new(State { config, records }),
+            state: Mutex::new(State {
+                config,
+                records: applied.copies,
+                toggles: applied.toggles,
+            }),
         });
         Ok(())
     }
@@ -132,7 +183,11 @@ impl Library {
 
     fn save(&self, state: &State) -> ops::Result<()> {
         write_json(&self.data_dir.join("config.json"), &state.config)?;
-        write_json(&self.data_dir.join("applied.json"), &state.records)
+        let applied = Applied {
+            copies: state.records.clone(),
+            toggles: state.toggles.clone(),
+        };
+        write_json(&self.data_dir.join("applied.json"), &applied)
     }
 }
 
@@ -154,10 +209,21 @@ fn project_path(project: &Path, kind: ItemKind, id: &str) -> PathBuf {
     }
 }
 
-/// Rejects ids that could escape the target folder.
+/// Rejects ids that could escape the target folder, need escaping in gitignore
+/// patterns, or are invalid file names on Windows.
 fn check_id(id: &str) -> ops::Result<()> {
-    let bad =
-        id.is_empty() || id.starts_with('.') || id.contains(['/', '\\', ':']) || id.contains("..");
+    const RESERVED: [&str; 22] = [
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let stem = id.split('.').next().unwrap_or(id).to_ascii_lowercase();
+    let bad = id.is_empty()
+        || id.starts_with(['.', '!', '#'])
+        || id.ends_with(['.', ' '])
+        || id.contains(['/', '\\', ':', '*', '?', '[', ']', '"', '<', '>', '|'])
+        || id.chars().any(char::is_control)
+        || id.contains("..")
+        || RESERVED.contains(&stem.as_str());
     if bad {
         Err(format!("사용할 수 없는 이름입니다: {id}"))
     } else {
@@ -268,10 +334,26 @@ fn overview(lib: &Library, project: Option<&Path>) -> Overview {
             item.status = status_of(&dir, project, item, record);
         }
     }
+    let toggled_off = project
+        .map(|p| {
+            let key = project_key(p);
+            state
+                .toggles
+                .iter()
+                .filter(|t| t.project == key)
+                .map(|t| ToggledOff {
+                    kind: t.kind,
+                    name: t.name.clone(),
+                    mode: t.mode,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Overview {
         dir: dir.display().to_string(),
         is_default: state.config.library_dir.is_none(),
         items,
+        toggled_off,
     }
 }
 
@@ -319,7 +401,19 @@ fn remove(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
         ));
     }
     ops::remove_path(&dest)?;
-    if record.mode == Mode::Personal {
+    // Linked worktrees share one exclude file; keep the line while another
+    // checkout still has its own personal copy.
+    let shared_line = ops::exclude_file_for(&dest).is_some_and(|file| {
+        state.records.iter().any(|r| {
+            r.project != key
+                && r.kind == kind
+                && r.id == id
+                && r.mode == Mode::Personal
+                && ops::exclude_file_for(&project_path(Path::new(&r.project), kind, id)).as_ref()
+                    == Some(&file)
+        })
+    });
+    if record.mode == Mode::Personal && !shared_line {
         ops::exclude_remove(&dest, kind == ItemKind::Skill)?;
     }
     state
@@ -375,45 +469,95 @@ fn import(lib: &Library, path: &Path, kind: ItemKind) -> ops::Result<()> {
     ops::copy_new(&src, &dest)
 }
 
-fn set_enabled(
+/// Turns a skill/subagent off in the settings file for `mode`, remembering
+/// what was there so turning it back on restores exactly that.
+fn turn_off(
+    lib: &Library,
     project: &Path,
     kind: ItemKind,
     name: &str,
-    enabled: bool,
     mode: Mode,
 ) -> ops::Result<()> {
-    let target = match kind {
-        ItemKind::Skill => Target::Skill(name),
-        ItemKind::Agent => Target::Agent(name),
-    };
-    let claude = project.join(".claude");
-    let local = claude.join("settings.local.json");
-    let shared = claude.join("settings.json");
-
-    if enabled {
-        // Turning back on clears the switch wherever this app could have put it.
-        for file in [&local, &shared] {
-            if file.is_file() {
-                ops::set_enabled(file, target, true)?;
-            }
-        }
-        return Ok(());
+    let mut state = lib.lock();
+    let key = project_key(project);
+    if state
+        .toggles
+        .iter()
+        .any(|t| t.project == key && t.kind == kind && t.name == name)
+    {
+        return Err("이미 이 앱으로 꺼 둔 항목입니다".into());
     }
-
-    let file = match mode {
-        Mode::Personal => &local,
-        Mode::Team => &shared,
-    };
+    let file = settings_file(project, mode);
+    if mode == Mode::Personal && file.exists() && ops::is_tracked(&file) {
+        return Err(
+            "settings.local.json이 git에 커밋되어 있어 '나만' 설정을 쓸 수 없습니다. '팀'으로 꺼 주세요."
+                .into(),
+        );
+    }
     let created = !file.exists();
-    ops::set_enabled(file, target, false)?;
+    let previous = match kind {
+        ItemKind::Skill => ops::skill_override(&file, name)?,
+        ItemKind::Agent => None,
+    };
+    let change = match kind {
+        ItemKind::Skill => Change::SkillOverride {
+            name,
+            value: Some("off"),
+        },
+        ItemKind::Agent => Change::AgentDeny { name, deny: true },
+    };
+    ops::apply_change(&file, change)?;
     // Claude Code only git-excludes settings.local.json when it creates the
     // file itself, so do it here for a file we created.
-    if mode == Mode::Personal && created && !ops::is_tracked(file) {
-        ops::exclude_add(file, false)?;
+    if mode == Mode::Personal && created {
+        ops::exclude_add(&file, false)?;
     }
-    Ok(())
+    state.toggles.push(Toggle {
+        project: key,
+        kind,
+        name: name.to_string(),
+        mode,
+        previous,
+    });
+    lib.save(&state)
 }
 
+/// Undoes a `turn_off` of this app. Rules the user wrote are never touched.
+fn turn_on(lib: &Library, project: &Path, kind: ItemKind, name: &str) -> ops::Result<()> {
+    let mut state = lib.lock();
+    let key = project_key(project);
+    let index = state
+        .toggles
+        .iter()
+        .position(|t| t.project == key && t.kind == kind && t.name == name)
+        .ok_or("이 앱으로 끈 항목이 아니라 되돌릴 수 없습니다")?;
+    let toggle = state.toggles[index].clone();
+    let file = settings_file(project, toggle.mode);
+    if file.exists() {
+        let change = match kind {
+            // Only undo our "off"; if the user changed the value since, keep it.
+            ItemKind::Skill => (ops::skill_override(&file, name)?.as_deref() == Some("off"))
+                .then_some(Change::SkillOverride {
+                    name,
+                    value: toggle.previous.as_deref(),
+                }),
+            ItemKind::Agent => Some(Change::AgentDeny { name, deny: false }),
+        };
+        if let Some(change) = change {
+            ops::apply_change(&file, change)?;
+        }
+    }
+    state.toggles.remove(index);
+    lib.save(&state)
+}
+
+fn settings_file(project: &Path, mode: Mode) -> PathBuf {
+    let claude = project.join(".claude");
+    match mode {
+        Mode::Personal => claude.join("settings.local.json"),
+        Mode::Team => claude.join("settings.json"),
+    }
+}
 // ---------------------------------------------------------------------------
 // Small IO helpers
 
@@ -536,8 +680,13 @@ pub async fn config_set_enabled(
     enabled: bool,
     mode: Mode,
 ) -> Result<(), String> {
-    blocking(app, move |_| {
-        set_enabled(Path::new(&project), kind, &name, enabled, mode)
+    blocking(app, move |lib| {
+        let project = Path::new(&project);
+        if enabled {
+            turn_on(lib, project, kind, &name)
+        } else {
+            turn_off(lib, project, kind, &name, mode)
+        }
     })
     .await
 }
@@ -562,6 +711,7 @@ mod tests {
             state: Mutex::new(State {
                 config: Config::default(),
                 records: Vec::new(),
+                toggles: Vec::new(),
             }),
         };
         let dir = lib.default_dir();
@@ -684,29 +834,74 @@ mod tests {
     }
 
     #[test]
-    fn toggles_write_the_right_settings_file() {
+    fn toggles_write_the_right_file_and_restore_previous_values() {
         let f = fixture();
-        set_enabled(&f.project, ItemKind::Skill, "deploy", false, Mode::Personal).unwrap();
-        set_enabled(&f.project, ItemKind::Agent, "reviewer", false, Mode::Team).unwrap();
-        let local = fs::read_to_string(f.project.join(".claude/settings.local.json")).unwrap();
-        let shared = fs::read_to_string(f.project.join(".claude/settings.json")).unwrap();
-        assert!(local.contains("\"deploy\": \"off\""));
-        assert!(shared.contains("Agent(reviewer)"));
-        assert!(exclude(&f).contains("/.claude/settings.local.json"));
+        let local = f.project.join(".claude/settings.local.json");
+        let shared = f.project.join(".claude/settings.json");
+        // The user had chosen "name-only" for deploy and wrote their own deny rule.
+        ops::write_atomic(
+            &local,
+            r#"{"skillOverrides": {"deploy": "name-only"}, "permissions": {"deny": ["Agent(other)"]}}"#,
+        )
+        .unwrap();
 
-        set_enabled(&f.project, ItemKind::Skill, "deploy", true, Mode::Team).unwrap();
-        set_enabled(
+        turn_off(
+            &f.lib,
             &f.project,
-            ItemKind::Agent,
-            "reviewer",
-            true,
+            ItemKind::Skill,
+            "deploy",
             Mode::Personal,
         )
         .unwrap();
-        let local = fs::read_to_string(f.project.join(".claude/settings.local.json")).unwrap();
-        let shared = fs::read_to_string(f.project.join(".claude/settings.json")).unwrap();
-        assert!(!local.contains("deploy"));
-        assert!(!shared.contains("reviewer"));
+        turn_off(&f.lib, &f.project, ItemKind::Agent, "reviewer", Mode::Team).unwrap();
+        assert!(turn_off(&f.lib, &f.project, ItemKind::Agent, "reviewer", Mode::Team).is_err());
+        assert!(
+            fs::read_to_string(&local)
+                .unwrap()
+                .contains("\"deploy\": \"off\"")
+        );
+        assert!(
+            fs::read_to_string(&shared)
+                .unwrap()
+                .contains("Agent(reviewer)")
+        );
+        let toggled = overview(&f.lib, Some(&f.project)).toggled_off;
+        assert_eq!(toggled.len(), 2);
+
+        turn_on(&f.lib, &f.project, ItemKind::Skill, "deploy").unwrap();
+        turn_on(&f.lib, &f.project, ItemKind::Agent, "reviewer").unwrap();
+        let local_text = fs::read_to_string(&local).unwrap();
+        assert!(local_text.contains("\"deploy\": \"name-only\""));
+        assert!(local_text.contains("Agent(other)"));
+        assert!(!fs::read_to_string(&shared).unwrap().contains("reviewer"));
+        // Something the app did not turn off cannot be "turned on".
+        assert!(turn_on(&f.lib, &f.project, ItemKind::Agent, "other").is_err());
+    }
+
+    #[test]
+    fn worktrees_keep_a_shared_exclude_line_until_the_last_copy_goes() {
+        let f = fixture();
+        let main_git = f.project.join(".git");
+        let wt_git = main_git.join("worktrees").join("feature");
+        fs::create_dir_all(&wt_git).unwrap();
+        fs::write(wt_git.join("commondir"), "../..").unwrap();
+        let wt = f._tmp.path().join("feature");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_git.display())).unwrap();
+
+        apply(
+            &f.lib,
+            &f.project,
+            ItemKind::Skill,
+            "deploy",
+            Mode::Personal,
+        )
+        .unwrap();
+        apply(&f.lib, &wt, ItemKind::Skill, "deploy", Mode::Personal).unwrap();
+        remove(&f.lib, &f.project, ItemKind::Skill, "deploy", false).unwrap();
+        assert!(exclude(&f).contains("/.claude/skills/deploy/"));
+        remove(&f.lib, &wt, ItemKind::Skill, "deploy", false).unwrap();
+        assert!(!exclude(&f).contains("/.claude/skills/deploy/"));
     }
 
     #[test]
@@ -719,7 +914,9 @@ mod tests {
         assert!(f.lib.default_dir().join("skills/lint/SKILL.md").is_file());
         assert!(import(&f.lib, &skill, ItemKind::Skill).is_err());
 
-        for bad in ["../x", "a/b", ".hidden", ""] {
+        for bad in [
+            "../x", "a/b", ".hidden", "", "a[1]", "x*", "nul", "con.txt", "trail.",
+        ] {
             assert!(apply(&f.lib, &f.project, ItemKind::Skill, bad, Mode::Team).is_err());
         }
     }

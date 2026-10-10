@@ -1,6 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLibraryStore } from "../../store/library";
 import {
   type ConfigItem,
@@ -41,6 +41,13 @@ const STATE_STYLES: Record<ConfigState, { label: string; className: string }> = 
 
 export function ConfigMapPanel() {
   const { current, recent, map, loading, error, choose, select, refresh } = useProjectStore();
+  const loadLibrary = useLibraryStore((s) => s.load);
+
+  // The library knows which items this app turned off in the project.
+  useEffect(() => {
+    void current;
+    void loadLibrary();
+  }, [current, loadLibrary]);
 
   return (
     <div className="space-y-3">
@@ -140,7 +147,7 @@ function ProjectBar({ current, recent, loading, onChoose, onSelect, onRefresh }:
 function ConfigRow({ item }: { item: ConfigItem }) {
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
-  const { busy, setEnabled, importItem } = useLibraryStore();
+  const { busy, setEnabled, importItem, overview } = useLibraryStore();
 
   const [failed, setFailed] = useState(false);
   const reveal = () => {
@@ -158,10 +165,10 @@ function ConfigRow({ item }: { item: ConfigItem }) {
     item.scope !== "managed" &&
     !item.name.startsWith("anthropic-skills:") &&
     item.state !== "notLoaded";
-  const offBySetting =
-    item.state === "off" &&
-    (item.detail?.startsWith("skillOverrides") || item.detail?.startsWith("permissions.deny"));
-  const canTurnOff = switchable && (item.state === "active" || item.state === "limited");
+  // Only offs this app made can be undone; rules the user wrote are left alone.
+  const toggled = overview?.toggledOff.find((o) => o.kind === kind && o.name === item.name);
+  const canTurnOff =
+    switchable && !toggled && (item.state === "active" || item.state === "limited");
   const canImport = kind !== null && (item.scope === "user" || item.scope === "project");
 
   return (
@@ -196,17 +203,17 @@ function ConfigRow({ item }: { item: ConfigItem }) {
       </button>
       {kind && (switchable || canImport) && (
         <div className="flex flex-wrap gap-1 px-2.5 pb-1.5">
-          {switchable && offBySetting && (
+          {toggled && (
             <button
               type="button"
               className={smallButton}
               disabled={busy}
-              onClick={() => setEnabled(kind, item.name, true, "personal")}
+              onClick={() => setEnabled(kind, item.name, true, toggled.mode)}
             >
-              켜기
+              켜기 ({toggled.mode === "personal" ? "나만" : "팀"}으로 끔)
             </button>
           )}
-          {canTurnOff && (
+          {canTurnOff && kind && (
             <ModeButtons
               label="끄기"
               disabled={busy}
