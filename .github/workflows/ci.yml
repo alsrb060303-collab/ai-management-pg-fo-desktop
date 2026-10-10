@@ -2,17 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Branch pushes already run CI, so pull_request runs only for PRs from forks.
+# windows-build is skipped along with the jobs it needs.
 jobs:
   frontend:
     name: Frontend (lint, typecheck, build)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -27,6 +30,7 @@ jobs:
 
   rust:
     name: Rust (fmt, clippy, test)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
