@@ -34,6 +34,7 @@ export interface ConfigMap {
 
 const RECENT_KEY = "recentProjects";
 const MAX_RECENT = 8;
+let requestId = 0;
 
 interface ProjectState {
   current: string | null;
@@ -60,22 +61,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   select: async (path) => {
-    const recent = [path, ...get().recent.filter((p) => p !== path)].slice(0, MAX_RECENT);
-    saveRecent(recent);
-    set({ current: path, recent });
+    if (get().current !== path) set({ current: path, map: null, error: null });
     await get().refresh();
   },
 
   refresh: async () => {
     const path = get().current;
     if (!path || !isTauri()) return;
+    // A newer request (or a project switch) supersedes this one.
+    const id = ++requestId;
     set({ loading: true, error: null });
     try {
       const map = await invoke<ConfigMap>("claude_config_scan", { path });
-      // Ignore a late result for a project the user already switched away from.
-      if (get().current === path) set({ map, loading: false });
+      if (id !== requestId) return;
+      const recent = [path, ...get().recent.filter((p) => p !== path)].slice(0, MAX_RECENT);
+      saveRecent(recent);
+      set({ map, recent, loading: false });
     } catch (e) {
-      if (get().current === path) set({ map: null, loading: false, error: String(e) });
+      if (id !== requestId) return;
+      const error = String(e);
+      // Forget folders that are gone, but keep network paths that may be offline.
+      const recent =
+        error.startsWith("폴더를 찾을 수 없습니다") && !/^[\\/]{2}/.test(path)
+          ? get().recent.filter((p) => p !== path)
+          : get().recent;
+      saveRecent(recent);
+      set({ map: null, loading: false, error, recent });
     }
   },
 }));

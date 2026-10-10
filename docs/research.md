@@ -25,6 +25,15 @@
   - `--bare` 없는 `-p`는 프로젝트 hooks와 `.mcp.json` 서버를 **신뢰 확인 없이 실행**한다.
   - 로그인 상태 확인: `claude auth status`(기본 출력이 JSON).
 - **정책**: 제3자 앱은 Claude.ai 자격 증명을 수집·저장·중계하면 안 되고, 바이너리를 수정하면 안 된다. 제품 이름과 로고에 "Claude Code"·"Anthropic"을 쓰면 안 된다. 사용자가 수정 안 된 바이너리에 자기 구독으로 로그인하는 건 허용된다.
+- **Phase 2 검토에서 추가로 확인한 규칙** (설정 지도에 반영됨)
+  - `managed-mcp.json`이 있으면 관리 정책 MCP 서버만 쓴다(독점). 서버 목록이 비어 있어도 마찬가지다.
+  - 관리 설정의 `strictPluginOnlyCustomization`(`true` 또는 `["skills","agents","hooks","mcp"]` 중 일부)은 해당 항목을 플러그인으로 배포된 것만 허용한다.
+  - `claudeMdExcludes`(glob 목록, 모든 계층의 값을 합침)로 CLAUDE.md와 rules 파일을 제외할 수 있다. 관리 정책 CLAUDE.md는 제외되지 않는다.
+  - `pluginConfigs["cc-plugin-agents-md@builtin"].options.instructionFiles`는 AGENTS.md 읽기 방식을 정한다. 사용자·관리 설정에서만 적용된다.
+  - skill 폴더와 `.claude/rules` 하위 폴더는 symlink여도 된다.
+  - claude.ai에서 동기화된 skill은 `~/.claude/skills/synced/<이름>`에 있고 `anthropic-skills:<이름>`으로 호출한다. `.trash`는 읽지 않는다.
+  - `Skill(deploy *)`처럼 접두사로 막는 deny 규칙이 있다.
+  - subagent `name`에 `:`가 있거나 256자를 넘으면 인식되지 않는다.
 - **Windows**: 설정은 `%USERPROFILE%\.claude\`, 실행 파일은 `%USERPROFILE%\.local\bin\claude.exe`(네이티브 설치 기준). Git for Windows는 선택 사항이다(없으면 PowerShell 도구 사용).
 
 ## 2. Tauri 2 + Windows 도킹

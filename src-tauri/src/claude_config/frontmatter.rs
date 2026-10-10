@@ -41,7 +41,7 @@ pub fn parse(text: &str) -> Option<BTreeMap<String, String>> {
             continue;
         };
         let key = key.trim().to_string();
-        let value = value.trim();
+        let value = strip_comment(value.trim());
 
         // Collect the indented continuation lines that belong to this key.
         let start = i;
@@ -62,7 +62,7 @@ pub fn parse(text: &str) -> Option<BTreeMap<String, String>> {
             block
                 .iter()
                 .filter_map(|l| l.strip_prefix("- "))
-                .map(unquote)
+                .map(|item| unquote(strip_comment(item)))
                 .collect::<Vec<_>>()
                 .join(", ")
         } else if let Some(inner) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
@@ -75,15 +75,47 @@ pub fn parse(text: &str) -> Option<BTreeMap<String, String>> {
         } else {
             let mut joined = unquote(value);
             // Plain scalars may wrap onto indented lines.
-            for l in block.iter().filter(|l| !l.is_empty()) {
-                joined.push(' ');
-                joined.push_str(l);
+            if !value.starts_with(['"', '\'']) {
+                for l in block
+                    .iter()
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                {
+                    joined.push(' ');
+                    joined.push_str(strip_comment(l));
+                }
             }
             joined
         };
         fields.insert(key, parsed);
     }
     Some(fields)
+}
+
+/// Drops a trailing `# comment`. A quoted value ends at its closing quote; an
+/// unquoted one at the first `#` preceded by whitespace.
+fn strip_comment(s: &str) -> &str {
+    let s = s.trim();
+    if let Some(q) = s.chars().next().filter(|c| *c == '"' || *c == '\'') {
+        let mut escaped = false;
+        for (i, c) in s.char_indices().skip(1) {
+            if q == '"' && c == '\\' && !escaped {
+                escaped = true;
+                continue;
+            }
+            if c == q && !escaped {
+                return &s[..=i];
+            }
+            escaped = false;
+        }
+        return s;
+    }
+    let bytes = s.as_bytes();
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'#' && i > 0 && bytes[i - 1].is_ascii_whitespace() {
+            return s[..i].trim_end();
+        }
+    }
+    s
 }
 
 fn unquote(s: &str) -> String {
@@ -121,6 +153,16 @@ mod tests {
         assert!(parse("\n---\nname: x\n---\n").is_none());
         assert!(parse("# Title\n").is_none());
         assert!(parse("---\nname: unterminated\n").is_none());
+    }
+
+    #[test]
+    fn strips_comments() {
+        let text = "---\nname: deploy # main one\ndescription: \"a # b\" # note\ntools: [Read, Grep] # x\npaths:\n  - src/** # ts\n---\n";
+        let f = parse(text).unwrap();
+        assert_eq!(f["name"], "deploy");
+        assert_eq!(f["description"], "a # b");
+        assert_eq!(f["tools"], "Read, Grep");
+        assert_eq!(f["paths"], "src/**");
     }
 
     #[test]

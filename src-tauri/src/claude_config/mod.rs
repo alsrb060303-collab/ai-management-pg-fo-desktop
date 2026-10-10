@@ -117,10 +117,15 @@ pub async fn claude_config_scan(app: AppHandle, path: String) -> Result<ConfigMa
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
     let env = Env::detect(home);
     let project = PathBuf::from(path);
-    if !project.is_dir() {
-        return Err(format!("폴더가 아닙니다: {}", project.display()));
-    }
-    tauri::async_runtime::spawn_blocking(move || scan(&project, &env))
-        .await
-        .map_err(|e| e.to_string())
+    // All filesystem access, including this check, stays off the async workers:
+    // a mapped or network drive can block for a long time.
+    tauri::async_runtime::spawn_blocking(move || {
+        if project.is_dir() {
+            Ok(scan(&project, &env))
+        } else {
+            Err(format!("폴더를 찾을 수 없습니다: {}", project.display()))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

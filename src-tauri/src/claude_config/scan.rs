@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value};
+use globset::{Glob, GlobSet, GlobSetBuilder};
+use serde_json::Value;
 
 use super::frontmatter;
 use super::{ConfigMap, Env, Item, Kind, Scope, State};
@@ -11,30 +12,74 @@ use super::{ConfigMap, Env, Item, Kind, Scope, State};
 const LONG_INSTRUCTIONS_LINES: usize = 200;
 /// Guards against deep or cyclic directory trees under `.claude/`.
 const MAX_DEPTH: usize = 8;
+/// Subagent names longer than this are rejected by Claude Code.
+const MAX_AGENT_NAME: usize = 256;
+/// Built-in plugin that decides whether AGENTS.md is read.
+const AGENTS_MD_PLUGINS: [&str; 2] = ["cc-plugin-agents-md@builtin", "agents-md@builtin"];
 
 pub fn scan(project: &Path, env: &Env) -> ConfigMap {
     let repo_root = find_repo_root(project);
-    let settings = Settings::load(project, env);
+    let ctx = Ctx {
+        project,
+        repo_root: repo_root.as_deref(),
+        env,
+        user_dir: canonical(&env.config_dir),
+    };
+    let settings = Settings::load(&ctx);
     let mut items = Vec::new();
 
     items.extend(settings.items.iter().cloned());
-    instructions(project, env, &mut items);
-    rules(project, env, &mut items);
-    skills_and_commands(project, repo_root.as_deref(), env, &settings, &mut items);
-    agents(project, repo_root.as_deref(), env, &settings, &mut items);
-    mcp(project, env, &settings, &mut items);
+    instructions(&ctx, &settings, &mut items);
+    rules(&ctx, &settings, &mut items);
+    skills_and_commands(&ctx, &settings, &mut items);
+    agents(&ctx, &settings, &mut items);
+    mcp(&ctx, &settings, &mut items);
     plugins(&settings, &mut items);
+
+    let mut notes = vec![
+        "개인 MCP 서버(~/.claude.json)는 로그인 정보가 함께 있어 읽지 않습니다.".to_string(),
+        "설치된 플러그인 안의 skill·agent는 아직 표시하지 않습니다.".to_string(),
+        "여러 설정 파일의 skillOverrides는 키 단위로 합쳐진다고 가정합니다(공식 문서에 명시 없음)."
+            .to_string(),
+    ];
+    if cfg!(windows) {
+        notes.push("레지스트리·MDM으로 배포된 관리 정책은 표시하지 않습니다.".to_string());
+    }
 
     ConfigMap {
         project: project.display().to_string(),
         repo_root: repo_root.map(|p| p.display().to_string()),
         items,
-        notes: vec![
-            "개인 MCP 서버(~/.claude.json)는 로그인 정보가 함께 있어 읽지 않습니다.".into(),
-            "설치된 플러그인 안의 skill·agent는 아직 표시하지 않습니다.".into(),
-            "여러 설정 파일의 skillOverrides는 키 단위로 합쳐진다고 가정합니다(공식 문서에 명시 없음)."
-                .into(),
-        ],
+        notes,
+    }
+}
+
+struct Ctx<'a> {
+    project: &'a Path,
+    repo_root: Option<&'a Path>,
+    env: &'a Env,
+    /// Canonical `~/.claude`, so a project at `~` does not list it twice.
+    user_dir: PathBuf,
+}
+
+impl Ctx<'_> {
+    /// `<dir>/.claude/<sub>` unless that is the user config directory itself.
+    fn project_claude(&self, dir: &Path, sub: &str) -> Option<PathBuf> {
+        let claude = dir.join(".claude");
+        (canonical(&claude) != self.user_dir).then(|| claude.join(sub))
+    }
+
+    /// Project-level `.claude/<sub>` directories: the project and each parent up
+    /// to the repository root, nearest first.
+    fn project_dirs(&self, sub: &str) -> Vec<PathBuf> {
+        let mut dirs = Vec::new();
+        for dir in self.project.ancestors() {
+            dirs.extend(self.project_claude(dir, sub));
+            if self.repo_root.is_none_or(|root| dir == root) {
+                break;
+            }
+        }
+        dirs
     }
 }
 
@@ -43,6 +88,8 @@ pub fn scan(project: &Path, env: &Env) -> ConfigMap {
 
 /// Settings layers, lowest precedence first.
 const LAYERS: [Scope; 4] = [Scope::User, Scope::Project, Scope::Local, Scope::Managed];
+/// Surfaces `strictPluginOnlyCustomization` can lock to plugins only.
+const PLUGIN_ONLY_SURFACES: [&str; 4] = ["skills", "agents", "hooks", "mcp"];
 
 struct Settings {
     items: Vec<Item>,
@@ -52,24 +99,38 @@ struct Settings {
     deny: BTreeSet<String>,
     /// plugin id -> (enabled, layer that set it)
     enabled_plugins: BTreeMap<String, (bool, Scope)>,
-    enabled_mcpjson: BTreeSet<String>,
-    disabled_mcpjson: BTreeSet<String>,
-    enable_all_mcpjson: bool,
+    /// MCP server approvals; committed project settings only apply once the
+    /// folder is trusted, so they are kept apart.
+    mcp_approved: BTreeSet<String>,
+    mcp_approved_by_project: BTreeSet<String>,
+    mcp_disabled: BTreeSet<String>,
+    mcp_approve_all: bool,
+    mcp_approve_all_by_project: bool,
+    claude_md_excludes: Vec<String>,
+    /// From managed settings only.
+    plugin_only: BTreeSet<&'static str>,
+    /// AGENTS.md mode; honored from user and managed settings only.
+    instruction_files: Option<String>,
 }
 
 impl Settings {
-    fn load(project: &Path, env: &Env) -> Self {
+    fn load(ctx: &Ctx) -> Self {
         let mut s = Settings {
             items: Vec::new(),
             skill_overrides: BTreeMap::new(),
             deny: BTreeSet::new(),
             enabled_plugins: BTreeMap::new(),
-            enabled_mcpjson: BTreeSet::new(),
-            disabled_mcpjson: BTreeSet::new(),
-            enable_all_mcpjson: false,
+            mcp_approved: BTreeSet::new(),
+            mcp_approved_by_project: BTreeSet::new(),
+            mcp_disabled: BTreeSet::new(),
+            mcp_approve_all: false,
+            mcp_approve_all_by_project: false,
+            claude_md_excludes: Vec::new(),
+            plugin_only: BTreeSet::new(),
+            instruction_files: None,
         };
         for scope in LAYERS {
-            for path in settings_files(project, env, scope) {
+            for path in settings_files(ctx, scope) {
                 s.read(scope, &path);
             }
         }
@@ -77,7 +138,7 @@ impl Settings {
     }
 
     fn read(&mut self, scope: Scope, path: &Path) {
-        let Ok(text) = fs::read_to_string(path) else {
+        let Some(text) = read_text(path) else {
             return;
         };
         let (json, detail) = match serde_json::from_str::<Value>(&text) {
@@ -121,18 +182,57 @@ impl Settings {
                 }
             }
         }
-        self.enabled_mcpjson
-            .extend(strings(json.get("enabledMcpjsonServers")));
-        self.disabled_mcpjson
+
+        let approved = strings(json.get("enabledMcpjsonServers"));
+        let approve_all = json.get("enableAllProjectMcpServers") == Some(&Value::Bool(true));
+        if scope == Scope::Project {
+            self.mcp_approved_by_project.extend(approved);
+            self.mcp_approve_all_by_project |= approve_all;
+        } else {
+            self.mcp_approved.extend(approved);
+            self.mcp_approve_all |= approve_all;
+        }
+        self.mcp_disabled
             .extend(strings(json.get("disabledMcpjsonServers")));
-        if json.get("enableAllProjectMcpServers") == Some(&Value::Bool(true)) {
-            self.enable_all_mcpjson = true;
+        self.claude_md_excludes
+            .extend(strings(json.get("claudeMdExcludes")));
+
+        if scope == Scope::Managed {
+            match json.get("strictPluginOnlyCustomization") {
+                None | Some(Value::Bool(false)) => {}
+                Some(Value::Array(list)) => {
+                    for v in list {
+                        if let Some(s) = PLUGIN_ONLY_SURFACES
+                            .iter()
+                            .find(|s| v.as_str() == Some(**s))
+                        {
+                            self.plugin_only.insert(s);
+                        }
+                    }
+                }
+                // `true` (or anything unexpected) locks every surface.
+                Some(_) => self.plugin_only.extend(PLUGIN_ONLY_SURFACES),
+            }
+        }
+        if matches!(scope, Scope::User | Scope::Managed)
+            && let Some(Value::Object(configs)) = json.get("pluginConfigs")
+        {
+            let mode = AGENTS_MD_PLUGINS.iter().find_map(|id| {
+                configs
+                    .get(*id)?
+                    .get("options")?
+                    .get("instructionFiles")?
+                    .as_str()
+            });
+            if let Some(mode) = mode {
+                self.instruction_files = Some(mode.to_string());
+            }
         }
     }
 
     /// Why a skill is off or limited, if it is.
     fn skill_state(&self, name: &str) -> Option<(State, String)> {
-        if self.deny.contains("Skill") || self.deny.contains(&format!("Skill({name})")) {
+        if self.deny.iter().any(|rule| skill_rule_matches(rule, name)) {
             return Some((State::Off, "permissions.deny 규칙으로 차단".into()));
         }
         let (value, scope) = self.skill_overrides.get(name)?;
@@ -156,20 +256,66 @@ impl Settings {
             .iter()
             .any(|tool| self.deny.contains(*tool) || self.deny.contains(&format!("{tool}({name})")))
     }
+
+    fn excluded(&self) -> Option<GlobSet> {
+        if self.claude_md_excludes.is_empty() {
+            return None;
+        }
+        let mut builder = GlobSetBuilder::new();
+        for pattern in &self.claude_md_excludes {
+            if let Ok(glob) = Glob::new(&pattern.replace('\\', "/")) {
+                builder.add(glob);
+            }
+        }
+        builder.build().ok()
+    }
+
+    fn agents_md_mode(&self) -> &str {
+        self.instruction_files
+            .as_deref()
+            .unwrap_or("claude-md-or-agents-md")
+    }
 }
 
-fn settings_files(project: &Path, env: &Env, scope: Scope) -> Vec<PathBuf> {
+/// `Skill`, `Skill(name)`, `Skill(skill:name)` and prefix forms such as
+/// `Skill(deploy *)` / `Skill(deploy:*)` / `Skill(*)`.
+fn skill_rule_matches(rule: &str, name: &str) -> bool {
+    if rule == "Skill" {
+        return true;
+    }
+    let Some(spec) = rule
+        .strip_prefix("Skill(")
+        .and_then(|r| r.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let spec = spec.strip_prefix("skill:").unwrap_or(spec).trim();
+    if spec == "*" || spec == name {
+        return true;
+    }
+    let prefix = spec.strip_suffix(" *").or_else(|| spec.strip_suffix(":*"));
+    prefix.is_some_and(|p| name.starts_with(p.trim()))
+}
+
+fn settings_files(ctx: &Ctx, scope: Scope) -> Vec<PathBuf> {
+    let env = ctx.env;
     match scope {
         Scope::User => vec![env.config_dir.join("settings.json")],
-        Scope::Project => vec![project.join(".claude").join("settings.json")],
-        Scope::Local => vec![project.join(".claude").join("settings.local.json")],
+        Scope::Project => ctx
+            .project_claude(ctx.project, "settings.json")
+            .into_iter()
+            .collect(),
+        Scope::Local => ctx
+            .project_claude(ctx.project, "settings.local.json")
+            .into_iter()
+            .collect(),
         Scope::Managed => {
             let mut files = vec![env.managed_dir.join("managed-settings.json")];
             if let Ok(entries) = fs::read_dir(env.managed_dir.join("managed-settings.d")) {
                 let mut extra: Vec<PathBuf> = entries
                     .flatten()
                     .map(|e| e.path())
-                    .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                    .filter(|p| p.extension().is_some_and(|x| x == "json") && !is_hidden(p))
                     .collect();
                 extra.sort();
                 files.extend(extra);
@@ -183,12 +329,13 @@ fn settings_files(project: &Path, env: &Env, scope: Scope) -> Vec<PathBuf> {
     .collect()
 }
 
-fn strings(value: Option<&Value>) -> impl Iterator<Item = String> + '_ {
+fn strings(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|v| v.as_str().map(str::to_string))
+        .collect()
 }
 
 fn layer_label(scope: Scope) -> &'static str {
@@ -204,54 +351,78 @@ fn layer_label(scope: Scope) -> &'static str {
 // ---------------------------------------------------------------------------
 // Instructions and rules
 
-fn instructions(project: &Path, env: &Env, items: &mut Vec<Item>) {
-    let mut found = Vec::new();
-    let mut push = |scope: Scope, path: PathBuf| {
-        if path.is_file() {
+fn instructions(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
+    let (project, env) = (ctx.project, ctx.env);
+    let mut found: Vec<(Scope, PathBuf)> = Vec::new();
+    let mut push = |scope: Scope, path: Option<PathBuf>| {
+        if let Some(path) = path.filter(|p| p.is_file()) {
             found.push((scope, path));
         }
     };
 
-    push(Scope::Managed, env.managed_dir.join("CLAUDE.md"));
-    push(Scope::User, env.config_dir.join("CLAUDE.md"));
+    push(Scope::Managed, Some(env.managed_dir.join("CLAUDE.md")));
+    push(Scope::User, Some(env.config_dir.join("CLAUDE.md")));
     // Ancestors load from the filesystem root down, so list them in that order.
     let mut ancestors: Vec<&Path> = project.ancestors().skip(1).collect();
     ancestors.reverse();
-    for dir in ancestors {
-        push(Scope::Parent, dir.join("CLAUDE.md"));
-        push(Scope::Parent, dir.join("CLAUDE.local.md"));
+    for dir in &ancestors {
+        push(Scope::Parent, Some(dir.join("CLAUDE.md")));
+        push(Scope::Parent, ctx.project_claude(dir, "CLAUDE.md"));
+        push(Scope::Parent, Some(dir.join("CLAUDE.local.md")));
     }
-    push(Scope::Project, project.join("CLAUDE.md"));
-    push(Scope::Project, project.join(".claude").join("CLAUDE.md"));
-    push(Scope::Local, project.join("CLAUDE.local.md"));
+    push(Scope::Project, Some(project.join("CLAUDE.md")));
+    push(Scope::Project, ctx.project_claude(project, "CLAUDE.md"));
+    push(Scope::Local, Some(project.join("CLAUDE.local.md")));
+
+    let excluded = settings.excluded();
+    let mode = settings.agents_md_mode();
+    let managed_only = mode == "managed-only";
+    let is_excluded = |scope: Scope, path: &Path| {
+        scope != Scope::Managed && excluded.as_ref().is_some_and(|g| g.is_match(slashed(path)))
+    };
 
     // AGENTS.md is read only when no CLAUDE.md-family file exists here or above.
-    let has_claude_md = found
-        .iter()
-        .any(|(scope, _)| matches!(scope, Scope::Parent | Scope::Project | Scope::Local));
-    let agents_md = project.join("AGENTS.md");
+    let has_claude_md = found.iter().any(|(scope, path)| {
+        matches!(scope, Scope::Parent | Scope::Project | Scope::Local) && !is_excluded(*scope, path)
+    });
 
-    for (scope, path) in found {
-        items.push(instruction_item(scope, &path, State::Active, None));
-    }
-    if agents_md.is_file() {
-        let (state, detail) = if has_claude_md {
+    for (scope, path) in &found {
+        let (state, detail) = if managed_only && *scope != Scope::Managed {
             (
                 State::NotLoaded,
-                Some(
-                    "CLAUDE.md가 있어서 읽히지 않음 (CLAUDE.md에 @AGENTS.md로 가져오면 함께 읽힘)"
-                        .into(),
-                ),
+                Some("관리 정책 CLAUDE.md만 읽도록 설정됨".into()),
             )
+        } else if is_excluded(*scope, path) {
+            (State::NotLoaded, Some("claudeMdExcludes로 제외".into()))
         } else {
-            (State::Active, Some("CLAUDE.md가 없어서 대신 읽힘".into()))
+            (State::Active, None)
         };
-        items.push(instruction_item(Scope::Project, &agents_md, state, detail));
+        items.push(instruction_item(*scope, path, state, detail));
+    }
+
+    let agents_md = project.join("AGENTS.md");
+    if agents_md.is_file() {
+        let (state, detail) = match mode {
+            "managed-only" => (State::NotLoaded, "관리 정책 CLAUDE.md만 읽도록 설정됨"),
+            "claude-md" => (State::NotLoaded, "설정(instructionFiles)으로 제외"),
+            "claude-md-and-agents-md" => (State::Active, "설정에 따라 CLAUDE.md와 함께 읽힘"),
+            _ if has_claude_md => (
+                State::NotLoaded,
+                "CLAUDE.md가 있어서 읽히지 않음 (CLAUDE.md에 @AGENTS.md로 가져오면 함께 읽힘)",
+            ),
+            _ => (State::Active, "CLAUDE.md가 없어서 대신 읽힘"),
+        };
+        items.push(instruction_item(
+            Scope::Project,
+            &agents_md,
+            state,
+            Some(detail.into()),
+        ));
     }
 }
 
 fn instruction_item(scope: Scope, path: &Path, state: State, detail: Option<String>) -> Item {
-    let text = fs::read_to_string(path).unwrap_or_default();
+    let text = read_text(path).unwrap_or_default();
     let lines = text.lines().count();
     let imports = text
         .lines()
@@ -280,17 +451,33 @@ fn instruction_item(scope: Scope, path: &Path, state: State, detail: Option<Stri
     }
 }
 
-fn rules(project: &Path, env: &Env, items: &mut Vec<Item>) {
-    for (scope, dir) in [
-        (Scope::User, env.config_dir.join("rules")),
-        (Scope::Project, project.join(".claude").join("rules")),
-    ] {
+fn rules(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
+    let excluded = settings.excluded();
+    let managed_only = settings.agents_md_mode() == "managed-only";
+    let roots = [
+        (Scope::User, Some(ctx.env.config_dir.join("rules"))),
+        (Scope::Project, ctx.project_claude(ctx.project, "rules")),
+    ];
+    for (scope, dir) in roots {
+        let Some(dir) = dir else { continue };
         for path in markdown_files(&dir) {
-            let text = fs::read_to_string(&path).unwrap_or_default();
+            let text = read_text(&path).unwrap_or_default();
             let paths = frontmatter::parse(&text).and_then(|f| f.get("paths").cloned());
-            let (state, detail) = match paths {
-                Some(p) if !p.is_empty() => (State::Conditional, Some(format!("paths: {p}"))),
-                _ => (State::Active, Some("항상 읽힘".into())),
+            let (state, detail) = if managed_only {
+                (
+                    State::NotLoaded,
+                    Some("관리 정책 CLAUDE.md만 읽도록 설정됨".into()),
+                )
+            } else if excluded
+                .as_ref()
+                .is_some_and(|g| g.is_match(slashed(&path)))
+            {
+                (State::NotLoaded, Some("claudeMdExcludes로 제외".into()))
+            } else {
+                match paths {
+                    Some(p) if !p.is_empty() => (State::Conditional, Some(format!("paths: {p}"))),
+                    _ => (State::Active, Some("항상 읽힘".into())),
+                }
             };
             items.push(Item {
                 kind: Kind::Rule,
@@ -308,26 +495,10 @@ fn rules(project: &Path, env: &Env, items: &mut Vec<Item>) {
 // ---------------------------------------------------------------------------
 // Skills, commands, agents
 
-/// Project-level `.claude/<sub>` directories: the project and each parent up to
-/// the repository root, nearest first.
-fn project_dirs(project: &Path, repo_root: Option<&Path>, sub: &str) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    for dir in project.ancestors() {
-        dirs.push(dir.join(".claude").join(sub));
-        if repo_root.is_none_or(|root| dir == root) {
-            break;
-        }
-    }
-    dirs
-}
+const PLUGIN_ONLY_DETAIL: &str = "관리 정책: 플러그인으로 배포된 것만 허용";
 
-fn skills_and_commands(
-    project: &Path,
-    repo_root: Option<&Path>,
-    env: &Env,
-    settings: &Settings,
-    items: &mut Vec<Item>,
-) {
+fn skills_and_commands(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
+    let env = ctx.env;
     // Enterprise beats personal beats project on a name clash.
     let mut roots = vec![
         (
@@ -337,20 +508,23 @@ fn skills_and_commands(
         (Scope::User, env.config_dir.join("skills")),
     ];
     roots.extend(
-        project_dirs(project, repo_root, "skills")
+        ctx.project_dirs("skills")
             .into_iter()
             .map(|d| (Scope::Project, d)),
     );
+    let plugin_only = settings.plugin_only.contains("skills");
 
     let mut taken: BTreeMap<String, Scope> = BTreeMap::new();
     for (scope, root) in roots {
         for skill_md in skill_files(&root) {
-            let text = fs::read_to_string(&skill_md).unwrap_or_default();
+            let text = read_text(&skill_md).unwrap_or_default();
             let fm = frontmatter::parse(&text).unwrap_or_default();
             let dir_name = skill_md.parent().map(file_name).unwrap_or_default();
             let name = fm.get("name").cloned().unwrap_or(dir_name);
 
-            let (state, detail) = if let Some(winner) = taken.get(&name) {
+            let (state, detail) = if plugin_only && scope != Scope::Managed {
+                (State::Off, Some(PLUGIN_ONLY_DETAIL.into()))
+            } else if let Some(winner) = taken.get(&name) {
                 (
                     State::Shadowed,
                     Some(format!("같은 이름의 {} skill이 우선", scope_label(*winner))),
@@ -370,7 +544,9 @@ fn skills_and_commands(
             } else {
                 (State::Active, None)
             };
-            taken.entry(name.clone()).or_insert(scope);
+            if state != State::Off || !plugin_only {
+                taken.entry(name.clone()).or_insert(scope);
+            }
             items.push(Item {
                 kind: Kind::Skill,
                 scope,
@@ -383,19 +559,38 @@ fn skills_and_commands(
         }
     }
 
+    // Skills synced from claude.ai live under ~/.claude/skills/synced and are
+    // namespaced, so they never clash with local skills.
+    for skill_md in skill_files(&env.config_dir.join("skills").join("synced")) {
+        let text = read_text(&skill_md).unwrap_or_default();
+        let fm = frontmatter::parse(&text).unwrap_or_default();
+        let dir_name = skill_md.parent().map(file_name).unwrap_or_default();
+        items.push(Item {
+            kind: Kind::Skill,
+            scope: Scope::User,
+            name: format!("anthropic-skills:{dir_name}"),
+            path: skill_md.display().to_string(),
+            description: fm.get("description").cloned(),
+            state: State::Limited,
+            detail: Some("claude.ai에서 동기화됨 · 로그인한 세션에서만 사용".into()),
+        });
+    }
+
     // Legacy commands share the skill namespace; a skill wins a name clash.
     let mut command_roots = vec![(Scope::User, env.config_dir.join("commands"))];
     command_roots.extend(
-        project_dirs(project, repo_root, "commands")
+        ctx.project_dirs("commands")
             .into_iter()
             .map(|d| (Scope::Project, d)),
     );
     for (scope, root) in command_roots {
         for path in markdown_files(&root) {
-            let text = fs::read_to_string(&path).unwrap_or_default();
+            let text = read_text(&path).unwrap_or_default();
             let fm = frontmatter::parse(&text).unwrap_or_default();
             let name = relative_name(&root, &path).replace('/', ":");
-            let (state, detail) = if taken.contains_key(&name) {
+            let (state, detail) = if plugin_only {
+                (State::Off, Some(PLUGIN_ONLY_DETAIL.into()))
+            } else if taken.contains_key(&name) {
                 (State::Shadowed, Some("같은 이름의 skill이 우선".into()))
             } else {
                 (State::Active, None)
@@ -413,38 +608,51 @@ fn skills_and_commands(
     }
 }
 
-fn agents(
-    project: &Path,
-    repo_root: Option<&Path>,
-    env: &Env,
-    settings: &Settings,
-    items: &mut Vec<Item>,
-) {
-    // Project definitions (nearest first) beat personal ones with the same name.
-    let mut roots: Vec<(Scope, PathBuf)> = project_dirs(project, repo_root, "agents")
-        .into_iter()
-        .map(|d| (Scope::Project, d))
-        .collect();
-    roots.push((Scope::User, env.config_dir.join("agents")));
+fn agents(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
+    // Managed beats project (nearest first) beats personal for the same name.
+    let mut roots = vec![(
+        Scope::Managed,
+        ctx.env.managed_dir.join(".claude").join("agents"),
+    )];
+    roots.extend(
+        ctx.project_dirs("agents")
+            .into_iter()
+            .map(|d| (Scope::Project, d)),
+    );
+    roots.push((Scope::User, ctx.env.config_dir.join("agents")));
+    let plugin_only = settings.plugin_only.contains("agents");
 
     let mut taken: BTreeMap<String, Scope> = BTreeMap::new();
     for (scope, root) in roots {
         for path in markdown_files(&root) {
-            let text = fs::read_to_string(&path).unwrap_or_default();
+            let text = read_text(&path).unwrap_or_default();
             let fm = frontmatter::parse(&text).unwrap_or_default();
-            let Some(name) = fm.get("name").filter(|n| !n.is_empty()).cloned() else {
+            let name = fm.get("name").filter(|n| !n.is_empty()).cloned();
+            let invalid = match &name {
+                None => Some("frontmatter에 name이 없어 인식되지 않음"),
+                Some(n) if n.contains(':') => Some("name에 콜론(:)이 있어 인식되지 않음"),
+                Some(n) if n.chars().count() > MAX_AGENT_NAME => {
+                    Some("name이 256자를 넘어 인식되지 않음")
+                }
+                Some(_) => None,
+            };
+            if let Some(why) = invalid {
                 items.push(Item {
                     kind: Kind::Agent,
                     scope,
-                    name: file_name(&path),
+                    name: name.unwrap_or_else(|| file_name(&path)),
                     path: path.display().to_string(),
                     description: None,
                     state: State::NotLoaded,
-                    detail: Some("frontmatter에 name이 없어 인식되지 않음".into()),
+                    detail: Some(why.into()),
                 });
                 continue;
-            };
-            let (state, detail) = if let Some(winner) = taken.get(&name) {
+            }
+            let name = name.unwrap_or_default();
+
+            let (state, detail) = if plugin_only && scope != Scope::Managed {
+                (State::Off, Some(PLUGIN_ONLY_DETAIL.into()))
+            } else if let Some(winner) = taken.get(&name) {
                 (
                     State::Shadowed,
                     Some(format!("같은 이름의 {} agent가 우선", scope_label(*winner))),
@@ -464,7 +672,9 @@ fn agents(
                     (!facts.is_empty()).then(|| facts.join(" · ")),
                 )
             };
-            taken.entry(name.clone()).or_insert(scope);
+            if state != State::Off || !plugin_only {
+                taken.entry(name.clone()).or_insert(scope);
+            }
             items.push(Item {
                 kind: Kind::Agent,
                 scope,
@@ -481,8 +691,10 @@ fn agents(
 // ---------------------------------------------------------------------------
 // MCP servers and plugins
 
-fn mcp(project: &Path, env: &Env, settings: &Settings, items: &mut Vec<Item>) {
-    let managed = env.managed_dir.join("managed-mcp.json");
+fn mcp(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
+    let managed = ctx.env.managed_dir.join("managed-mcp.json");
+    // A managed-mcp.json takes exclusive control, even when it lists no servers.
+    let exclusive = matches!(read_json(&managed), Some(Ok(Value::Object(_))));
     for (name, path) in mcp_servers(&managed) {
         items.push(Item {
             kind: Kind::Mcp,
@@ -495,13 +707,39 @@ fn mcp(project: &Path, env: &Env, settings: &Settings, items: &mut Vec<Item>) {
         });
     }
 
-    for (name, path) in mcp_servers(&project.join(".mcp.json")) {
-        let (state, detail) = if settings.disabled_mcpjson.contains(&name) {
-            (State::Off, Some("disabledMcpjsonServers에 있음".into()))
-        } else if settings.enable_all_mcpjson || settings.enabled_mcpjson.contains(&name) {
-            (State::Active, Some("승인됨".into()))
+    let project_mcp = ctx.project.join(".mcp.json");
+    if let Some(Err(e)) = read_json(&project_mcp) {
+        items.push(Item {
+            kind: Kind::Mcp,
+            scope: Scope::Project,
+            name: ".mcp.json".into(),
+            path: project_mcp.display().to_string(),
+            description: None,
+            state: State::Off,
+            detail: Some(format!("JSON 오류: {e}")),
+        });
+    }
+    for (name, path) in mcp_servers(&project_mcp) {
+        let (state, detail) = if exclusive {
+            (
+                State::NotLoaded,
+                "관리 정책 managed-mcp.json이 MCP를 독점 관리",
+            )
+        } else if settings.plugin_only.contains("mcp") {
+            (State::Off, PLUGIN_ONLY_DETAIL)
+        } else if settings.mcp_disabled.contains(&name) {
+            (State::Off, "disabledMcpjsonServers에 있음")
+        } else if settings.mcp_approve_all || settings.mcp_approved.contains(&name) {
+            (State::Active, "승인됨")
+        } else if settings.mcp_approve_all_by_project
+            || settings.mcp_approved_by_project.contains(&name)
+        {
+            (
+                State::Limited,
+                "커밋된 설정에서 승인 · 폴더를 신뢰한 뒤에 적용",
+            )
         } else {
-            (State::Limited, Some("처음 실행할 때 승인 필요".into()))
+            (State::Limited, "처음 실행할 때 승인 필요")
         };
         items.push(Item {
             kind: Kind::Mcp,
@@ -510,26 +748,22 @@ fn mcp(project: &Path, env: &Env, settings: &Settings, items: &mut Vec<Item>) {
             path,
             description: None,
             state,
-            detail,
+            detail: Some(detail.into()),
         });
     }
 }
 
 fn mcp_servers(path: &Path) -> Vec<(String, String)> {
-    let Some(Value::Object(root)) = fs::read_to_string(path)
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-    else {
+    let Some(Ok(Value::Object(root))) = read_json(path) else {
         return Vec::new();
     };
-    let servers: Map<String, Value> = match root.get("mcpServers") {
-        Some(Value::Object(m)) => m.clone(),
-        _ => Map::new(),
-    };
-    servers
-        .keys()
-        .map(|name| (name.clone(), path.display().to_string()))
-        .collect()
+    match root.get("mcpServers") {
+        Some(Value::Object(servers)) => servers
+            .keys()
+            .map(|name| (name.clone(), path.display().to_string()))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn plugins(settings: &Settings, items: &mut Vec<Item>) {
@@ -556,61 +790,88 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-/// `<root>/<name>/SKILL.md`, plus one extra level for grouped folders such as
-/// `skills/synced/<name>/SKILL.md`.
-fn skill_files(root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    for dir in sorted_dirs(root) {
-        let skill = dir.join("SKILL.md");
-        if skill.is_file() {
-            found.push(skill);
-        } else {
-            for inner in sorted_dirs(&dir) {
-                let skill = inner.join("SKILL.md");
-                if skill.is_file() {
-                    found.push(skill);
-                }
-            }
-        }
-    }
-    found
+/// Reads a text file as UTF-8 (lossy, like Claude Code) without a leading BOM.
+fn read_text(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    Some(text.strip_prefix('\u{feff}').unwrap_or(&text).to_string())
 }
 
+/// `None` when the file is missing, otherwise the parse result.
+fn read_json(path: &Path) -> Option<Result<Value, serde_json::Error>> {
+    read_text(path).map(|t| serde_json::from_str(&t))
+}
+
+fn canonical(path: &Path) -> PathBuf {
+    let path = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if cfg!(windows) {
+        PathBuf::from(path.to_string_lossy().to_lowercase())
+    } else {
+        path
+    }
+}
+
+/// Absolute path with forward slashes, for glob matching.
+fn slashed(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn is_hidden(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+}
+
+/// `<root>/<name>/SKILL.md`. Hidden folders (such as `.trash`) and the
+/// claude.ai `synced` folder are not skill folders.
+fn skill_files(root: &Path) -> Vec<PathBuf> {
+    sorted_dirs(root)
+        .into_iter()
+        .filter(|dir| !is_hidden(dir) && dir.file_name().is_none_or(|n| n != "synced"))
+        .map(|dir| dir.join("SKILL.md"))
+        .filter(|skill| skill.is_file())
+        .collect()
+}
+
+/// Subdirectories of `dir`, following symlinks, in a stable order.
 fn sorted_dirs(dir: &Path) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .map(|e| e.path())
+        .filter(|p| p.is_dir())
         .collect();
     dirs.sort();
     dirs
 }
 
 /// All `*.md` files under `dir`, recursively, in a stable order. Symlinked
-/// directories are not followed.
+/// directories are followed (Claude Code supports them); each real directory is
+/// visited once, so link cycles end.
 fn markdown_files(dir: &Path) -> Vec<PathBuf> {
-    fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
-        if depth > MAX_DEPTH {
+    fn walk(dir: &Path, depth: usize, seen: &mut HashSet<PathBuf>, out: &mut Vec<PathBuf>) {
+        if depth > MAX_DEPTH || !seen.insert(canonical(dir)) {
             return;
         }
-        let mut entries: Vec<_> = fs::read_dir(dir).into_iter().flatten().flatten().collect();
-        entries.sort_by_key(|e| e.path());
-        for entry in entries {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            let path = entry.path();
-            if file_type.is_dir() {
-                walk(&path, depth + 1, out);
+        let mut entries: Vec<PathBuf> = fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            if path.is_dir() {
+                if !is_hidden(&path) {
+                    walk(&path, depth + 1, seen, out);
+                }
             } else if path.extension().is_some_and(|x| x == "md") {
                 out.push(path);
             }
         }
     }
     let mut out = Vec::new();
-    walk(dir, 0, &mut out);
+    walk(dir, 0, &mut HashSet::new(), &mut out);
     out
 }
 
@@ -981,5 +1242,248 @@ mod tests {
                 .any(|i| i.kind == Kind::Skill && i.name == "root")
         );
         assert!(!map.items.iter().any(|i| i.name == "outside"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_symlinked_skill_and_rule_folders() {
+        use std::os::unix::fs::symlink;
+        let f = fixture();
+        let shared = f._tmp.path().join("dotfiles");
+        write(
+            &shared.join("deploy").join("SKILL.md"),
+            "---\nname: deploy\n---\n",
+        );
+        write(&shared.join("rules").join("style.md"), "# Style\n");
+        fs::create_dir_all(f.env.config_dir.join("skills")).unwrap();
+        symlink(
+            shared.join("deploy"),
+            f.env.config_dir.join("skills").join("deploy"),
+        )
+        .unwrap();
+        fs::create_dir_all(f.project.join(".claude").join("rules")).unwrap();
+        symlink(
+            shared.join("rules"),
+            f.project.join(".claude").join("rules").join("shared"),
+        )
+        .unwrap();
+        // A cycle must not hang the walk.
+        symlink(
+            &f.project,
+            f.project.join(".claude").join("rules").join("loop"),
+        )
+        .unwrap();
+
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Skill, "deploy", Scope::User).state,
+            State::Active
+        );
+        assert_eq!(
+            find(&map, Kind::Rule, "shared/style", Scope::Project).state,
+            State::Active
+        );
+    }
+
+    #[test]
+    fn synced_and_trashed_skills() {
+        let f = fixture();
+        let skills = f.env.config_dir.join("skills");
+        write(
+            &skills.join("synced").join("deploy").join("SKILL.md"),
+            "---\nname: deploy\n---\n",
+        );
+        write(
+            &skills.join(".trash").join("old").join("SKILL.md"),
+            "---\nname: old\n---\n",
+        );
+        write(
+            &f.project
+                .join(".claude")
+                .join("skills")
+                .join("deploy")
+                .join("SKILL.md"),
+            "---\nname: deploy\n---\n",
+        );
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Skill, "deploy", Scope::Project).state,
+            State::Active
+        );
+        assert_eq!(
+            find(&map, Kind::Skill, "anthropic-skills:deploy", Scope::User).state,
+            State::Limited
+        );
+        assert!(!map.items.iter().any(|i| i.name == "old"));
+    }
+
+    #[test]
+    fn managed_agents_win_and_invalid_names_are_skipped() {
+        let f = fixture();
+        let agent = |path: PathBuf, name: &str| write(&path, &format!("---\nname: {name}\n---\n"));
+        agent(
+            f.env
+                .managed_dir
+                .join(".claude")
+                .join("agents")
+                .join("a.md"),
+            "reviewer",
+        );
+        agent(
+            f.project.join(".claude").join("agents").join("a.md"),
+            "reviewer",
+        );
+        agent(
+            f.project.join(".claude").join("agents").join("bad.md"),
+            "x:y",
+        );
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Agent, "reviewer", Scope::Managed).state,
+            State::Active
+        );
+        assert_eq!(
+            find(&map, Kind::Agent, "reviewer", Scope::Project).state,
+            State::Shadowed
+        );
+        assert_eq!(
+            find(&map, Kind::Agent, "x:y", Scope::Project).state,
+            State::NotLoaded
+        );
+    }
+
+    #[test]
+    fn claude_md_excludes_and_agents_md_mode() {
+        let f = fixture();
+        write(&f.project.join("CLAUDE.md"), "# Repo\n");
+        write(&f.project.join("AGENTS.md"), "# Agents\n");
+        write(
+            &f.project.join(".claude").join("rules").join("x.md"),
+            "# X\n",
+        );
+        write(
+            &f.project.join(".claude").join("settings.json"),
+            r#"{"claudeMdExcludes": ["**/repo/CLAUDE.md", "**/rules/x.md"]}"#,
+        );
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Instructions, "CLAUDE.md", Scope::Project).state,
+            State::NotLoaded
+        );
+        assert_eq!(
+            find(&map, Kind::Rule, "x", Scope::Project).state,
+            State::NotLoaded
+        );
+        // With the only CLAUDE.md excluded, AGENTS.md is read instead.
+        assert_eq!(
+            find(&map, Kind::Instructions, "AGENTS.md", Scope::Project).state,
+            State::Active
+        );
+
+        write(
+            &f.env.config_dir.join("settings.json"),
+            r#"{"pluginConfigs": {"cc-plugin-agents-md@builtin": {"options": {"instructionFiles": "claude-md"}}}}"#,
+        );
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Instructions, "AGENTS.md", Scope::Project).state,
+            State::NotLoaded
+        );
+    }
+
+    #[test]
+    fn managed_policies_lock_mcp_and_customizations() {
+        let f = fixture();
+        write(
+            &f.project.join(".mcp.json"),
+            r#"{"mcpServers": {"db": {}}}"#,
+        );
+        write(
+            &f.project
+                .join(".claude")
+                .join("skills")
+                .join("s")
+                .join("SKILL.md"),
+            "---\nname: s\n---\n",
+        );
+        write(
+            &f.env.managed_dir.join("managed-mcp.json"),
+            r#"{"mcpServers": {}}"#,
+        );
+        write(
+            &f.env.managed_dir.join("managed-settings.json"),
+            r#"{"strictPluginOnlyCustomization": ["skills"]}"#,
+        );
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Mcp, "db", Scope::Project).state,
+            State::NotLoaded
+        );
+        assert_eq!(
+            find(&map, Kind::Skill, "s", Scope::Project).state,
+            State::Off
+        );
+    }
+
+    #[test]
+    fn prefix_skill_deny_bom_settings_and_committed_mcp_approval() {
+        let f = fixture();
+        for name in ["deploy", "deploy-prod", "lint"] {
+            write(
+                &f.project
+                    .join(".claude")
+                    .join("skills")
+                    .join(name)
+                    .join("SKILL.md"),
+                &format!("---\nname: {name}\n---\n"),
+            );
+        }
+        write(
+            &f.project.join(".mcp.json"),
+            r#"{"mcpServers": {"db": {}}}"#,
+        );
+        write(
+            &f.project.join(".claude").join("settings.json"),
+            "\u{feff}{\"permissions\": {\"deny\": [\"Skill(deploy *)\"]}, \"enabledMcpjsonServers\": [\"db\"]}",
+        );
+        let map = scan(&f.project, &f.env);
+        assert_eq!(
+            find(&map, Kind::Settings, "settings.json", Scope::Project).state,
+            State::Active
+        );
+        assert_eq!(
+            find(&map, Kind::Skill, "deploy", Scope::Project).state,
+            State::Off
+        );
+        assert_eq!(
+            find(&map, Kind::Skill, "deploy-prod", Scope::Project).state,
+            State::Off
+        );
+        assert_eq!(
+            find(&map, Kind::Skill, "lint", Scope::Project).state,
+            State::Active
+        );
+        assert_eq!(
+            find(&map, Kind::Mcp, "db", Scope::Project).state,
+            State::Limited
+        );
+    }
+
+    #[test]
+    fn project_at_home_does_not_list_user_config_twice() {
+        let f = fixture();
+        let home = f.env.config_dir.parent().unwrap().to_path_buf();
+        write(
+            &f.env
+                .config_dir
+                .join("skills")
+                .join("mine")
+                .join("SKILL.md"),
+            "---\nname: mine\n---\n",
+        );
+        let map = scan(&home, &f.env);
+        let mine: Vec<_> = map.items.iter().filter(|i| i.name == "mine").collect();
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0].state, State::Active);
     }
 }

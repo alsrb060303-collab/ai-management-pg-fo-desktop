@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useState } from "react";
 import {
   type ConfigItem,
   type ConfigKind,
@@ -50,6 +51,7 @@ export function ConfigMapPanel() {
         onRefresh={refresh}
       />
       {error && <p className="rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">{error}</p>}
+      {current && loading && !map && <p className="text-xs text-text-muted">읽는 중…</p>}
       {!current && (
         <p className="text-xs text-text-muted">
           프로젝트 폴더를 고르면 Claude Code가 그 프로젝트에서 읽는 설정을 범위별로 보여줍니다.
@@ -111,7 +113,7 @@ function ProjectBar({ current, recent, loading, onChoose, onSelect, onRefresh }:
         title={current ?? undefined}
       >
         {!current && <option value="">프로젝트 없음</option>}
-        {recent.map((path) => (
+        {(current && !recent.includes(current) ? [current, ...recent] : recent).map((path) => (
           <option key={path} value={path}>
             {baseName(path)}
           </option>
@@ -137,8 +139,13 @@ function ConfigRow({ item }: { item: ConfigItem }) {
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
 
+  const [failed, setFailed] = useState(false);
   const reveal = () => {
-    if (isTauri() && item.path) void revealItemInDir(item.path);
+    if (!isTauri() || !item.path) return;
+    revealItemInDir(item.path).then(
+      () => setFailed(false),
+      () => setFailed(true),
+    );
   };
 
   return (
@@ -165,6 +172,11 @@ function ConfigRow({ item }: { item: ConfigItem }) {
           <p className="mt-0.5 line-clamp-2 text-[11px] text-text-muted">{item.description}</p>
         )}
         {item.detail && <p className="mt-0.5 text-[10px] text-text-muted/80">{item.detail}</p>}
+        {failed && (
+          <p className="mt-0.5 text-[10px] text-red-300">
+            파일을 열 수 없습니다. 다시 읽기(↻)를 눌러 주세요.
+          </p>
+        )}
       </button>
     </li>
   );
