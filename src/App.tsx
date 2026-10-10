@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { StatusBar } from "./components/StatusBar";
 import { TabNav } from "./components/TabNav";
 import { TitleBar } from "./components/TitleBar";
-import { ConfigMapPanel } from "./features/docs/ConfigMapPanel";
+import { DocsTab } from "./features/docs/DocsTab";
 import { subscribeDockStatus } from "./store/dock";
 import { type TabId, useUiStore } from "./store/ui";
 
@@ -42,7 +42,7 @@ export default function App() {
       <TitleBar />
       <TabNav />
       <main className="flex-1 overflow-y-auto p-4">
-        {activeTab === "docs" ? <ConfigMapPanel /> : <Placeholder panel={panel} />}
+        {activeTab === "docs" ? <DocsTab /> : <Placeholder panel={panel} />}
       </main>
       <StatusBar />
     </div>

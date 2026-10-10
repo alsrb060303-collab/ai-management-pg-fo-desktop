@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
+import { useLibraryStore } from "../../store/library";
 import {
   type ConfigItem,
   type ConfigKind,
@@ -8,6 +9,7 @@ import {
   type ConfigState,
   useProjectStore,
 } from "../../store/project";
+import { ModeButtons, smallButton } from "./ModeButtons";
 
 const SECTIONS: { kind: ConfigKind; title: string; hint: string }[] = [
   { kind: "instructions", title: "지침", hint: "CLAUDE.md · 항상 읽힘" },
@@ -138,6 +140,7 @@ function ProjectBar({ current, recent, loading, onChoose, onSelect, onRefresh }:
 function ConfigRow({ item }: { item: ConfigItem }) {
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
+  const { busy, setEnabled, importItem } = useLibraryStore();
 
   const [failed, setFailed] = useState(false);
   const reveal = () => {
@@ -148,14 +151,27 @@ function ConfigRow({ item }: { item: ConfigItem }) {
     );
   };
 
+  const kind = item.kind === "skill" || item.kind === "agent" ? item.kind : null;
+  // Only switches this app can flip: not managed policy, synced or broken items.
+  const switchable =
+    kind !== null &&
+    item.scope !== "managed" &&
+    !item.name.startsWith("anthropic-skills:") &&
+    item.state !== "notLoaded";
+  const offBySetting =
+    item.state === "off" &&
+    (item.detail?.startsWith("skillOverrides") || item.detail?.startsWith("permissions.deny"));
+  const canTurnOff = switchable && (item.state === "active" || item.state === "limited");
+  const canImport = kind !== null && (item.scope === "user" || item.scope === "project");
+
   return (
-    <li>
+    <li className="rounded-md border border-border bg-surface-raised hover:border-text-muted">
       <button
         type="button"
         onClick={reveal}
         disabled={!item.path}
         title={item.path || undefined}
-        className="w-full rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-left hover:border-text-muted disabled:cursor-default"
+        className="block w-full px-2.5 py-1.5 text-left disabled:cursor-default"
       >
         <div className="flex items-center gap-1.5 text-xs">
           <span
@@ -178,6 +194,37 @@ function ConfigRow({ item }: { item: ConfigItem }) {
           </p>
         )}
       </button>
+      {kind && (switchable || canImport) && (
+        <div className="flex flex-wrap gap-1 px-2.5 pb-1.5">
+          {switchable && offBySetting && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled={busy}
+              onClick={() => setEnabled(kind, item.name, true, "personal")}
+            >
+              켜기
+            </button>
+          )}
+          {canTurnOff && (
+            <ModeButtons
+              label="끄기"
+              disabled={busy}
+              onPick={(mode) => setEnabled(kind, item.name, false, mode)}
+            />
+          )}
+          {canImport && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled={busy}
+              onClick={() => importItem(item.path, kind)}
+            >
+              라이브러리에 추가
+            </button>
+          )}
+        </div>
+      )}
     </li>
   );
 }

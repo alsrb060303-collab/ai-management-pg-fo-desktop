@@ -1,5 +1,6 @@
 mod claude_config;
 mod dock;
+mod library;
 mod tray;
 
 use tauri::{Manager, WindowEvent};
@@ -24,10 +25,18 @@ pub fn run() {
             dock::dock_set_pinned,
             dock::sidebar_hide,
             claude_config::claude_config_scan,
+            library::library_overview,
+            library::library_set_dir,
+            library::library_apply,
+            library::library_remove,
+            library::library_update,
+            library::library_import,
+            library::config_set_enabled,
         ])
         .setup(|app| {
             let handle = app.handle();
             Dock::manage(handle);
+            library::Library::manage(handle)?;
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);

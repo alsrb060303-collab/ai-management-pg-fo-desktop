@@ -6,7 +6,7 @@
 //! writes files, and credentials (`.credentials.json`, `~/.claude.json`) are
 //! never read.
 
-mod frontmatter;
+pub(crate) mod frontmatter;
 mod scan;
 
 use std::path::PathBuf;

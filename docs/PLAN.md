@@ -92,6 +92,14 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
   - 이미 git에 커밋된 `settings.local.json`은 건드리지 않는다(저장소 제공 파일로 취급됨).
   - plugin 안의 skill은 `skillOverrides`로 개별 제외가 안 된다.
 
+**Phase 3 결정 (2026-10-10)**
+- 라이브러리 위치: 사용자가 고른 폴더(git 레포로 관리하면 여러 PC에서 공유 가능). 고르지 않으면 앱 데이터 폴더의 `library/`.
+  - 구조: `<라이브러리>/skills/<이름>/SKILL.md`(+부속 파일), `<라이브러리>/agents/<이름>.md`
+- 적용·끄기 모두 항목마다 **나만**(개인) / **팀**(공유)을 고른다.
+  - 적용: 둘 다 `.claude/skills|agents/`로 복사. 나만이면 `.git/info/exclude`에 추가.
+  - 끄기: 나만이면 `.claude/settings.local.json`, 팀이면 `.claude/settings.json`에 기록.
+- 앱이 넣은 파일은 앱 데이터 폴더의 `applied.json`에 해시와 함께 기록한다(프로젝트에 관리 파일을 추가하지 않음). 사용자가 수정한 복사본은 묻지 않고 지우거나 덮어쓰지 않는다.
+
 ### 3.4 문서 생성
 1. 기술 스택 감지: `package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod` 등
 2. 템플릿으로 즉시 초안 생성 (오프라인)
