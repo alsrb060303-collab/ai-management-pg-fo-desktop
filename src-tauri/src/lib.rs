@@ -24,8 +24,9 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle();
-            Dock::start(handle)?;
+            Dock::manage(handle);
             tray::create(handle)?;
+            Dock::start(handle)?;
             tray::register_shortcut(handle);
             Ok(())
         })

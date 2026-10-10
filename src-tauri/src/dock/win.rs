@@ -34,8 +34,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic, IsWindow, IsWindowVisible,
     KillTimer, MSG, OBJID_WINDOW, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, SW_HIDE,
     SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetTimer, SetWindowPos, ShowWindowAsync, TranslateMessage, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_TIMER, WM_USER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, ShowWindowAsync, TranslateMessage,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_TIMER, WM_USER, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 use windows::core::{BOOL, PWSTR};
 
@@ -62,6 +63,18 @@ impl TrackerHandle {
 }
 
 pub fn start(app: AppHandle, sidebar: HWND) -> std::io::Result<TrackerHandle> {
+    // Keep the sidebar out of the taskbar and Alt+Tab for good. `skipTaskbar`
+    // alone is lost whenever the window is hidden and shown again. The style is
+    // picked up on the next show, which the tracker's first sync does.
+    unsafe {
+        let ex_style = GetWindowLongPtrW(sidebar, GWL_EXSTYLE);
+        let _ = ShowWindow(sidebar, SW_HIDE);
+        SetWindowLongPtrW(
+            sidebar,
+            GWL_EXSTYLE,
+            (ex_style | WS_EX_TOOLWINDOW.0 as isize) & !(WS_EX_APPWINDOW.0 as isize),
+        );
+    }
     // HWND is not Send; pass the raw value to the tracker thread.
     let sidebar = sidebar.0 as isize;
     let (tx, rx) = mpsc::channel();
@@ -195,8 +208,10 @@ struct Tracker {
     hooked_pid: Option<u32>,
     /// Whether we last made the sidebar topmost. `None` until first applied.
     topmost: Option<bool>,
+    /// Visibility we last requested; `IsWindowVisible` lags behind queued
+    /// `ShowWindowAsync` calls. `None` after a refresh to resynchronize.
+    shown: Option<bool>,
     last_rect: Option<Rect>,
-    last_monitor: Option<isize>,
     settle_timer: usize,
 }
 
@@ -210,8 +225,8 @@ impl Tracker {
             target_hooks: Vec::new(),
             hooked_pid: None,
             topmost: None,
+            shown: None,
             last_rect: None,
-            last_monitor: None,
             settle_timer: 0,
         }
     }
@@ -241,6 +256,9 @@ impl Tracker {
         if self.is_own(hwnd) {
             return;
         }
+        // Re-apply the rect even if the target did not move: the user may have
+        // dragged the sidebar away.
+        self.last_rect = None;
         if self.settings().enabled
             && let Some(app) = classify(hwnd)
             && self.target.as_ref().map(|t| t.hwnd) != Some(hwnd)
@@ -263,6 +281,7 @@ impl Tracker {
 
     fn refresh(&mut self, user_show: bool) {
         self.last_rect = None;
+        self.shown = None;
         // The user asked to see the sidebar while its target is out of view:
         // let go of the target so the sidebar shows at the screen edge.
         if user_show && self.target.as_ref().is_some_and(|t| is_hidden(t.hwnd)) {
@@ -322,11 +341,17 @@ impl Tracker {
     }
 
     fn attach(&mut self, hwnd: HWND, app: TargetApp) {
-        let pid = window_pid(hwnd);
+        // Location, show/hide and destroy come from the target's process, so scope
+        // those noisy events to it. Console windows report their client (cmd.exe)
+        // as owner while conhost raises the events, so listen to all processes;
+        // on_event filters by hwnd anyway.
+        let pid = if app == TargetApp::Console {
+            0
+        } else {
+            window_pid(hwnd)
+        };
         if self.hooked_pid != Some(pid) {
             self.unhook_target();
-            // Location, show/hide and destroy come from the target's process, so
-            // scope those noisy events to it.
             self.target_hooks.extend(
                 [
                     hook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_LOCATIONCHANGE, pid),
@@ -386,6 +411,7 @@ impl Tracker {
             return;
         }
         self.last_rect = Some(rect);
+        let current = unsafe { MonitorFromWindow(self.sidebar, MONITOR_DEFAULTTONEAREST) };
         unsafe {
             let _ = SetWindowPos(
                 self.sidebar,
@@ -398,8 +424,7 @@ impl Tracker {
             );
         }
 
-        let monitor = monitor.0 as isize;
-        if self.last_monitor.is_some_and(|m| m != monitor) {
+        if current != monitor {
             // Moving to a monitor with another DPI makes Windows resize the
             // sidebar; re-apply our rect once that has settled.
             unsafe {
@@ -409,17 +434,19 @@ impl Tracker {
                 self.settle_timer = SetTimer(None, 0, DPI_SETTLE_MS, None);
             }
         }
-        self.last_monitor = Some(monitor);
     }
 
-    fn set_visible(&self, visible: bool) {
-        let shown = unsafe { IsWindowVisible(self.sidebar) }.as_bool();
+    fn set_visible(&mut self, visible: bool) {
+        let shown = self
+            .shown
+            .unwrap_or_else(|| unsafe { IsWindowVisible(self.sidebar) }.as_bool());
         if shown != visible {
             let cmd = if visible { SW_SHOWNOACTIVATE } else { SW_HIDE };
             unsafe {
                 let _ = ShowWindowAsync(self.sidebar, cmd);
             }
         }
+        self.shown = Some(visible);
     }
 
     fn set_topmost(&mut self, on: bool) {
@@ -431,10 +458,15 @@ impl Tracker {
         } else {
             // Dropping behind the (non-topmost) foreground window clears topmost
             // and keeps the sidebar from covering the app the user switched to.
+            // The desktop sits at the bottom of the z-order, so never go behind it.
             let foreground = unsafe { GetForegroundWindow() };
             if !foreground.0.is_null()
                 && !self.is_own(foreground)
                 && !has_ex_style(foreground, WS_EX_TOPMOST.0)
+                && !matches!(
+                    class_name(foreground).as_str(),
+                    "Progman" | "WorkerW" | "Shell_TrayWnd"
+                )
             {
                 foreground
             } else {

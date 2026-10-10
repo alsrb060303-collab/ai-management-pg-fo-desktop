@@ -74,8 +74,9 @@ pub struct Dock {
 }
 
 impl Dock {
-    /// Registers the dock as managed state and starts following target windows.
-    pub fn start(app: &AppHandle) -> tauri::Result<()> {
+    /// Registers the dock as managed state. Call `start` afterwards, once anything
+    /// that listens for status events (the tray) is set up.
+    pub fn manage(app: &AppHandle) {
         let settings = Settings {
             enabled: true,
             pinned: false,
@@ -94,7 +95,10 @@ impl Dock {
             #[cfg(windows)]
             tracker: OnceLock::new(),
         });
+    }
 
+    /// Starts following target windows and publishing status.
+    pub fn start(app: &AppHandle) -> tauri::Result<()> {
         #[cfg(windows)]
         {
             let window = app
@@ -145,8 +149,14 @@ impl Dock {
     }
 
     pub fn toggle_visible(&self, app: &AppHandle) {
-        let visible = self.settings().visible;
-        self.set_visible(app, !visible);
+        // Decide from what is on screen: the dock may have hidden the sidebar with
+        // its target while the user setting still says visible.
+        let on_screen = self.settings().visible
+            && app
+                .get_webview_window(SIDEBAR_LABEL)
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(true);
+        self.set_visible(app, !on_screen);
     }
 
     /// Stores the latest status and notifies the frontend when it changed.

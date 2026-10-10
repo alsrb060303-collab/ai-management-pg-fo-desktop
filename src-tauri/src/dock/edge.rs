@@ -25,6 +25,9 @@ pub fn apply(app: &AppHandle, dock: &Dock) {
         };
         let width = layout::to_physical(SIDEBAR_WIDTH, monitor.scale_factor());
         let rect = layout::place_at_edge(work, width);
+        // GTK will not shrink a non-resizable window below its default size; the
+        // window is undecorated, so the user still cannot resize it by hand.
+        let _ = window.set_resizable(true);
         let _ = window.set_position(PhysicalPosition::new(rect.left, rect.top));
         let _ = window.set_size(PhysicalSize::new(rect.width() as u32, rect.height() as u32));
     }
