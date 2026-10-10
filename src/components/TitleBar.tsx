@@ -1,25 +1,14 @@
-import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useUiStore } from "../store/ui";
+import { useDockStore } from "../store/dock";
 
 // The window is undecorated, so this bar provides dragging and the window buttons.
 export function TitleBar() {
-  const pinned = useUiStore((s) => s.pinned);
-  const setPinned = useUiStore((s) => s.setPinned);
+  const status = useDockStore((s) => s.status);
+  const setEnabled = useDockStore((s) => s.setEnabled);
+  const setPinned = useDockStore((s) => s.setPinned);
+  const hide = useDockStore((s) => s.hide);
 
-  const togglePin = async () => {
-    const next = !pinned;
-    if (isTauri()) await getCurrentWindow().setAlwaysOnTop(next);
-    setPinned(next);
-  };
-
-  const minimize = () => {
-    if (isTauri()) void getCurrentWindow().minimize();
-  };
-
-  const close = () => {
-    if (isTauri()) void getCurrentWindow().close();
-  };
+  const docked = status?.enabled ?? false;
+  const pinned = status?.pinned ?? false;
 
   return (
     <header
@@ -31,17 +20,21 @@ export function TitleBar() {
       </span>
       <div className="flex h-full">
         <TitleButton
+          label={docked ? "터미널에서 떼기" : "터미널 옆에 붙이기"}
+          onClick={() => setEnabled(!docked)}
+          active={docked}
+        >
+          <MagnetIcon />
+        </TitleButton>
+        <TitleButton
           label={pinned ? "항상 위 해제" : "항상 위"}
-          onClick={togglePin}
+          onClick={() => setPinned(!pinned)}
           active={pinned}
         >
-          📌
+          <PinIcon />
         </TitleButton>
-        <TitleButton label="최소화" onClick={minimize}>
-          —
-        </TitleButton>
-        <TitleButton label="닫기" onClick={close} danger>
-          ✕
+        <TitleButton label="숨기기 (Ctrl+Alt+Space)" onClick={hide} danger>
+          <CloseIcon />
         </TitleButton>
       </div>
     </header>
@@ -64,11 +57,48 @@ function TitleButton({ label, onClick, active, danger, children }: TitleButtonPr
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={`flex h-full w-9 items-center justify-center text-xs transition-colors ${
+      className={`flex h-full w-9 items-center justify-center transition-colors ${
         danger ? "hover:bg-red-600 hover:text-white" : "hover:bg-border"
       } ${active ? "text-accent" : "text-text-muted"}`}
     >
       {children}
     </button>
+  );
+}
+
+const iconProps = {
+  width: 14,
+  height: 14,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
+
+function MagnetIcon() {
+  return (
+    <svg aria-hidden="true" {...iconProps}>
+      <path d="M6 3v8a6 6 0 0 0 12 0V3" />
+      <path d="M6 7h4M14 7h4" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg aria-hidden="true" {...iconProps}>
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 6 3 4H7l3-4z" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" {...iconProps}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   );
 }

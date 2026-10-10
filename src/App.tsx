@@ -1,5 +1,8 @@
+import { useEffect } from "react";
+import { StatusBar } from "./components/StatusBar";
 import { TabNav } from "./components/TabNav";
 import { TitleBar } from "./components/TitleBar";
+import { subscribeDockStatus } from "./store/dock";
 import { type TabId, useUiStore } from "./store/ui";
 
 // Each tab is a placeholder until its phase in docs/PLAN.md is implemented.
@@ -26,6 +29,13 @@ export default function App() {
   const activeTab = useUiStore((s) => s.activeTab);
   const panel = PANELS[activeTab];
 
+  useEffect(() => {
+    const unsubscribe = subscribeDockStatus();
+    return () => {
+      void unsubscribe.then((stop) => stop());
+    };
+  }, []);
+
   return (
     <div className="flex h-full flex-col">
       <TitleBar />
@@ -44,6 +54,7 @@ export default function App() {
         </ul>
         <p className="mt-4 text-xs text-text-muted">준비 중</p>
       </main>
+      <StatusBar />
     </div>
   );
 }
