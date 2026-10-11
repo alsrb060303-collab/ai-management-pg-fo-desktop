@@ -165,7 +165,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 5. 문서 작성기** (구현·리뷰 완료, Linux UI 확인. Windows 테스트 대기: `docs/testing/phase4-windows.md` E): 블록 그래프 편집, 미리보기, 저장·불러오기, 실행 취소, 프로젝트에 쓰기
 - [~] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
 - [ ] **Phase 7. Git 작업 관리**: 브랜치·worktree·상태·조작
-- [~] **Phase 8a. 브랜치 메모/TODO (로컬)** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` F)
+- [x] **Phase 8a. 브랜치 메모/TODO (로컬)**: 저장소·브랜치별 메모와 할 일, 브랜치 따라가기, 두 창 동기화
 - [ ] **Phase 8b. 메모 동기화** (유료 고객 Firebase)
 - [ ] **Phase 9. GitHub 연동**: 로그인, PR·이슈
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
