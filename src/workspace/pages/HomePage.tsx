@@ -50,7 +50,7 @@ export function HomePage() {
   return (
     <div className="mx-auto flex min-h-full max-w-2xl flex-col justify-center px-8 py-16">
       <div className="mb-2 flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-accent-soft text-accent">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-linear-to-br from-brand-from to-brand-to text-white shadow-card">
           <Blocks size={22} />
         </span>
         <h1 className="font-serif text-[32px] leading-tight font-medium tracking-tight">
