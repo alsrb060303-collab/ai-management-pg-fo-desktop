@@ -20,8 +20,8 @@ use auth::{DeviceCode, Outcome, TokenStore};
 use http::{Api, Endpoints};
 
 /// The OAuth app's client ID (public; the device flow needs no secret).
-/// Empty until the app is registered; `AIM_GITHUB_CLIENT_ID` overrides it.
-const CLIENT_ID: &str = "";
+/// `AIM_GITHUB_CLIENT_ID` overrides it, e.g. for a test app.
+const CLIENT_ID: &str = "Ov23liLkXnOqA1pmberI";
 
 pub const AUTH_EVENT: &str = "github-auth";
 
