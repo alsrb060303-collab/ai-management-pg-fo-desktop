@@ -10,6 +10,9 @@ export const ko = {
   "memo.loading": "불러오는 중…",
 
   // Branch picker
+  "memo.sync.syncing": "동기화하는 중",
+  "memo.sync.synced": "다른 기기와 동기화됨",
+  "memo.sync.failed": "동기화 실패",
   "memo.branch": "브랜치",
   "memo.branch.thisFolder": "이 폴더",
   "memo.branch.detached": "분리된 HEAD",
@@ -40,6 +43,9 @@ export const ko = {
 } as const;
 
 export const en: Messages<typeof ko> = {
+  "memo.sync.syncing": "Syncing",
+  "memo.sync.synced": "Synced with your other devices",
+  "memo.sync.failed": "Sync failed",
   "memo.page.title": "Notes",
   "memo.page.description":
     "Keep a note and to-dos for each branch. They follow along when you switch branches in the terminal.",

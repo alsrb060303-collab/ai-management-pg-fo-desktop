@@ -6,6 +6,9 @@ mod api;
 mod auth;
 mod http;
 
+#[cfg(test)]
+pub(crate) use auth::tests::serve as test_serve;
+
 use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -100,6 +103,11 @@ impl GitHub {
         }
         result
     }
+}
+
+/// The signed-in GitHub token, for sync to sign in to Firebase with.
+pub(crate) fn current_token(app: &AppHandle) -> Option<String> {
+    app.try_state::<GitHub>()?.token().ok().flatten()
 }
 
 #[derive(Clone, Debug, Serialize)]

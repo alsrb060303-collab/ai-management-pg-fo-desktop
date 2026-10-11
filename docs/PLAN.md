@@ -141,6 +141,14 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
   - 충돌: `updatedAt`(+deviceId) 비교를 규칙에서 강제한다. Firestore 자체 LWW는 도착 순서 기준이라 그대로 쓰면 안 됨.
   - 읽기·쓰기 절약: `updatedAt > lastSync` 증분 조회, 쓰기는 모아서 전송.
 - 로그인: GitHub(Device Flow) 토큰 → `GithubAuthProvider.credential(token)` → `signInWithCredential`. 앱 안 팝업 로그인은 안 되므로 쓰지 않는다.
+
+**Phase 8b 결정 (2026-10-11)**
+- 요금제(8c)가 정해질 때까지는 **허용 목록**에 있는 계정만 동기화한다. Firebase 콘솔에서 `allowed/{uid}` 문서를 직접 만든다. 보안 규칙이 강제한다(`firebase/firestore.rules`).
+- 로그인은 작업 탭의 GitHub 로그인을 재사용한다. Rust가 Identity Toolkit REST(`accounts:signInWithIdp`, `providerId=github.com`)로 GitHub 토큰을 Firebase 세션으로 바꾼다. JS SDK는 데스크탑 웹뷰를 지원하지 않아서 쓰지 않는다.
+- 동기화는 자동이다. 편집 후 3초 모아서 올리고, 1분마다와 창 포커스 때 받아온다.
+- 경로는 `users/{uid}/items/{itemId}` 한 컬렉션이다. 받아오기는 서버 시각 `syncedAt`(+문서 이름) 커서로 해서 기기 시계 차이와 무관하다.
+- 로컬 행의 `synced_at`이 `updated_at`과 다르면 올릴 대상이다. 충돌은 `updatedAt`이 큰 쪽(같으면 deviceId 큰 쪽)이 이기고, 앱과 보안 규칙이 같은 기준을 쓴다.
+- 계정이 바뀌면 전부 다시 올린다. 저장소 키가 바뀌어 메모 id가 바뀌면 옛 id에 tombstone을 남긴다.
 - 유료 권한 부여에는 결제 웹훅을 받을 서버 코드가 필요하다(Cloud Functions는 Blaze 요금제 필요, 또는 다른 호스팅).
 
 ### 3.8 메인 창 & 문서 작성기 (2026-10-10 결정)
@@ -174,7 +182,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
 - [~] **Phase 7. Git 작업 관리** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` G): 브랜치·worktree·상태·diff·조작
 - [x] **Phase 8a. 브랜치 메모/TODO (로컬)**: 저장소·브랜치별 메모와 할 일, 브랜치 따라가기, 두 창 동기화
-- [ ] **Phase 8b. 메모 동기화** (유료 고객 Firebase)
+- [~] **Phase 8b. 메모 동기화 (데이터베이스 연동)** (구현 완료, Firebase 프로젝트 설정 후 Windows 테스트: `docs/sync-setup.md`, `docs/testing/phase4-windows.md` I): Firestore 연동, GitHub 계정으로 로그인, 허용 목록 계정만 사용
+- [ ] **Phase 8c. 요금제** (미결정 · 보류): 결제 수단·가격·유료 범위. 정해지면 결제 웹훅이 허용 목록(`allowed/{uid}`)을 채우게 바꾼다
 - [~] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
@@ -182,8 +191,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 
 | 항목 | 상태 |
 |---|---|
-| 유료 플랜: 결제 수단(Paddle·Lemon Squeezy·Stripe 등), 가격, 사업자 등록·세금, 유료 기능 범위 | Phase 8 전에 결정 |
-| 유료 사용자가 늘면 Firebase Blaze(종량제) 전환 필요. Firestore·Auth에는 지출 상한이 없음 | Phase 8 전에 결정 |
+| 유료 플랜: 결제 수단(Paddle·Lemon Squeezy·Stripe 등), 가격, 사업자 등록·세금, 유료 기능 범위 | Phase 8c (보류) |
+| 유료 사용자가 늘면 Firebase Blaze(종량제) 전환 필요. Firestore·Auth에는 지출 상한이 없음 | Phase 8c (보류) |
 | GitHub Device Flow 토큰 → Firebase 로그인 동작 여부 | PoC 필요 |
 | 도킹 PoC: owner 지정, 포커스, DPI, 관리자 권한 터미널 | 실제 Windows에서 테스트 필요 |
 | 정식 앱 이름 | 미정 |

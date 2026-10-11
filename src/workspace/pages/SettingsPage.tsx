@@ -2,9 +2,10 @@ import { getVersion } from "@tauri-apps/api/app";
 import { isTauri } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Button, Card, PageHeader, Row, Segmented, Switch } from "../../components/ui";
-import { type LocalePref, useLocaleStore, useT } from "../../i18n";
+import { type LocalePref, timeAgo, useLocaleStore, useT } from "../../i18n";
 import { useDockStore } from "../../store/dock";
 import { useLibraryStore } from "../../store/library";
+import { useSyncStore } from "../../store/sync";
 import { type ThemePref, useThemeStore } from "../../store/theme";
 
 const THEMES: ThemePref[] = ["system", "light", "dark"];
@@ -76,6 +77,8 @@ export function SettingsPage() {
         </Row>
       </Card>
 
+      <SyncCard />
+
       <Card title={t("settings.library")}>
         <Row
           title={t("settings.libraryDir")}
@@ -103,5 +106,74 @@ export function SettingsPage() {
         <Row title={t("settings.license")} description={t("settings.licenseHint")} />
       </Card>
     </div>
+  );
+}
+
+function SyncCard() {
+  const t = useT();
+  const { status, init, syncNow, setEnabled } = useSyncStore();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    void init();
+  }, [init]);
+
+  const state = status?.state ?? "notConfigured";
+  const configured = state !== "notConfigured";
+  const on = configured && state !== "off";
+  const last = status?.lastSync
+    ? t("settings.sync.idle", { time: timeAgo(Math.floor(status.lastSync / 1000)) })
+    : t("settings.sync.never");
+  const detail =
+    state === "syncing"
+      ? t("settings.sync.syncing")
+      : state === "idle"
+        ? last
+        : state === "error"
+          ? (status?.message ?? "")
+          : t(`settings.sync.${state}`);
+
+  return (
+    <Card title={t("settings.sync")}>
+      <Row title={t("settings.sync.title")} description={t("settings.sync.hint")}>
+        <Switch
+          label={t("settings.sync.title")}
+          checked={on}
+          disabled={!configured}
+          onChange={(next) => void setEnabled(next)}
+        />
+      </Row>
+      {configured && (
+        <Row
+          title={<span className={state === "error" ? "text-danger" : ""}>{detail}</span>}
+          description={state === "error" ? last : undefined}
+        >
+          {on && state !== "needsGitHub" && state !== "notAllowed" && (
+            <Button size="sm" disabled={state === "syncing"} onClick={syncNow}>
+              {t("settings.sync.now")}
+            </Button>
+          )}
+        </Row>
+      )}
+      {status?.uid && (state === "notAllowed" || state === "error" || state === "idle") && (
+        <Row
+          title={t("settings.sync.accountId")}
+          description={<span className="selectable font-mono">{status.uid}</span>}
+        >
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              void navigator.clipboard.writeText(status.uid ?? "").then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              });
+            }}
+          >
+            {copied ? t("settings.sync.copied") : t("settings.sync.copy")}
+          </Button>
+        </Row>
+      )}
+    </Card>
   );
 }

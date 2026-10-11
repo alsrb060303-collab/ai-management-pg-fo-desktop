@@ -7,6 +7,7 @@ import { WorkPanel } from "../features/work/WorkPanel";
 import { subscribeDockStatus } from "../store/dock";
 import { useLibraryStore } from "../store/library";
 import { restoreProject, useProjectStore } from "../store/project";
+import { useSyncStore } from "../store/sync";
 import { useUiStore } from "../store/ui";
 import type { ViewMode } from "../store/view";
 import { StatusBar } from "./StatusBar";
@@ -27,6 +28,7 @@ export default function SidebarApp() {
   // changed there whenever it becomes the visible window again.
   useEffect(() => {
     restoreProject();
+    void useSyncStore.getState().init();
     if (!isTauri()) return;
     const unlisten = listen<ViewMode>("view-mode", (event) => {
       if (event.payload !== "sidebar") return;

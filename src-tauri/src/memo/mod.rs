@@ -14,8 +14,7 @@ use std::sync::OnceLock;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use store::Store;
-pub use store::{BranchMemo, Todo};
+pub use store::{BranchMemo, Store, SyncRow, Todo};
 
 pub const MEMO_EVENT: &str = "memo-changed";
 
@@ -35,7 +34,7 @@ impl Memo {
         Ok(())
     }
 
-    fn store(&self) -> store::Result<&Store> {
+    pub fn store(&self) -> store::Result<&Store> {
         if let Some(store) = self.store.get() {
             return Ok(store);
         }
@@ -133,6 +132,7 @@ async fn blocking<T: Send + 'static>(
 }
 
 fn notify(app: &AppHandle, repo_key: String, branch: String) {
+    crate::sync::changed(app);
     let _ = app.emit(MEMO_EVENT, Changed { repo_key, branch });
 }
 

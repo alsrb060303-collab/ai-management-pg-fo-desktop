@@ -1,8 +1,19 @@
-import { Check, GitBranch, GripVertical, Plus, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Cloud,
+  CloudOff,
+  GitBranch,
+  GripVertical,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type MessageKey, type Params, useT } from "../../i18n";
 import { type BranchInfo, shownBranch, type Todo, useMemoStore } from "../../store/memo";
 import { useProjectStore } from "../../store/project";
+import { useSyncStore } from "../../store/sync";
 
 /** How often the checked-out branch is re-read while the panel is visible. */
 const POLL_MS = 4000;
@@ -95,6 +106,7 @@ function BranchBar({ compact }: { compact: boolean }) {
         <span className="min-w-0 flex-1 truncate" title={context.repoKey}>
           {context.repoName}
         </span>
+        <SyncBadge />
         <button
           type="button"
           onClick={() => void choose()}
@@ -431,4 +443,37 @@ function TodoRow({
       )}
     </li>
   );
+}
+
+/** Sync state next to the repository name, only while sync is in use. */
+function SyncBadge() {
+  const t = useT();
+  const status = useSyncStore((s) => s.status);
+  if (!status) return null;
+  const { state } = status;
+  if (state === "syncing") {
+    return (
+      <span className="flex shrink-0 items-center gap-1" title={t("memo.sync.syncing")}>
+        <RefreshCw size={12} className="animate-spin" />
+      </span>
+    );
+  }
+  if (state === "idle") {
+    return (
+      <span className="flex shrink-0 items-center text-success" title={t("memo.sync.synced")}>
+        <Cloud size={13} />
+      </span>
+    );
+  }
+  if (state === "error") {
+    return (
+      <span
+        className="flex shrink-0 items-center text-danger"
+        title={`${t("memo.sync.failed")}: ${status.message ?? ""}`}
+      >
+        <CloudOff size={13} />
+      </span>
+    );
+  }
+  return null;
 }
