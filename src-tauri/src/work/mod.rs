@@ -20,7 +20,8 @@ async fn blocking<T: Send + 'static>(
 }
 
 fn repo_root(project: &str) -> Result<PathBuf, String> {
-    read::root(Path::new(project))?.ok_or_else(|| "git 저장소가 아니에요".to_string())
+    read::root(Path::new(project))?
+        .ok_or_else(|| crate::tr!("git 저장소가 아니에요", "Not a git repository"))
 }
 
 /// `None` when the project is not a git repository.

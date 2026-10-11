@@ -1,6 +1,7 @@
 import { Handle, type NodeProps, Position, useReactFlow } from "@xyflow/react";
 import { GripVertical, PencilLine, Trash2, X } from "lucide-react";
 import { memo, useRef, useState } from "react";
+import { useT } from "../../i18n";
 import {
   ACCEPTS,
   type BlockNode,
@@ -42,6 +43,7 @@ export const BlockNodeView = memo(function BlockNodeView({
   const kind = block?.kind ?? "instruction";
   const Icon = KIND_ICON[kind];
   const color = kindColor(kind);
+  const t = useT();
 
   return (
     <div
@@ -53,22 +55,26 @@ export const BlockNodeView = memo(function BlockNodeView({
       <div className="px-3 pt-2 pb-2.5">
         <div className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color }}>
           <Icon size={12} />
-          {KIND_LABEL[kind]}
+          {t(KIND_LABEL[kind])}
           {block?.category && <span className="text-text-subtle">· {block.category}</span>}
           <span className="ml-auto flex items-center gap-1">
             {data.body !== undefined && (
               <span className="flex items-center gap-0.5 text-text-subtle">
                 <PencilLine size={11} />
-                수정함
+                {t("composer.node.edited")}
               </span>
             )}
             <span className={selected ? "[&>button]:opacity-100" : ""}>
-              <DeleteNodeButton id={id} label="블록 삭제" />
+              <DeleteNodeButton id={id} label={t("composer.node.deleteBlock")} />
             </span>
           </span>
         </div>
         <div className="mt-1 text-sm leading-snug font-medium">
-          {block?.title ?? <span className="text-danger">없는 블록 ({data.blockId})</span>}
+          {block?.title ?? (
+            <span className="text-danger">
+              {t("composer.node.missingBlock", { id: data.blockId })}
+            </span>
+          )}
         </div>
         {block?.summary && (
           <div className="mt-0.5 line-clamp-2 text-xs leading-snug text-text-muted">
@@ -97,9 +103,10 @@ export const OutputNodeView = memo(function OutputNodeView({
   const setScope = useComposerStore((s) => s.setScope);
   const reorder = useComposerStore((s) => s.reorder);
   const { deleteElements } = useReactFlow();
+  const t = useT();
 
   const personal = data.scope === "personal";
-  const meta = TARGETS.find((t) => t.target === data.target) ?? TARGETS[0];
+  const meta = TARGETS.find((m) => m.target === data.target) ?? TARGETS[0];
   const Icon = meta.icon;
   const inputs = doc ? inputsOf(doc, id) : [];
   const isClaudeMd = data.target === "claudeMd";
@@ -133,11 +140,13 @@ export const OutputNodeView = memo(function OutputNodeView({
             {targetTitle(data.target, personal)}
           </div>
           <div className="text-[11px] text-text-subtle">
-            {ACCEPTS[data.target].map((k) => KIND_LABEL[k]).join(" · ")} 연결
+            {t("composer.node.accepts", {
+              kinds: ACCEPTS[data.target].map((k) => t(KIND_LABEL[k])).join(" · "),
+            })}
           </div>
         </div>
         <fieldset
-          aria-label="공유 범위"
+          aria-label={t("composer.node.scope")}
           className="nodrag flex rounded-md bg-sunken p-0.5 text-[11px]"
         >
           {(["team", "personal"] as const).map((scope) => (
@@ -145,24 +154,26 @@ export const OutputNodeView = memo(function OutputNodeView({
               key={scope}
               type="button"
               aria-pressed={data.scope === scope}
-              title={scope === "team" ? "커밋해서 팀과 공유" : "git에 올리지 않고 나만 사용"}
+              title={
+                scope === "team" ? t("composer.node.teamHint") : t("composer.node.personalHint")
+              }
               onClick={() => setScope(id, scope)}
               className={`rounded px-1.5 py-0.5 font-medium ${
                 data.scope === scope ? "bg-surface-raised text-text shadow-card" : "text-text-muted"
               }`}
             >
-              {scope === "team" ? "팀" : "나만"}
+              {scope === "team" ? t("composer.node.team") : t("composer.personal")}
             </button>
           ))}
         </fieldset>
         <span className={selected ? "[&>button]:opacity-100" : ""}>
-          <DeleteNodeButton id={id} label="출력 노드 삭제" />
+          <DeleteNodeButton id={id} label={t("composer.node.deleteOutput")} />
         </span>
       </div>
 
       {inputs.length === 0 ? (
         <p className="px-3.5 py-4 text-center text-xs text-text-subtle">
-          왼쪽 블록의 점을 끌어서 여기에 연결하세요
+          {t("composer.node.empty")}
         </p>
       ) : (
         <OrderedInputs
@@ -189,11 +200,11 @@ export const OutputNodeView = memo(function OutputNodeView({
               />
             </div>
             <span className={over ? "font-medium text-danger" : ""}>
-              {lines} / {CLAUDE_MD_LINE_BUDGET}줄
+              {t("composer.node.lineBudget", { n: lines, max: CLAUDE_MD_LINE_BUDGET })}
             </span>
           </>
         ) : (
-          <span>파일 {fileCount ?? 0}개</span>
+          <span>{t("composer.node.fileCount", { n: fileCount ?? 0 })}</span>
         )}
       </div>
     </div>
@@ -216,6 +227,7 @@ function OrderedInputs({
 }) {
   const listRef = useRef<HTMLOListElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  const t = useT();
 
   // Pointer events rather than HTML5 drag and drop, which WebKitGTK breaks.
   const indexAt = (clientY: number) => {
@@ -243,7 +255,7 @@ function OrderedInputs({
               <button
                 type="button"
                 tabIndex={-1}
-                aria-label={`${title} 순서 바꾸기`}
+                aria-label={t("composer.node.reorder", { title })}
                 className="cursor-grab touch-none text-text-subtle active:cursor-grabbing"
                 onPointerDown={(e) => {
                   e.currentTarget.setPointerCapture(e.pointerId);
@@ -271,8 +283,8 @@ function OrderedInputs({
             <span className="min-w-0 flex-1 truncate">{title}</span>
             <button
               type="button"
-              aria-label={`${title} 연결 끊기`}
-              title="연결 끊기"
+              aria-label={t("composer.node.disconnectItem", { title })}
+              title={t("composer.node.disconnect")}
               onClick={() => onDisconnect(nodeId)}
               className="shrink-0 rounded p-0.5 text-text-subtle opacity-0 group-hover/item:opacity-100 hover:bg-hover hover:text-danger focus-visible:opacity-100"
             >

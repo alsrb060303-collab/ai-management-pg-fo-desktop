@@ -7,43 +7,45 @@ import {
   PanelRightOpen,
 } from "lucide-react";
 import { Logo } from "../../components/Logo";
+import { type MessageKey, useT } from "../../i18n";
 import { useProjectStore } from "../../store/project";
 import { useWorkspaceStore } from "../../store/workspace";
 import { switchToSidebar } from "../leave";
 
-function greeting(hour: number): string {
-  if (hour >= 5 && hour < 12) return "좋은 아침이에요";
-  if (hour >= 12 && hour < 18) return "좋은 오후예요";
-  return "좋은 저녁이에요";
+function greeting(hour: number): MessageKey {
+  if (hour >= 5 && hour < 12) return "shell.home.morning";
+  if (hour >= 12 && hour < 18) return "shell.home.afternoon";
+  return "shell.home.evening";
 }
 
 export function HomePage() {
   const go = useWorkspaceStore((s) => s.go);
   const { recent, select } = useProjectStore();
+  const t = useT();
 
   const actions: { icon: LucideIcon; title: string; description: string; onClick: () => void }[] = [
     {
       icon: Blocks,
-      title: "새 CLAUDE.md 만들기",
-      description: "추천 블록을 연결해서 지침 · 규칙 · skill · agent 문서를 만들어요.",
+      title: t("shell.home.newClaudeMd"),
+      description: t("shell.home.newClaudeMdDesc"),
       onClick: () => go("composer"),
     },
     {
       icon: MapIcon,
-      title: "프로젝트 설정 보기",
-      description: "Claude Code가 이 프로젝트에서 읽는 설정을 범위별로 확인해요.",
+      title: t("shell.home.config"),
+      description: t("shell.home.configDesc"),
       onClick: () => go("config"),
     },
     {
       icon: Library,
-      title: "라이브러리",
-      description: "내 skill · subagent를 프로젝트에 적용하거나 빼요.",
+      title: t("shell.nav.library"),
+      description: t("shell.home.libraryDesc"),
       onClick: () => go("library"),
     },
     {
       icon: PanelRightOpen,
-      title: "사이드바로 전환",
-      description: "터미널 옆에 붙여서 작업하면서 봐요.",
+      title: t("shell.switchToSidebar"),
+      description: t("shell.home.sidebarDesc"),
       onClick: () => void switchToSidebar(),
     },
   ];
@@ -53,10 +55,10 @@ export function HomePage() {
       <div className="mb-2 flex items-center gap-3">
         <Logo size={40} className="shrink-0 drop-shadow-sm" />
         <h1 className="font-serif text-[32px] leading-tight font-medium tracking-tight">
-          {greeting(new Date().getHours())}
+          {t(greeting(new Date().getHours()))}
         </h1>
       </div>
-      <p className="mb-8 text-text-muted">오늘은 어떤 문서를 만들어 볼까요?</p>
+      <p className="mb-8 text-text-muted">{t("shell.home.prompt")}</p>
 
       <div className="grid grid-cols-2 gap-3">
         {actions.map(({ icon: Icon, title, description, onClick }) => (
@@ -78,7 +80,9 @@ export function HomePage() {
 
       {recent.length > 0 && (
         <section className="mt-10">
-          <h2 className="mb-2 px-1 text-xs font-medium text-text-subtle">최근 프로젝트</h2>
+          <h2 className="mb-2 px-1 text-xs font-medium text-text-subtle">
+            {t("shell.home.recentProjects")}
+          </h2>
           <ul className="space-y-0.5">
             {recent.slice(0, 5).map((path) => (
               <li key={path}>

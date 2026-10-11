@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { IconButton } from "../../components/ui";
+import { timeAgo, useT } from "../../i18n";
 import { useProjectStore } from "../../store/project";
 import {
   type Branch,
@@ -27,7 +28,7 @@ import { GitSetupGuide } from "./GitSetupGuide";
 
 /** How often the state is re-read while the panel is visible. */
 const POLL_MS = 4000;
-/** Branches shown before "더 보기". */
+/** Branches shown before "Show more". */
 const BRANCH_LIMIT = 12;
 
 const confirm = (message: string, title: string, danger = false) =>
@@ -38,6 +39,7 @@ const confirm = (message: string, title: string, danger = false) =>
  * the sidebar (`compact`) and the main window's work page.
  */
 export function WorkPanel({ compact = false }: { compact?: boolean }) {
+  const t = useT();
   const project = useProjectStore((s) => s.current);
   const choose = useProjectStore((s) => s.choose);
   const { overview, notGit, gitMissing, loading, error, load, refresh, dismissError } =
@@ -64,13 +66,13 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
   if (!project) {
     return (
       <div className="space-y-3 text-sm">
-        <p className="text-text-muted">프로젝트 폴더를 고르면 브랜치와 worktree를 여기서 다뤄요.</p>
+        <p className="text-text-muted">{t("work.noProject")}</p>
         <button
           type="button"
           onClick={() => void choose()}
           className="rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-sm hover:border-border-strong"
         >
-          폴더 선택
+          {t("work.chooseFolder")}
         </button>
       </div>
     );
@@ -81,12 +83,19 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
       {error && (
         <div className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
           <p className="selectable min-w-0 flex-1 whitespace-pre-wrap break-words">{error}</p>
-          <button type="button" aria-label="닫기" onClick={dismissError} className="shrink-0">
+          <button
+            type="button"
+            aria-label={t("work.close")}
+            onClick={dismissError}
+            className="shrink-0"
+          >
             <X size={13} />
           </button>
         </div>
       )}
-      {loading && !overview && !notGit && <p className="text-xs text-text-muted">불러오는 중…</p>}
+      {loading && !overview && !notGit && (
+        <p className="text-xs text-text-muted">{t("work.loading")}</p>
+      )}
       {notGit && (
         <GitSetupGuide
           key={project}
@@ -122,15 +131,13 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
   );
 }
 
-const OPERATIONS: Record<string, string> = {
-  rebase: "리베이스 중",
-  merge: "병합 중",
-  "cherry-pick": "cherry-pick 중",
-  revert: "되돌리기 중",
-  bisect: "bisect 중",
-};
+/** Operations with a label; others show git's own name. */
+const OPERATIONS = ["rebase", "merge", "cherry-pick", "revert", "bisect"] as const;
+type Operation = (typeof OPERATIONS)[number];
+const isOperation = (op: string): op is Operation => (OPERATIONS as readonly string[]).includes(op);
 
 function HeadBar({ compact }: { compact: boolean }) {
+  const t = useT();
   const { overview, busy, refresh } = useWorkStore();
   if (!overview) return null;
   const { head, operation } = overview;
@@ -138,17 +145,17 @@ function HeadBar({ compact }: { compact: boolean }) {
     <div className="flex items-center gap-2">
       <GitBranch size={compact ? 15 : 17} className="shrink-0 text-text-subtle" />
       <span className={`min-w-0 truncate font-semibold ${compact ? "text-sm" : "text-base"}`}>
-        {head.branch ?? `분리된 HEAD ${head.commit ?? ""}`}
+        {head.branch ?? t("work.detached", { commit: head.commit ?? "" })}
       </span>
       <Track ahead={head.ahead} behind={head.behind} />
       {operation && (
         <span className="shrink-0 rounded-full bg-warning/15 px-2 py-px text-[11px] text-warning">
-          {OPERATIONS[operation] ?? operation}
+          {isOperation(operation) ? t(`work.op.${operation}`) : operation}
         </span>
       )}
-      {!head.commit && <span className="text-xs text-text-subtle">커밋 없음</span>}
+      {!head.commit && <span className="text-xs text-text-subtle">{t("work.noCommits")}</span>}
       <IconButton
-        label="새로 고침"
+        label={t("work.refresh")}
         disabled={busy}
         onClick={() => void refresh(true)}
         className="ml-auto size-7"
@@ -160,12 +167,14 @@ function HeadBar({ compact }: { compact: boolean }) {
 }
 
 function Track({ ahead, behind, gone }: { ahead: number; behind: number; gone?: boolean }) {
-  if (gone) return <span className="shrink-0 text-[11px] text-text-subtle">원격 삭제됨</span>;
+  const t = useT();
+  if (gone)
+    return <span className="shrink-0 text-[11px] text-text-subtle">{t("work.track.gone")}</span>;
   if (!ahead && !behind) return null;
   return (
     <span
       className="flex shrink-0 items-center gap-1 text-[11px] text-text-muted"
-      title={`원격보다 ${ahead}개 앞, ${behind}개 뒤`}
+      title={t("work.track.title", { ahead, behind })}
     >
       {ahead > 0 && (
         <span className="flex items-center">
@@ -206,25 +215,27 @@ function Section({
   );
 }
 
-const KIND: Record<ChangeKind, { letter: string; label: string; color: string }> = {
-  modified: { letter: "M", label: "수정", color: "text-warning" },
-  added: { letter: "A", label: "추가", color: "text-success" },
-  deleted: { letter: "D", label: "삭제", color: "text-danger" },
-  renamed: { letter: "R", label: "이름 변경", color: "text-info" },
-  copied: { letter: "C", label: "복사", color: "text-info" },
-  typeChanged: { letter: "T", label: "종류 변경", color: "text-warning" },
-  untracked: { letter: "U", label: "새 파일", color: "text-success" },
-  conflicted: { letter: "!", label: "충돌", color: "text-danger" },
+/** Labels are `work.kind.<kind>`. */
+const KIND: Record<ChangeKind, { letter: string; color: string }> = {
+  modified: { letter: "M", color: "text-warning" },
+  added: { letter: "A", color: "text-success" },
+  deleted: { letter: "D", color: "text-danger" },
+  renamed: { letter: "R", color: "text-info" },
+  copied: { letter: "C", color: "text-info" },
+  typeChanged: { letter: "T", color: "text-warning" },
+  untracked: { letter: "U", color: "text-success" },
+  conflicted: { letter: "!", color: "text-danger" },
 };
 
 function Changes({ compact }: { compact: boolean }) {
+  const t = useT();
   const { overview, selected, diff, select } = useWorkStore();
   if (!overview) return null;
   const { changes, changeCount } = overview;
   return (
-    <Section title="변경 사항" count={changeCount}>
+    <Section title={t("work.changes")} count={changeCount}>
       {changeCount === 0 ? (
-        <p className="text-xs text-text-subtle">커밋하지 않은 변경이 없어요.</p>
+        <p className="text-xs text-text-subtle">{t("work.changes.none")}</p>
       ) : (
         <ul className="space-y-px">
           {changes.map((c) => (
@@ -240,7 +251,7 @@ function Changes({ compact }: { compact: boolean }) {
           ))}
           {changeCount > changes.length && (
             <li className="px-2 pt-1 text-[11px] text-text-subtle">
-              외 {changeCount - changes.length}개
+              {t("work.changes.more", { n: changeCount - changes.length })}
             </li>
           )}
         </ul>
@@ -260,17 +271,19 @@ function ChangeRow({
   open: boolean;
   onClick: () => void;
 }) {
+  const t = useT();
   const kind = KIND[change.kind];
+  const label = t(`work.kind.${change.kind}`);
   const trimmed = change.path.replace(/\/$/, "");
   const slash = trimmed.lastIndexOf("/");
   const dir = slash >= 0 ? trimmed.slice(0, slash + 1) : "";
   const name = trimmed.slice(slash + 1) + (change.path.endsWith("/") ? "/" : "");
-  const stage = change.staged ? (change.unstaged ? "일부 스테이징됨" : "스테이징됨") : "";
+  const stage = change.staged ? t(change.unstaged ? "work.partlyStaged" : "work.staged") : "";
   return (
     <button
       type="button"
       onClick={onClick}
-      title={`${kind.label}${stage ? ` · ${stage}` : ""}${change.origPath ? ` · ${change.origPath}에서` : ""}\n${change.path}`}
+      title={`${label}${stage ? ` · ${stage}` : ""}${change.origPath ? ` · ${t("work.renamedFrom", { path: change.origPath })}` : ""}\n${change.path}`}
       className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left font-mono ${
         compact ? "text-[11px]" : "text-xs"
       } ${open ? "bg-active" : "hover:bg-hover"}`}
@@ -284,7 +297,7 @@ function ChangeRow({
         <span
           className="size-1.5 shrink-0 rounded-full bg-success"
           role="img"
-          aria-label="스테이징됨"
+          aria-label={t("work.staged")}
         />
       )}
     </button>
@@ -292,11 +305,11 @@ function ChangeRow({
 }
 
 function DiffView({ diff, compact }: { diff: Diff | null; compact: boolean }) {
-  if (!diff) return <p className="px-2 py-2 text-[11px] text-text-subtle">diff 불러오는 중…</p>;
+  const t = useT();
+  if (!diff)
+    return <p className="px-2 py-2 text-[11px] text-text-subtle">{t("work.diff.loading")}</p>;
   if (diff.binary)
-    return (
-      <p className="px-2 py-2 text-[11px] text-text-subtle">바이너리 파일이라 표시하지 않아요.</p>
-    );
+    return <p className="px-2 py-2 text-[11px] text-text-subtle">{t("work.diff.binary")}</p>;
   const lines = diff.text.split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   return (
@@ -325,28 +338,19 @@ function DiffView({ diff, compact }: { diff: Diff | null; compact: boolean }) {
             {line || " "}
           </div>
         ))}
-        {lines.length === 0 && <div className="px-2 text-text-subtle">내용 변경 없음</div>}
+        {lines.length === 0 && <div className="px-2 text-text-subtle">{t("work.diff.empty")}</div>}
       </pre>
       {diff.truncated && (
         <p className="border-t border-border px-2 py-1 text-[11px] text-text-subtle">
-          너무 길어서 일부만 보여요.
+          {t("work.diff.truncated")}
         </p>
       )}
     </div>
   );
 }
 
-function timeAgo(seconds: number): string {
-  if (!seconds) return "";
-  const diff = Date.now() / 1000 - seconds;
-  if (diff < 60) return "방금";
-  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}일 전`;
-  return new Date(seconds * 1000).toLocaleDateString("ko-KR");
-}
-
 function Branches({ compact }: { compact: boolean }) {
+  const t = useT();
   const { overview, busy, run, checkBranch } = useWorkStore();
   const [adding, setAdding] = useState(false);
   const [all, setAll] = useState(false);
@@ -360,22 +364,25 @@ function Branches({ compact }: { compact: boolean }) {
     if (unmerged === 0) {
       if (
         await confirm(
-          `'${b.name}' 브랜치를 삭제할까요? 커밋은 모두 다른 곳에 남아 있어요.`,
-          "브랜치 삭제",
+          t("work.branch.deleteConfirm", { name: b.name }),
+          t("work.branch.deleteTitle"),
         )
       )
         await run("work_delete_branch", { name: b.name, force: false });
       return;
     }
     const first = await confirm(
-      `'${b.name}' 브랜치에만 있는 커밋이 ${unmerged}개 있어요. 삭제하면 이 커밋을 잃어요.\n그래도 삭제할까요?`,
-      "병합되지 않은 브랜치",
+      t(unmerged === 1 ? "work.branch.unmergedConfirm.one" : "work.branch.unmergedConfirm", {
+        name: b.name,
+        n: unmerged,
+      }),
+      t("work.branch.unmergedTitle"),
       true,
     );
     if (!first) return;
     const second = await confirm(
-      `정말 '${b.name}'을(를) 강제로 삭제할까요? 되돌릴 수 없어요.`,
-      "강제 삭제",
+      t("work.forceDeleteConfirm", { name: b.name }),
+      t("work.forceDelete"),
       true,
     );
     if (second) await run("work_delete_branch", { name: b.name, force: true });
@@ -383,11 +390,11 @@ function Branches({ compact }: { compact: boolean }) {
 
   return (
     <Section
-      title="브랜치"
+      title={t("work.branches")}
       count={branches.length}
       action={
         <IconButton
-          label="새 브랜치"
+          label={t("work.branch.new")}
           disabled={busy}
           onClick={() => setAdding(!adding)}
           className="size-6"
@@ -404,12 +411,12 @@ function Branches({ compact }: { compact: boolean }) {
             className={`group flex h-7 items-center gap-2 rounded-md px-2 hover:bg-hover ${
               compact ? "text-xs" : "text-sm"
             }`}
-            title={`${b.commit} ${b.subject}${b.upstream ? `\n원격: ${b.upstream}` : ""}${
-              b.worktree && !b.current ? `\nworktree: ${b.worktree}` : ""
-            }`}
+            title={`${b.commit} ${b.subject}${
+              b.upstream ? `\n${t("work.branch.upstream", { upstream: b.upstream })}` : ""
+            }${b.worktree && !b.current ? `\n${t("work.branch.worktree", { path: b.worktree })}` : ""}`}
           >
             <span className={`min-w-0 truncate ${b.current ? "font-semibold" : ""}`}>{b.name}</span>
-            {b.current && <Badge>현재</Badge>}
+            {b.current && <Badge>{t("work.branch.current")}</Badge>}
             {b.worktree && !b.current && <Badge>worktree</Badge>}
             <Track ahead={b.ahead} behind={b.behind} gone={b.gone} />
             {!compact && (
@@ -426,10 +433,10 @@ function Branches({ compact }: { compact: boolean }) {
                   onClick={() => void run("work_switch", { branch: b.name })}
                   className="rounded px-1.5 py-0.5 text-[11px] text-accent hover:bg-active disabled:opacity-50"
                 >
-                  전환
+                  {t("work.branch.switch")}
                 </button>
                 <IconButton
-                  label={`${b.name} 삭제`}
+                  label={t("work.deleteNamed", { name: b.name })}
                   disabled={busy}
                   onClick={() => void remove(b)}
                   className="size-5 hover:text-danger"
@@ -447,7 +454,9 @@ function Branches({ compact }: { compact: boolean }) {
           onClick={() => setAll(!all)}
           className="mt-1 rounded px-2 py-0.5 text-[11px] text-text-subtle hover:bg-hover hover:text-text"
         >
-          {all ? "접기" : `${branches.length - BRANCH_LIMIT}개 더 보기`}
+          {all
+            ? t("work.branch.showLess")
+            : t("work.branch.showMore", { n: branches.length - BRANCH_LIMIT })}
         </button>
       )}
     </Section>
@@ -466,6 +475,7 @@ const inputClass =
   "min-w-0 flex-1 rounded-md border border-border bg-surface-raised px-2 py-1 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong";
 
 function NewBranch({ onDone }: { onDone: () => void }) {
+  const t = useT();
   const { overview, busy, run } = useWorkStore();
   const [name, setName] = useState("");
   const [switchTo, setSwitchTo] = useState(true);
@@ -491,18 +501,18 @@ function NewBranch({ onDone }: { onDone: () => void }) {
         autoFocus
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="새 브랜치 이름 (예: feature/login)"
+        placeholder={t("work.branch.namePlaceholder")}
         className={`${inputClass} w-full`}
       />
       <div className="flex items-center gap-1.5 text-xs text-text-muted">
-        <span className="shrink-0">기준</span>
+        <span className="shrink-0">{t("work.base")}</span>
         <select
-          aria-label="기준 브랜치"
+          aria-label={t("work.baseBranch")}
           value={base}
           onChange={(e) => setBase(e.target.value)}
           className={inputClass}
         >
-          {!current && <option value="">현재 HEAD</option>}
+          {!current && <option value="">{t("work.currentHead")}</option>}
           {overview?.branches.map((b) => (
             <option key={b.name} value={b.name}>
               {b.name}
@@ -517,21 +527,21 @@ function NewBranch({ onDone }: { onDone: () => void }) {
             checked={switchTo}
             onChange={(e) => setSwitchTo(e.target.checked)}
           />
-          만든 뒤 전환
+          {t("work.branch.switchAfter")}
         </label>
         <button
           type="button"
           onClick={onDone}
           className="ml-auto rounded-md px-2 py-1 text-text-muted hover:bg-hover"
         >
-          취소
+          {t("work.cancel")}
         </button>
         <button
           type="submit"
           disabled={busy || !name.trim()}
           className="rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
         >
-          만들기
+          {t("work.create")}
         </button>
       </div>
     </form>
@@ -548,6 +558,7 @@ function folderName(path: string) {
 }
 
 function Worktrees({ compact }: { compact: boolean }) {
+  const t = useT();
   const { overview, busy, run } = useWorkStore();
   const select = useProjectStore((s) => s.select);
   const [adding, setAdding] = useState(false);
@@ -561,8 +572,8 @@ function Worktrees({ compact }: { compact: boolean }) {
     if (wt.changes === 0 && wt.branch) {
       if (
         await confirm(
-          `'${name}' worktree 폴더를 삭제할까요? 브랜치 ${wt.branch}는 그대로 남아요.`,
-          "worktree 삭제",
+          t("work.worktree.deleteConfirm", { name, branch: wt.branch }),
+          t("work.worktree.deleteTitle"),
         )
       )
         await run("work_remove_worktree", { path: wt.path, force: false });
@@ -570,23 +581,28 @@ function Worktrees({ compact }: { compact: boolean }) {
     }
     const what = [
       wt.changes
-        ? `커밋하지 않은 변경 ${wt.changes}개`
+        ? t(
+            wt.changes === 1
+              ? "work.worktree.uncommittedCount.one"
+              : "work.worktree.uncommittedCount",
+            { n: wt.changes },
+          )
         : wt.changes === null
-          ? "커밋하지 않은 변경"
+          ? t("work.worktree.uncommitted")
           : "",
-      wt.branch ? "" : "어느 브랜치에도 없는 커밋",
+      wt.branch ? "" : t("work.worktree.orphanCommits"),
     ]
       .filter(Boolean)
-      .join(", ");
+      .join(t("work.worktree.listJoin"));
     const first = await confirm(
-      `'${name}'에 ${what}이(가) 있을 수 있어요. 삭제하면 잃어요.\n그래도 삭제할까요?`,
-      "변경이 남은 worktree",
+      t("work.worktree.dirtyConfirm", { name, what }),
+      t("work.worktree.dirtyTitle"),
       true,
     );
     if (!first) return;
     const second = await confirm(
-      `정말 '${name}'을(를) 강제로 삭제할까요? 되돌릴 수 없어요.`,
-      "강제 삭제",
+      t("work.forceDeleteConfirm", { name }),
+      t("work.forceDelete"),
       true,
     );
     if (second) await run("work_remove_worktree", { path: wt.path, force: true });
@@ -603,14 +619,14 @@ function Worktrees({ compact }: { compact: boolean }) {
               type="button"
               disabled={busy}
               onClick={() => void run("work_prune_worktrees", {})}
-              title="폴더가 사라진 worktree를 목록에서 지워요"
+              title={t("work.worktree.pruneHint")}
               className="mr-1 rounded px-1.5 py-0.5 text-[11px] font-normal text-text-muted hover:bg-hover"
             >
-              정리
+              {t("work.worktree.prune")}
             </button>
           )}
           <IconButton
-            label="새 worktree"
+            label={t("work.worktree.new")}
             disabled={busy || !overview.head.commit}
             onClick={() => setAdding(!adding)}
             className="size-6"
@@ -634,18 +650,18 @@ function Worktrees({ compact }: { compact: boolean }) {
             <span
               className={`min-w-0 truncate ${wt.prunable ? "text-text-subtle line-through" : ""}`}
             >
-              {wt.isMain ? "기본" : folderName(wt.path)}
+              {wt.isMain ? t("work.worktree.main") : folderName(wt.path)}
             </span>
-            {wt.isCurrent && <Badge>열림</Badge>}
+            {wt.isCurrent && <Badge>{t("work.worktree.open")}</Badge>}
             {wt.managed && <Badge>Claude Code</Badge>}
-            {wt.locked && <Badge>잠김</Badge>}
-            {wt.prunable && <Badge>폴더 없음</Badge>}
+            {wt.locked && <Badge>{t("work.worktree.locked")}</Badge>}
+            {wt.prunable && <Badge>{t("work.worktree.missing")}</Badge>}
             <span className="min-w-0 flex-1 truncate text-[11px] text-text-subtle">
-              {wt.branch ?? (wt.commit ? `분리된 HEAD ${wt.commit}` : "")}
+              {wt.branch ?? (wt.commit ? t("work.detached", { commit: wt.commit }) : "")}
             </span>
             {wt.changes !== null && wt.changes > 0 && (
               <span className="shrink-0 text-[11px] text-warning group-hover:hidden">
-                변경 {wt.changes}
+                {t("work.worktree.changes", { n: wt.changes })}
               </span>
             )}
             {!wt.prunable && (
@@ -656,11 +672,11 @@ function Worktrees({ compact }: { compact: boolean }) {
                     onClick={() => void select(wt.path)}
                     className="rounded px-1.5 py-0.5 text-[11px] text-accent hover:bg-active"
                   >
-                    열기
+                    {t("work.worktree.openAction")}
                   </button>
                 )}
                 <IconButton
-                  label="폴더 보기"
+                  label={t("work.worktree.reveal")}
                   onClick={() => void revealItemInDir(wt.path).catch(() => {})}
                   className="size-5"
                 >
@@ -668,7 +684,7 @@ function Worktrees({ compact }: { compact: boolean }) {
                 </IconButton>
                 {!wt.isMain && !wt.isCurrent && (
                   <IconButton
-                    label={`${folderName(wt.path)} 삭제`}
+                    label={t("work.deleteNamed", { name: folderName(wt.path) })}
                     disabled={busy}
                     onClick={() => void remove(wt)}
                     className="size-5 hover:text-danger"
@@ -686,6 +702,7 @@ function Worktrees({ compact }: { compact: boolean }) {
 }
 
 function NewWorktree({ onDone }: { onDone: () => void }) {
+  const t = useT();
   const { overview, busy, run } = useWorkStore();
   const [name, setName] = useState("");
   const current = overview?.branches.find((b) => b.name === overview.head.branch)?.name ?? "";
@@ -706,23 +723,26 @@ function NewWorktree({ onDone }: { onDone: () => void }) {
         autoFocus
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder="이름 (영문·숫자·-·_)"
+        placeholder={t("work.worktree.namePlaceholder")}
         className={`${inputClass} w-full font-mono`}
       />
       <p className="text-[11px] text-text-subtle">
         {name && !valid
-          ? "영문·숫자·-·_·. 만 쓸 수 있어요."
-          : `.claude/worktrees/${name || "<이름>"} 에 브랜치 worktree-${name || "<이름>"} 로 만들어요.`}
+          ? t("work.worktree.invalidName")
+          : t("work.worktree.hint", {
+              path: `.claude/worktrees/${name || t("work.worktree.nameToken")}`,
+              branch: `worktree-${name || t("work.worktree.nameToken")}`,
+            })}
       </p>
       <div className="flex items-center gap-1.5 text-xs text-text-muted">
-        <span className="shrink-0">기준</span>
+        <span className="shrink-0">{t("work.base")}</span>
         <select
-          aria-label="기준 브랜치"
+          aria-label={t("work.baseBranch")}
           value={base}
           onChange={(e) => setBase(e.target.value)}
           className={inputClass}
         >
-          {!current && <option value="">현재 HEAD</option>}
+          {!current && <option value="">{t("work.currentHead")}</option>}
           {overview?.branches.map((b) => (
             <option key={b.name} value={b.name}>
               {b.name}
@@ -736,14 +756,14 @@ function NewWorktree({ onDone }: { onDone: () => void }) {
           onClick={onDone}
           className="rounded-md px-2 py-1 text-text-muted hover:bg-hover"
         >
-          취소
+          {t("work.cancel")}
         </button>
         <button
           type="submit"
           disabled={busy || !valid}
           className="rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
         >
-          만들기
+          {t("work.create")}
         </button>
       </div>
     </form>

@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "../../components/ui";
+import { useT } from "../../i18n";
 import {
   type BlockNode,
   CLAUDE_MD_LINE_BUDGET,
@@ -20,6 +21,7 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
   );
   const [tab, setTab] = useState<Tab>("preview");
   const [path, setPath] = useState<string | null>(null);
+  const t = useT();
 
   // Show the block editor when a block gets selected.
   const selectedId = selected?.id;
@@ -35,10 +37,10 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
         <TabButton active={tab === "preview"} onClick={() => setTab("preview")}>
-          미리보기
+          {t("composer.preview.tab")}
         </TabButton>
         <TabButton active={tab === "block"} onClick={() => setTab("block")} disabled={!selected}>
-          블록 편집
+          {t("composer.preview.blockTab")}
         </TabButton>
       </div>
 
@@ -59,10 +61,8 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
 
           {files.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
-              <p className="text-sm font-medium">아직 만들 파일이 없어요</p>
-              <p className="mt-1 text-xs text-text-muted">
-                왼쪽에서 블록을 끌어다 놓고, 블록의 점을 출력 노드에 연결해 보세요.
-              </p>
+              <p className="text-sm font-medium">{t("composer.preview.empty")}</p>
+              <p className="mt-1 text-xs text-text-muted">{t("composer.preview.emptyHint")}</p>
             </div>
           ) : (
             <>
@@ -88,7 +88,9 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                   <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-[11px] text-text-muted">
                     <span className="truncate font-mono">{file.path}</span>
                     {file.personal && (
-                      <span className="rounded bg-sunken px-1 text-text-subtle">나만</span>
+                      <span className="rounded bg-sunken px-1 text-text-subtle">
+                        {t("composer.personal")}
+                      </span>
                     )}
                     <span
                       className={`ml-auto shrink-0 ${
@@ -97,13 +99,12 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                           : ""
                       }`}
                     >
-                      {file.lines}줄
+                      {t("composer.preview.lines", { n: file.lines })}
                     </span>
                   </div>
                   {file.section && (
                     <p className="mx-3 mb-2 rounded-md bg-accent-soft px-2.5 py-1.5 text-[11px] text-text-muted">
-                      프로젝트의 {file.path}에는 이 내용이 "관리 구역"으로 들어가요. 그 밖에 직접 쓴
-                      내용은 그대로 둬요.
+                      {t("composer.preview.section", { path: file.path })}
                     </p>
                   )}
                   <CodeView text={file.content} />
@@ -119,7 +120,7 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
               disabled={files.length === 0}
               onClick={onWrite}
             >
-              프로젝트에 쓰기
+              {t("composer.write.title")}
             </Button>
           </div>
         </>
@@ -180,6 +181,7 @@ function BlockEditor({ node }: { node: BlockNode }) {
   const setBody = useComposerStore((s) => s.setBody);
   const original = block?.body ?? "";
   const [draft, setDraft] = useState(node.data.body ?? original);
+  const t = useT();
 
   // Follow undo/redo and catalog reloads (a new node remounts via `key`).
   useEffect(() => {
@@ -192,14 +194,14 @@ function BlockEditor({ node }: { node: BlockNode }) {
   };
 
   if (!block) {
-    return <p className="p-4 text-sm text-danger">카탈로그에 없는 블록이에요.</p>;
+    return <p className="p-4 text-sm text-danger">{t("composer.block.missing")}</p>;
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
       <div>
         <div className="text-[11px] font-medium" style={{ color: kindColor(block.kind) }}>
-          {KIND_LABEL[block.kind]} · {block.category}
+          {t(KIND_LABEL[block.kind])} · {block.category}
         </div>
         <div className="mt-0.5 font-medium">{block.title}</div>
         <div className="mt-0.5 text-xs text-text-muted">{block.summary}</div>
@@ -240,7 +242,7 @@ function BlockEditor({ node }: { node: BlockNode }) {
       />
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-text-subtle">
-          {node.data.body !== undefined ? "이 문서에서만 수정한 내용이에요" : "원본 그대로예요"}
+          {node.data.body !== undefined ? t("composer.block.edited") : t("composer.block.original")}
         </span>
         <Button
           size="sm"
@@ -253,10 +255,10 @@ function BlockEditor({ node }: { node: BlockNode }) {
           }}
         >
           <RotateCcw size={13} />
-          원래대로
+          {t("composer.block.reset")}
         </Button>
         <Button size="sm" onClick={commit} disabled={draft === (node.data.body ?? original)}>
-          적용
+          {t("composer.block.apply")}
         </Button>
       </div>
     </div>

@@ -1,11 +1,13 @@
 import { BookOpen, Bot, FileText, type LucideIcon, Ruler, Sparkles } from "lucide-react";
+import type { MessageKey } from "../../i18n";
 import type { BlockKind, Target } from "../../store/composer";
 
-export const KIND_LABEL: Record<BlockKind, string> = {
-  instruction: "지침",
-  rule: "규칙",
-  skill: "Skill",
-  agent: "Subagent",
+/** Message keys; translate with `t(KIND_LABEL[kind])`. */
+export const KIND_LABEL: Record<BlockKind, MessageKey> = {
+  instruction: "composer.kind.instruction",
+  rule: "composer.kind.rule",
+  skill: "composer.kind.skill",
+  agent: "composer.kind.agent",
 };
 
 export const KIND_ICON: Record<BlockKind, LucideIcon> = {
@@ -17,11 +19,12 @@ export const KIND_ICON: Record<BlockKind, LucideIcon> = {
 
 export const kindColor = (kind: BlockKind) => `var(--c-kind-${kind})`;
 
-export const TARGETS: { target: Target; label: string; hint: string; icon: LucideIcon }[] = [
-  { target: "claudeMd", label: "CLAUDE.md", hint: "항상 읽히는 지침", icon: FileText },
-  { target: "rules", label: "규칙", hint: ".claude/rules", icon: Ruler },
-  { target: "skills", label: "Skills", hint: ".claude/skills", icon: Sparkles },
-  { target: "agents", label: "Subagents", hint: ".claude/agents", icon: Bot },
+/** `label` is a message key. */
+export const TARGETS: { target: Target; label: MessageKey; icon: LucideIcon }[] = [
+  { target: "claudeMd", label: "composer.target.claudeMd", icon: FileText },
+  { target: "rules", label: "composer.target.rules", icon: Ruler },
+  { target: "skills", label: "composer.target.skills", icon: Sparkles },
+  { target: "agents", label: "composer.target.agents", icon: Bot },
 ];
 
 export function targetTitle(target: Target, personal: boolean): string {

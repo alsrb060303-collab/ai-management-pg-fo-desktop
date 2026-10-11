@@ -1,5 +1,6 @@
 import { AppWindow, EyeOff, Magnet, Pin } from "lucide-react";
 import { Logo } from "../components/Logo";
+import { useT } from "../i18n";
 import { useDockStore } from "../store/dock";
 import { switchView } from "../store/view";
 
@@ -9,6 +10,7 @@ export function TitleBar() {
   const setEnabled = useDockStore((s) => s.setEnabled);
   const setPinned = useDockStore((s) => s.setPinned);
   const hide = useDockStore((s) => s.hide);
+  const t = useT();
 
   const docked = status?.enabled ?? false;
   const pinned = status?.pinned ?? false;
@@ -26,24 +28,24 @@ export function TitleBar() {
         AI Management
       </span>
       <div className="flex h-full">
-        <TitleButton label="메인 창으로 전환" onClick={() => void switchView("main")}>
+        <TitleButton label={t("shell.title.toMain")} onClick={() => void switchView("main")}>
           <AppWindow size={14} />
         </TitleButton>
         <TitleButton
-          label={docked ? "터미널에서 떼기" : "터미널 옆에 붙이기"}
+          label={docked ? t("shell.title.undock") : t("shell.title.dock")}
           onClick={() => setEnabled(!docked)}
           active={docked}
         >
           <Magnet size={14} />
         </TitleButton>
         <TitleButton
-          label={pinned ? "항상 위 해제" : "항상 위"}
+          label={pinned ? t("shell.title.unpin") : t("shell.title.pin")}
           onClick={() => setPinned(!pinned)}
           active={pinned}
         >
           <Pin size={14} />
         </TitleButton>
-        <TitleButton label="숨기기 (Ctrl+Alt+Space)" onClick={hide} danger>
+        <TitleButton label={t("shell.title.hide")} onClick={hide} danger>
           <EyeOff size={14} />
         </TitleButton>
       </div>

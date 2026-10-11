@@ -1,13 +1,12 @@
 import { PageHeader } from "../../components/ui";
 import { WorkPanel } from "../../features/work/WorkPanel";
+import { useT } from "../../i18n";
 
 export function WorkPage() {
+  const t = useT();
   return (
     <div className="mx-auto max-w-3xl px-8 py-10">
-      <PageHeader
-        title="작업"
-        description="브랜치와 worktree를 만들고 바꾸고, 커밋하지 않은 변경을 확인해요. 커밋과 푸시는 Claude Code나 터미널에서 해요."
-      />
+      <PageHeader title={t("work.title")} description={t("work.description")} />
       <WorkPanel />
     </div>
   );

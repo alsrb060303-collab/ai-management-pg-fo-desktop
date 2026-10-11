@@ -2,15 +2,16 @@ import { useReactFlow } from "@xyflow/react";
 import { Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { type MessageKey, useT } from "../../i18n";
 import { type Block, type BlockKind, type Target, useComposerStore } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
 
-const FILTERS: { value: BlockKind | "all"; label: string }[] = [
-  { value: "all", label: "전체" },
-  { value: "instruction", label: "지침" },
-  { value: "rule", label: "규칙" },
-  { value: "skill", label: "Skill" },
-  { value: "agent", label: "Agent" },
+const FILTERS: { value: BlockKind | "all"; label: MessageKey }[] = [
+  { value: "all", label: "composer.palette.all" },
+  { value: "instruction", label: "composer.kind.instruction" },
+  { value: "rule", label: "composer.kind.rule" },
+  { value: "skill", label: "composer.kind.skill" },
+  { value: "agent", label: "composer.palette.agent" },
 ];
 
 const KIND_ORDER: BlockKind[] = ["instruction", "rule", "skill", "agent"];
@@ -43,6 +44,7 @@ export function Palette() {
   const addBlock = useComposerStore((s) => s.addBlock);
   const addOutput = useComposerStore((s) => s.addOutput);
   const refreshExternal = useComposerStore((s) => s.refreshExternal);
+  const t = useT();
   const [refreshing, setRefreshing] = useState(false);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const refresh = async () => {
@@ -112,7 +114,7 @@ export function Palette() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="블록 검색"
+            placeholder={t("composer.palette.search")}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-subtle"
           />
         </label>
@@ -129,7 +131,7 @@ export function Palette() {
                   : "bg-sunken text-text-muted hover:text-text"
               }`}
             >
-              {f.label}
+              {t(f.label)}
             </button>
           ))}
         </div>
@@ -138,11 +140,11 @@ export function Palette() {
             type="button"
             onClick={() => void refresh()}
             disabled={refreshing}
-            title="외부 블록(MIT·Apache)을 원본 저장소의 최신 버전으로 받아와요"
+            title={t("composer.palette.refreshHint")}
             className="flex items-center gap-1 rounded-md py-0.5 hover:text-text disabled:opacity-60"
           >
             {refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            최신 받아오기
+            {t("composer.palette.refresh")}
           </button>
           {refreshNote && (
             <span className="truncate" title={refreshNote}>
@@ -155,7 +157,7 @@ export function Palette() {
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-3">
         {groups.length === 0 && (
           <p className="px-1 text-xs text-text-subtle">
-            {catalog.length === 0 ? "블록을 불러오는 중…" : "찾는 블록이 없어요."}
+            {catalog.length === 0 ? t("composer.palette.loading") : t("composer.palette.noMatch")}
           </p>
         )}
         {groups.map(({ kind, blocks }) => {
@@ -167,7 +169,7 @@ export function Palette() {
                 style={{ color: kindColor(kind) }}
               >
                 <Icon size={13} />
-                {KIND_LABEL[kind]}
+                {t(KIND_LABEL[kind])}
                 <span className="font-normal text-text-subtle">{blocks.length}</span>
               </h3>
               <ul className="space-y-1">
@@ -175,7 +177,7 @@ export function Palette() {
                   <li key={block.id}>
                     <div
                       onPointerDown={(e) => startDrag(block, e)}
-                      title="누르거나 캔버스로 끌어다 놓아 추가"
+                      title={t("composer.palette.dragHint")}
                       className="group flex cursor-grab touch-none items-start gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:border-border hover:bg-surface-raised active:cursor-grabbing"
                     >
                       <span
@@ -187,7 +189,7 @@ export function Palette() {
                           <span className="truncate">{block.title}</span>
                           {block.source === "library" && (
                             <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-subtle">
-                              내 라이브러리
+                              {t("composer.palette.myLibrary")}
                             </span>
                           )}
                           {block.origin && (
@@ -205,8 +207,8 @@ export function Palette() {
                       </div>
                       <button
                         type="button"
-                        aria-label={`${block.title} 추가`}
-                        title="캔버스에 추가"
+                        aria-label={t("composer.palette.add", { title: block.title })}
+                        title={t("composer.palette.addToCanvas")}
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => addBlock(block.id, place.nearCenter())}
                         className="mt-0.5 rounded-md p-0.5 text-text-subtle opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-text focus-visible:opacity-100"
@@ -223,7 +225,9 @@ export function Palette() {
       </div>
 
       <div className="border-t border-border p-3">
-        <h3 className="mb-1.5 px-1 text-xs font-semibold text-text-muted">출력 추가</h3>
+        <h3 className="mb-1.5 px-1 text-xs font-semibold text-text-muted">
+          {t("composer.palette.addOutput")}
+        </h3>
         <div className="grid grid-cols-2 gap-1.5">
           {TARGETS.map(({ target, label, icon: Icon }) => (
             <button
@@ -233,7 +237,7 @@ export function Palette() {
               className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-border-strong"
             >
               <Icon size={13} className="text-text-muted" />
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>

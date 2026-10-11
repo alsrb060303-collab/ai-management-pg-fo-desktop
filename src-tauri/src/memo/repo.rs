@@ -89,17 +89,29 @@ fn rebasing_branch(root: &Path) -> Option<String> {
 }
 
 pub fn inspect(project: &Path) -> git::Result<RepoInfo> {
-    let dir: PathBuf =
-        std::fs::canonicalize(project).map_err(|e| format!("프로젝트 폴더를 열 수 없어요: {e}"))?;
+    let dir: PathBuf = std::fs::canonicalize(project).map_err(|e| {
+        crate::tr!(
+            "프로젝트 폴더를 열 수 없어요: {e}",
+            "Couldn't open the project folder: {e}"
+        )
+    })?;
     if !dir.is_dir() {
-        return Err("프로젝트 폴더가 아니에요".into());
+        return Err(crate::tr!(
+            "프로젝트 폴더가 아니에요",
+            "Not a project folder"
+        ));
     }
 
     let root = match git::run(&dir, &["rev-parse", "--show-toplevel"]) {
         Ok(root) => PathBuf::from(root),
         // A real repository git cannot read (unsafe ownership, git missing):
         // say so instead of silently filing memos under the folder.
-        Err(e) if git::inside_git(&dir) => return Err(format!("git 저장소를 읽지 못했어요: {e}")),
+        Err(e) if git::inside_git(&dir) => {
+            return Err(crate::tr!(
+                "git 저장소를 읽지 못했어요: {e}",
+                "Couldn't read the git repository: {e}"
+            ));
+        }
         Err(_) => {
             // Not a git repository: one memo for the folder.
             return Ok(RepoInfo {

@@ -14,8 +14,30 @@ const EXCLUDE_TAG: &str = "# ai-management";
 
 pub type Result<T> = std::result::Result<T, String>;
 
-fn io_err(context: &str, path: &Path, e: io::Error) -> String {
-    format!("{context} 실패 ({}): {e}", path.display())
+/// The file operation an `io_err` message names.
+#[derive(Clone, Copy)]
+enum Op {
+    Read,
+    Write,
+    Copy,
+    CreateDir,
+    Replace,
+    Delete,
+}
+
+fn io_err(op: Op, path: &Path, e: io::Error) -> String {
+    let path = path.display();
+    match op {
+        Op::Read => crate::tr!("읽기 실패 ({path}): {e}", "Couldn't read {path}: {e}"),
+        Op::Write => crate::tr!("쓰기 실패 ({path}): {e}", "Couldn't write {path}: {e}"),
+        Op::Copy => crate::tr!("복사 실패 ({path}): {e}", "Couldn't copy to {path}: {e}"),
+        Op::CreateDir => crate::tr!(
+            "폴더 만들기 실패 ({path}): {e}",
+            "Couldn't create the folder {path}: {e}"
+        ),
+        Op::Replace => crate::tr!("교체 실패 ({path}): {e}", "Couldn't replace {path}: {e}"),
+        Op::Delete => crate::tr!("삭제 실패 ({path}): {e}", "Couldn't delete {path}: {e}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -35,11 +57,15 @@ enum Entry {
 fn walk(root: &Path) -> Result<Vec<Entry>> {
     fn visit(root: &Path, dir: &Path, depth: usize, out: &mut Vec<Entry>) -> Result<()> {
         if depth > MAX_DEPTH {
-            return Err(format!("폴더가 너무 깊습니다: {}", dir.display()));
+            return Err(crate::tr!(
+                "폴더가 너무 깊습니다: {}",
+                "Folder nesting is too deep: {}",
+                dir.display()
+            ));
         }
         let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-            .map_err(|e| io_err("읽기", dir, e))?
-            .map(|e| e.map(|e| e.path()).map_err(|e| io_err("읽기", dir, e)))
+            .map_err(|e| io_err(Op::Read, dir, e))?
+            .map(|e| e.map(|e| e.path()).map_err(|e| io_err(Op::Read, dir, e)))
             .collect::<Result<_>>()?;
         entries.sort();
         for path in entries {
@@ -48,7 +74,7 @@ fn walk(root: &Path) -> Result<Vec<Entry>> {
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            let meta = fs::metadata(&path).map_err(|e| io_err("읽기", &path, e))?;
+            let meta = fs::metadata(&path).map_err(|e| io_err(Op::Read, &path, e))?;
             if meta.is_dir() {
                 out.push(Entry::Dir(rel));
                 visit(root, &path, depth + 1, out)?;
@@ -78,7 +104,7 @@ pub fn hash_path(path: &Path) -> Result<Option<String>> {
     let meta = match fs::metadata(path) {
         Ok(meta) => meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(io_err("읽기", path, e)),
+        Err(e) => return Err(io_err(Op::Read, path, e)),
     };
     let mut hasher = Sha256::new();
     if meta.is_dir() {
@@ -93,13 +119,13 @@ pub fn hash_path(path: &Path) -> Result<Option<String>> {
                     hasher.update(b"F");
                     hasher.update(rel.as_bytes());
                     hasher.update([0]);
-                    hasher.update(fs::read(&file).map_err(|e| io_err("읽기", &file, e))?);
+                    hasher.update(fs::read(&file).map_err(|e| io_err(Op::Read, &file, e))?);
                     hasher.update([0]);
                 }
             }
         }
     } else {
-        hasher.update(fs::read(path).map_err(|e| io_err("읽기", path, e))?);
+        hasher.update(fs::read(path).map_err(|e| io_err(Op::Read, path, e))?);
     }
     Ok(Some(format!("{:x}", hasher.finalize())))
 }
@@ -107,25 +133,25 @@ pub fn hash_path(path: &Path) -> Result<Option<String>> {
 /// Copies a file or tree (following symlinks) to `dest`, which must not exist.
 fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
     if fs::metadata(src)
-        .map_err(|e| io_err("읽기", src, e))?
+        .map_err(|e| io_err(Op::Read, src, e))?
         .is_file()
     {
         if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_err("폴더 만들기", parent, e))?;
+            fs::create_dir_all(parent).map_err(|e| io_err(Op::CreateDir, parent, e))?;
         }
-        fs::copy(src, dest).map_err(|e| io_err("복사", dest, e))?;
+        fs::copy(src, dest).map_err(|e| io_err(Op::Copy, dest, e))?;
         return Ok(());
     }
-    fs::create_dir_all(dest).map_err(|e| io_err("폴더 만들기", dest, e))?;
+    fs::create_dir_all(dest).map_err(|e| io_err(Op::CreateDir, dest, e))?;
     for entry in walk(src)? {
         match entry {
             Entry::Dir(rel) => {
                 let target = dest.join(&rel);
-                fs::create_dir_all(&target).map_err(|e| io_err("폴더 만들기", &target, e))?;
+                fs::create_dir_all(&target).map_err(|e| io_err(Op::CreateDir, &target, e))?;
             }
             Entry::File(rel, file) => {
                 let target = dest.join(&rel);
-                fs::copy(&file, &target).map_err(|e| io_err("복사", &target, e))?;
+                fs::copy(&file, &target).map_err(|e| io_err(Op::Copy, &target, e))?;
             }
         }
     }
@@ -137,7 +163,7 @@ fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
 fn sibling(dest: &Path, suffix: &str) -> Result<PathBuf> {
     let name = dest
         .file_name()
-        .ok_or_else(|| format!("잘못된 경로: {}", dest.display()))?
+        .ok_or_else(|| crate::tr!("잘못된 경로: {}", "Invalid path: {}", dest.display()))?
         .to_string_lossy();
     Ok(dest.with_file_name(format!(".{name}.ai-management-{suffix}")))
 }
@@ -157,12 +183,16 @@ fn copy_to_temp(src: &Path, dest: &Path) -> Result<PathBuf> {
 /// Copies a file or directory tree to `dest`, which must not exist yet.
 pub fn copy_new(src: &Path, dest: &Path) -> Result<()> {
     if fs::symlink_metadata(dest).is_ok() {
-        return Err(format!("이미 있습니다: {}", dest.display()));
+        return Err(crate::tr!(
+            "이미 있습니다: {}",
+            "Already exists: {}",
+            dest.display()
+        ));
     }
     let tmp = copy_to_temp(src, dest)?;
     fs::rename(&tmp, dest).map_err(|e| {
         let _ = remove_path(&tmp);
-        io_err("복사", dest, e)
+        io_err(Op::Copy, dest, e)
     })
 }
 
@@ -177,12 +207,12 @@ pub fn copy_over(src: &Path, dest: &Path) -> Result<()> {
     remove_path(&old)?;
     if let Err(e) = fs::rename(dest, &old) {
         let _ = remove_path(&tmp);
-        return Err(io_err("교체", dest, e));
+        return Err(io_err(Op::Replace, dest, e));
     }
     if let Err(e) = fs::rename(&tmp, dest) {
         let _ = fs::rename(&old, dest);
         let _ = remove_path(&tmp);
-        return Err(io_err("교체", dest, e));
+        return Err(io_err(Op::Replace, dest, e));
     }
     remove_path(&old)
 }
@@ -195,7 +225,7 @@ pub fn remove_path(path: &Path) -> Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(e) => Err(e),
     };
-    result.map_err(|e| io_err("삭제", path, e))
+    result.map_err(|e| io_err(Op::Delete, path, e))
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +284,7 @@ pub fn exclude_add(path: &Path, is_dir: bool) -> Result<()> {
     let mut bytes = match fs::read(&file) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
-        Err(e) => return Err(io_err("읽기", &file, e)),
+        Err(e) => return Err(io_err(Op::Read, &file, e)),
     };
     if String::from_utf8_lossy(&bytes)
         .lines()
@@ -399,7 +429,12 @@ pub fn apply_change(settings_file: &Path, change: Change) -> Result<bool> {
                 .or_insert_with(|| Value::Array(Vec::new()))
             {
                 Value::Array(list) => list,
-                _ => return Err("permissions.deny가 배열이 아니라 바꾸지 않았습니다".into()),
+                _ => {
+                    return Err(crate::tr!(
+                        "permissions.deny가 배열이 아니라 바꾸지 않았습니다",
+                        "Left unchanged because permissions.deny isn't an array"
+                    ));
+                }
             };
             let present = list.contains(&rule);
             let changed = present != deny;
@@ -421,7 +456,7 @@ pub fn apply_change(settings_file: &Path, change: Change) -> Result<bool> {
         return Ok(false);
     }
     let mut text = serde_json::to_string_pretty(&Value::Object(root))
-        .map_err(|e| format!("JSON 쓰기 실패: {e}"))?;
+        .map_err(|e| crate::tr!("JSON 쓰기 실패: {e}", "Couldn't write JSON: {e}"))?;
     text.push('\n');
     write_atomic(settings_file, &text)?;
     Ok(true)
@@ -433,7 +468,7 @@ fn read_settings(settings_file: &Path) -> Result<Map<String, Value>> {
     let bytes = match fs::read(settings_file) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
-        Err(e) => return Err(io_err("읽기", settings_file, e)),
+        Err(e) => return Err(io_err(Op::Read, settings_file, e)),
     };
     let text = String::from_utf8_lossy(&bytes);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
@@ -442,8 +477,9 @@ fn read_settings(settings_file: &Path) -> Result<Map<String, Value>> {
     }
     match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(map)) => Ok(map),
-        _ => Err(format!(
+        _ => Err(crate::tr!(
             "{}을(를) 읽을 수 없어 바꾸지 않았습니다 (JSON 오류)",
+            "Left {} unchanged because it couldn't be read (JSON error)",
             settings_file.display()
         )),
     }
@@ -455,7 +491,10 @@ fn object_entry<'a>(
 ) -> Result<&'a mut Map<String, Value>> {
     match root.entry(key).or_insert_with(|| Value::Object(Map::new())) {
         Value::Object(map) => Ok(map),
-        _ => Err(format!("{key}가 객체가 아니라 바꾸지 않았습니다")),
+        _ => Err(crate::tr!(
+            "{key}가 객체가 아니라 바꾸지 않았습니다",
+            "Left unchanged because {key} isn't an object"
+        )),
     }
 }
 
@@ -465,12 +504,12 @@ fn object_entry<'a>(
 pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     let target = match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => {
-            fs::canonicalize(path).map_err(|e| io_err("쓰기", path, e))?
+            fs::canonicalize(path).map_err(|e| io_err(Op::Write, path, e))?
         }
         _ => path.to_path_buf(),
     };
     if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent).map_err(|e| io_err("폴더 만들기", parent, e))?;
+        fs::create_dir_all(parent).map_err(|e| io_err(Op::CreateDir, parent, e))?;
     }
     let tmp = sibling(&target, "tmp")?;
     let write = || -> io::Result<()> {
@@ -484,7 +523,7 @@ pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
     };
     write().map_err(|e| {
         let _ = fs::remove_file(&tmp);
-        io_err("쓰기", path, e)
+        io_err(Op::Write, path, e)
     })
 }
 

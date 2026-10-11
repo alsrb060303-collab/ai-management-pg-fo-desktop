@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
+import { t } from "../i18n";
 import { useProjectStore } from "./project";
 
 // Mirrors src-tauri/src/library/mod.rs.
@@ -104,7 +105,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
 
     chooseDir: async () => {
       if (!isTauri()) return;
-      const dir = await open({ directory: true, title: "라이브러리 폴더 선택" });
+      const dir = await open({ directory: true, title: t("docs.library.chooseTitle") });
       if (typeof dir === "string") await run(() => invoke("library_set_dir", { dir }));
     },
 
@@ -120,23 +121,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
         }),
       ),
 
-    remove: (item) =>
-      run(() =>
-        withForce(
-          "library_remove",
-          item,
-          "프로젝트에 있는 복사본이 수정되었습니다. 수정한 내용을 버리고 뺄까요?",
-        ),
-      ),
+    remove: (item) => run(() => withForce("library_remove", item, t("docs.library.confirmRemove"))),
 
-    update: (item) =>
-      run(() =>
-        withForce(
-          "library_update",
-          item,
-          "프로젝트에 있는 복사본이 수정되었습니다. 라이브러리 버전으로 덮어쓸까요?",
-        ),
-      ),
+    update: (item) => run(() => withForce("library_update", item, t("docs.library.confirmUpdate"))),
 
     forget: (item) =>
       run(() =>

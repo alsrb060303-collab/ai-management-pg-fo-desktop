@@ -19,7 +19,7 @@ const MAX_NOTE: usize = 200_000;
 const MAX_TODO: usize = 2_000;
 
 fn db_err(e: rusqlite::Error) -> String {
-    format!("메모 저장소 오류: {e}")
+    crate::tr!("메모 저장소 오류: {e}", "Memo storage error: {e}")
 }
 
 fn now_ms() -> i64 {
@@ -85,7 +85,12 @@ fn todo_from(row: &Row) -> rusqlite::Result<Todo> {
 impl Store {
     pub fn open(path: &Path) -> Result<Store> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("메모 폴더를 만들 수 없어요: {e}"))?;
+            std::fs::create_dir_all(dir).map_err(|e| {
+                crate::tr!(
+                    "메모 폴더를 만들 수 없어요: {e}",
+                    "Couldn't create the memo folder: {e}"
+                )
+            })?;
         }
         let conn = Connection::open(path).map_err(db_err)?;
         Self::init(conn)
@@ -167,7 +172,7 @@ impl Store {
     /// Saves the branch note (one per branch).
     pub fn set_note(&self, repo: &str, branch: &str, text: &str) -> Result<()> {
         if text.len() > MAX_NOTE {
-            return Err("메모가 너무 길어요".into());
+            return Err(crate::tr!("메모가 너무 길어요", "The memo is too long"));
         }
         let conn = self.conn();
         let now = now_ms();
@@ -194,10 +199,10 @@ impl Store {
     pub fn add_todo(&self, repo: &str, branch: &str, text: &str) -> Result<Todo> {
         let text = text.trim();
         if text.is_empty() {
-            return Err("할 일을 입력해 주세요".into());
+            return Err(crate::tr!("할 일을 입력해 주세요", "Enter a to-do"));
         }
         if text.len() > MAX_TODO {
-            return Err("할 일이 너무 길어요".into());
+            return Err(crate::tr!("할 일이 너무 길어요", "The to-do is too long"));
         }
         let conn = self.conn();
         let next: f64 = conn
@@ -236,10 +241,13 @@ impl Store {
     ) -> Result<(String, String)> {
         let text = text.map(str::trim);
         if text.is_some_and(str::is_empty) {
-            return Err("내용이 비어 있어요. 지우려면 삭제를 눌러 주세요".into());
+            return Err(crate::tr!(
+                "내용이 비어 있어요. 지우려면 삭제를 눌러 주세요",
+                "It's empty. To remove it, press Delete"
+            ));
         }
         if text.is_some_and(|t| t.len() > MAX_TODO) {
-            return Err("할 일이 너무 길어요".into());
+            return Err(crate::tr!("할 일이 너무 길어요", "The to-do is too long"));
         }
         let conn = self.conn();
         let changed = conn
@@ -251,7 +259,10 @@ impl Store {
             )
             .map_err(db_err)?;
         if changed == 0 {
-            return Err("이미 지워진 할 일이에요".into());
+            return Err(crate::tr!(
+                "이미 지워진 할 일이에요",
+                "This to-do was already deleted"
+            ));
         }
         Self::key_of(&conn, id)
     }
@@ -296,7 +307,10 @@ impl Store {
                 .map_err(db_err)?
         };
         let Some(from) = ids.iter().position(|x| x == id) else {
-            return Err("이미 지워진 할 일이에요".into());
+            return Err(crate::tr!(
+                "이미 지워진 할 일이에요",
+                "This to-do was already deleted"
+            ));
         };
         let moved = ids.remove(from);
         let index = index.min(ids.len());

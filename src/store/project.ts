@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
+import { t } from "../i18n";
 
 // Mirrors `ConfigMap` in src-tauri/src/claude_config/mod.rs.
 export type ConfigKind =
@@ -60,7 +61,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   choose: async () => {
     if (!isTauri()) return;
-    const picked = await open({ directory: true, title: "프로젝트 폴더 선택" });
+    const picked = await open({ directory: true, title: t("docs.project.chooseTitle") });
     if (typeof picked === "string") await get().select(picked);
   },
 
@@ -87,7 +88,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const error = String(e);
       // Forget folders that are gone, but keep network paths that may be offline.
       const recent =
-        error.startsWith("폴더를 찾을 수 없습니다") && !/^[\\/]{2}/.test(path)
+        isFolderNotFound(error) && !/^[\\/]{2}/.test(path)
           ? loadRecent().filter((p) => p !== path)
           : loadRecent();
       saveRecent(recent);
@@ -95,6 +96,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 }));
+
+/**
+ * The backend's "folder not found" error from `claude_config_scan`. It is
+ * translated to the app language (Korean or English), so accept both prefixes.
+ */
+function isFolderNotFound(error: string): boolean {
+  return error.startsWith("폴더를 찾을 수 없습니다") || error.startsWith("Folder not found");
+}
 
 function saveCurrent(path: string) {
   try {

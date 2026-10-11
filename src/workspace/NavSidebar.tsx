@@ -15,17 +15,18 @@ import {
 } from "lucide-react";
 import { Logo } from "../components/Logo";
 import { IconButton } from "../components/ui";
+import { type MessageKey, useT } from "../i18n";
 import { useComposerStore } from "../store/composer";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { switchToSidebar } from "./leave";
 
-const NAV: { page: Page; label: string; icon: LucideIcon; soon?: boolean }[] = [
-  { page: "home", label: "홈", icon: House },
-  { page: "composer", label: "문서 작성기", icon: Blocks },
-  { page: "library", label: "라이브러리", icon: Library },
-  { page: "config", label: "설정 지도", icon: MapIcon },
-  { page: "work", label: "작업", icon: GitBranch },
-  { page: "memo", label: "메모", icon: NotebookPen },
+const NAV: { page: Page; label: MessageKey; icon: LucideIcon; soon?: boolean }[] = [
+  { page: "home", label: "shell.nav.home", icon: House },
+  { page: "composer", label: "shell.nav.composer", icon: Blocks },
+  { page: "library", label: "shell.nav.library", icon: Library },
+  { page: "config", label: "shell.nav.config", icon: MapIcon },
+  { page: "work", label: "shell.nav.work", icon: GitBranch },
+  { page: "memo", label: "shell.nav.memo", icon: NotebookPen },
 ];
 
 export function NavSidebar() {
@@ -33,6 +34,7 @@ export function NavSidebar() {
   const docs = useComposerStore((s) => s.docs);
   const openId = useComposerStore((s) => s.doc?.id);
   const { newDoc, openDoc, deleteDoc } = useComposerStore.getState();
+  const t = useT();
 
   return (
     <aside
@@ -52,7 +54,7 @@ export function NavSidebar() {
           </button>
         )}
         <IconButton
-          label={collapsed ? "메뉴 펼치기" : "메뉴 접기"}
+          label={collapsed ? t("shell.nav.expand") : t("shell.nav.collapse")}
           onClick={toggleCollapsed}
           className={collapsed ? "" : "ml-auto"}
         >
@@ -63,7 +65,7 @@ export function NavSidebar() {
       <div className="px-2">
         <NavButton
           icon={Plus}
-          label="새 문서"
+          label={t("shell.nav.newDoc")}
           collapsed={collapsed}
           accent
           onClick={() => {
@@ -78,10 +80,10 @@ export function NavSidebar() {
           <NavButton
             key={item.page}
             icon={item.icon}
-            label={item.label}
+            label={t(item.label)}
             collapsed={collapsed}
             active={page === item.page}
-            badge={item.soon ? "준비 중" : undefined}
+            badge={item.soon ? t("shell.nav.soon") : undefined}
             onClick={() => go(item.page)}
           />
         ))}
@@ -90,9 +92,11 @@ export function NavSidebar() {
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2">
         {!collapsed && (
           <>
-            <h3 className="px-2 pb-1 text-xs font-medium text-text-subtle">최근 문서</h3>
+            <h3 className="px-2 pb-1 text-xs font-medium text-text-subtle">
+              {t("shell.nav.recentDocs")}
+            </h3>
             {docs.length === 0 ? (
-              <p className="px-2 text-xs text-text-subtle">아직 만든 문서가 없어요.</p>
+              <p className="px-2 text-xs text-text-subtle">{t("shell.nav.noDocs")}</p>
             ) : (
               <ul className="space-y-px">
                 {docs.slice(0, 20).map((d) => {
@@ -115,16 +119,13 @@ export function NavSidebar() {
                       </button>
                       <button
                         type="button"
-                        aria-label={`${d.name} 삭제`}
-                        title="삭제"
+                        aria-label={t("shell.nav.deleteDoc", { name: d.name })}
+                        title={t("shell.nav.delete")}
                         onClick={async () => {
-                          const ok = await ask(
-                            `'${d.name}' 문서를 삭제할까요? 프로젝트에 쓴 파일은 그대로 남아요.`,
-                            {
-                              title: "문서 삭제",
-                              kind: "warning",
-                            },
-                          ).catch(() => false);
+                          const ok = await ask(t("shell.nav.deleteDocConfirm", { name: d.name }), {
+                            title: t("shell.nav.deleteDocTitle"),
+                            kind: "warning",
+                          }).catch(() => false);
                           if (ok) void deleteDoc(d.id);
                         }}
                         className="absolute top-1/2 right-1 -translate-y-1/2 rounded-md p-1 text-text-subtle opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-danger focus-visible:opacity-100"
@@ -143,13 +144,13 @@ export function NavSidebar() {
       <div className="space-y-0.5 border-t border-border p-2">
         <NavButton
           icon={PanelRightOpen}
-          label="사이드바로 전환"
+          label={t("shell.switchToSidebar")}
           collapsed={collapsed}
           onClick={() => void switchToSidebar()}
         />
         <NavButton
           icon={Settings}
-          label="설정"
+          label={t("shell.nav.settings")}
           collapsed={collapsed}
           active={page === "settings"}
           onClick={() => go("settings")}

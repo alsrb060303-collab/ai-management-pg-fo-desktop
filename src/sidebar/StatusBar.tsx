@@ -1,31 +1,45 @@
-import { type DockStatus, type TargetApp, useDockStore } from "../store/dock";
+import { type MessageKey, useT } from "../i18n";
+import { type DockSide, type DockStatus, type TargetApp, useDockStore } from "../store/dock";
 
-const APP_NAMES: Record<TargetApp, string> = {
-  windowsTerminal: "Windows Terminal",
-  console: "콘솔",
-  vsCode: "VS Code",
-  claudeDesktop: "Claude 데스크탑",
+type T = ReturnType<typeof useT>;
+
+function appName(target: TargetApp, t: T): string {
+  switch (target) {
+    case "windowsTerminal":
+      return "Windows Terminal";
+    case "console":
+      return t("shell.dock.console");
+    case "vsCode":
+      return "VS Code";
+    case "claudeDesktop":
+      return t("shell.dock.claudeDesktop");
+  }
+}
+
+const SIDES: Record<DockSide, MessageKey> = {
+  right: "shell.dock.right",
+  left: "shell.dock.left",
+  inside: "shell.dock.inside",
 };
 
-const SIDE_NAMES = { right: "오른쪽", left: "왼쪽", inside: "겹쳐서" } as const;
-
-function describe(status: DockStatus | null): string {
-  if (!status) return "연결 중…";
+function describe(status: DockStatus | null, t: T): string {
+  if (!status) return t("shell.dock.connecting");
   switch (status.mode) {
     case "docked": {
-      const app = status.target ? APP_NAMES[status.target] : "창";
-      return status.side ? `${app} ${SIDE_NAMES[status.side]}에 붙음` : `${app} 대기 중`;
+      const app = status.target ? appName(status.target, t) : t("shell.dock.window");
+      return t(status.side ? SIDES[status.side] : "shell.dock.waiting", { app });
     }
     case "edge":
-      return "화면 가장자리";
+      return t("shell.dock.edge");
     case "floating":
-      return "도킹 꺼짐";
+      return t("shell.dock.floating");
   }
 }
 
 export function StatusBar() {
   const status = useDockStore((s) => s.status);
   const attached = status?.mode === "docked";
+  const t = useT();
 
   return (
     <footer className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-surface-raised px-3 text-[11px] text-text-muted">
@@ -33,7 +47,7 @@ export function StatusBar() {
         <span
           className={`inline-block size-1.5 rounded-full ${attached ? "bg-accent" : "bg-text-muted"}`}
         />
-        {describe(status)}
+        {describe(status, t)}
       </span>
       <span>Ctrl+Alt+Space</span>
     </footer>

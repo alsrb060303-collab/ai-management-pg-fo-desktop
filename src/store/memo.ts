@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { t } from "../i18n";
 
 // Mirrors src-tauri/src/memo.
 export interface Todo {
@@ -86,6 +87,8 @@ export const useMemoStore = create<MemoState>((set, get) => {
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   /** Where the pending note edit belongs, captured when it was typed. */
   let noteTarget: Key | null = null;
+  /** The note-save error on screen, so a later successful save can clear just that one. */
+  let noteError: string | null = null;
 
   const keyOf = (s: Pick<MemoState, "context" | "picked">): Key | null => {
     const branch = shownBranch(s);
@@ -112,7 +115,8 @@ export const useMemoStore = create<MemoState>((set, get) => {
     if (!pending || !isTauri()) return;
     try {
       await invoke("memo_set_note", { ...pending.target, text: pending.text });
-      if (get().error?.startsWith("메모를 저장하지 못했어요")) set({ error: null });
+      if (noteError !== null && get().error === noteError) set({ error: null });
+      noteError = null;
     } catch (e) {
       // Still showing that note and nothing newer typed: keep it unsaved, so
       // the next edit, blur or switch tries again.
@@ -120,7 +124,8 @@ export const useMemoStore = create<MemoState>((set, get) => {
         noteTarget = pending.target;
         set({ noteDirty: true });
       }
-      set({ error: `메모를 저장하지 못했어요: ${e}` });
+      noteError = t("memo.note.saveFailed", { error: String(e) });
+      set({ error: noteError });
     }
   };
 
@@ -255,26 +260,30 @@ export const useMemoStore = create<MemoState>((set, get) => {
       return mutate("memo_add_todo", { ...k, text });
     },
     toggleTodo: async (id) => {
-      const todo = get().todos.find((t) => t.id === id);
+      const todo = get().todos.find((item) => item.id === id);
       if (!todo) return;
-      set({ todos: get().todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) });
+      set({
+        todos: get().todos.map((item) => (item.id === id ? { ...item, done: !item.done } : item)),
+      });
       await mutate("memo_update_todo", { id, done: !todo.done });
     },
 
     editTodo: async (id, text) => {
       if (!text.trim()) return;
-      set({ todos: get().todos.map((t) => (t.id === id ? { ...t, text: text.trim() } : t)) });
+      set({
+        todos: get().todos.map((item) => (item.id === id ? { ...item, text: text.trim() } : item)),
+      });
       await mutate("memo_update_todo", { id, text });
     },
 
     deleteTodo: async (id) => {
-      set({ todos: get().todos.filter((t) => t.id !== id) });
+      set({ todos: get().todos.filter((item) => item.id !== id) });
       await mutate("memo_delete_todo", { id });
     },
 
     moveTodo: async (id, index) => {
       const todos = [...get().todos];
-      const from = todos.findIndex((t) => t.id === id);
+      const from = todos.findIndex((item) => item.id === id);
       if (from === -1 || from === index) return;
       const [moved] = todos.splice(from, 1);
       todos.splice(index, 0, moved);
@@ -285,7 +294,7 @@ export const useMemoStore = create<MemoState>((set, get) => {
     clearDone: async () => {
       const k = key();
       if (!k) return;
-      set({ todos: get().todos.filter((t) => !t.done) });
+      set({ todos: get().todos.filter((item) => !item.done) });
       await mutate("memo_clear_done", { ...k });
     },
   };

@@ -3,6 +3,7 @@ import { diffLines } from "diff";
 import { ChevronDown, ChevronRight, FolderOpen, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Button, IconButton } from "../../components/ui";
+import { type MessageKey, useT } from "../../i18n";
 import type { ComposerDoc } from "../../store/composer";
 import { useProjectStore } from "../../store/project";
 
@@ -27,13 +28,13 @@ interface WriteResult {
   warnings: [string, string][];
 }
 
-const STATUS: Record<Status["kind"], { label: string; className: string }> = {
-  new: { label: "새 파일", className: "text-success" },
-  update: { label: "업데이트", className: "text-info" },
-  unchanged: { label: "변경 없음", className: "text-text-subtle" },
-  modified: { label: "직접 수정됨", className: "text-warning" },
-  exists: { label: "이미 있는 파일", className: "text-warning" },
-  blocked: { label: "쓸 수 없음", className: "text-danger" },
+const STATUS: Record<Status["kind"], { label: MessageKey; className: string }> = {
+  new: { label: "composer.write.status.new", className: "text-success" },
+  update: { label: "composer.write.status.update", className: "text-info" },
+  unchanged: { label: "composer.write.status.unchanged", className: "text-text-subtle" },
+  modified: { label: "composer.write.status.modified", className: "text-warning" },
+  exists: { label: "composer.write.status.exists", className: "text-warning" },
+  blocked: { label: "composer.write.status.blocked", className: "text-danger" },
 };
 
 const needsConfirm = (s: Status) => s.kind === "modified" || s.kind === "exists";
@@ -46,6 +47,7 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WriteResult | null>(null);
+  const t = useT();
 
   const load = useCallback(async () => {
     if (!current) return;
@@ -111,12 +113,12 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="프로젝트에 쓰기"
+        aria-label={t("composer.write.title")}
         className="flex max-h-full w-full max-w-2xl flex-col rounded-2xl border border-border bg-surface-raised shadow-card"
       >
         <header className="flex items-center gap-2 border-b border-border px-5 py-3.5">
-          <h2 className="font-serif text-lg font-medium">프로젝트에 쓰기</h2>
-          <IconButton label="닫기" onClick={onClose} className="ml-auto">
+          <h2 className="font-serif text-lg font-medium">{t("composer.write.title")}</h2>
+          <IconButton label={t("composer.write.close")} onClick={onClose} className="ml-auto">
             <X size={17} />
           </IconButton>
         </header>
@@ -124,10 +126,10 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
         <div className="flex items-center gap-2 border-b border-border px-5 py-3 text-sm">
           <FolderOpen size={15} className="shrink-0 text-text-subtle" />
           <span className="selectable min-w-0 flex-1 truncate" title={current ?? undefined}>
-            {current ?? "프로젝트를 골라 주세요"}
+            {current ?? t("composer.write.pickProject")}
           </span>
           <Button size="sm" onClick={() => void choose()}>
-            {current ? "바꾸기" : "폴더 선택"}
+            {current ? t("composer.write.change") : t("composer.write.chooseFolder")}
           </Button>
         </div>
 
@@ -138,7 +140,7 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
           {result ? (
             <Result result={result} />
           ) : !current ? null : !plan ? (
-            <p className="text-sm text-text-muted">확인하는 중…</p>
+            <p className="text-sm text-text-muted">{t("composer.write.checking")}</p>
           ) : (
             <ul className="space-y-1.5">
               {plan.map((item) => {
@@ -149,7 +151,11 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
                     <div className="flex items-center gap-2 px-3 py-2">
                       <button
                         type="button"
-                        aria-label={expanded ? "변경 내용 접기" : "변경 내용 보기"}
+                        aria-label={
+                          expanded
+                            ? t("composer.write.hideChanges")
+                            : t("composer.write.showChanges")
+                        }
                         onClick={() => setOpen(expanded ? null : item.path)}
                         className="text-text-subtle hover:text-text"
                       >
@@ -160,11 +166,11 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
                       </span>
                       {item.personal && (
                         <span className="rounded bg-sunken px-1 text-[10px] text-text-subtle">
-                          나만
+                          {t("composer.personal")}
                         </span>
                       )}
                       <span className={`shrink-0 text-xs font-medium ${status.className}`}>
-                        {status.label}
+                        {t(status.label)}
                       </span>
                     </div>
                     {item.note && <p className="px-9 pb-2 text-xs text-info">{item.note}</p>}
@@ -184,8 +190,8 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
                           }}
                         />
                         {item.status.kind === "modified"
-                          ? "직접 고친 내용을 버리고 덮어쓰기"
-                          : "앱이 만들지 않은 파일이에요. 덮어쓰기"}
+                          ? t("composer.write.overwriteModified")
+                          : t("composer.write.overwriteForeign")}
                       </label>
                     )}
                     {expanded && <Diff old={item.old ?? ""} next={item.new} />}
@@ -199,22 +205,22 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
         <footer className="flex items-center gap-2 border-t border-border px-5 py-3">
           {result ? (
             <Button variant="primary" className="ml-auto" onClick={onClose}>
-              닫기
+              {t("composer.write.close")}
             </Button>
           ) : (
             <>
-              <span className="text-xs text-text-subtle">
-                쓰기 전에 변경 내용을 확인할 수 있어요.
-              </span>
+              <span className="text-xs text-text-subtle">{t("composer.write.hint")}</span>
               <Button variant="ghost" className="ml-auto" onClick={onClose}>
-                취소
+                {t("composer.write.cancel")}
               </Button>
               <Button
                 variant="primary"
                 disabled={!current || busy || writable.length === 0}
                 onClick={() => void write()}
               >
-                {busy ? "쓰는 중…" : `${writable.length}개 파일 쓰기`}
+                {busy
+                  ? t("composer.write.writing")
+                  : t("composer.write.writeFiles", { n: writable.length })}
               </Button>
             </>
           )}
@@ -225,12 +231,13 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
 }
 
 function Result({ result }: { result: WriteResult }) {
+  const t = useT();
   return (
     <div className="space-y-3 text-sm">
       <p>
         {result.written.length > 0
-          ? `${result.written.length}개 파일을 썼어요.`
-          : "쓴 파일이 없어요."}
+          ? t("composer.write.wrote", { n: result.written.length })
+          : t("composer.write.wroteNone")}
       </p>
       {result.written.length > 0 && (
         <ul className="space-y-0.5 font-mono text-[12px] text-success">
@@ -243,7 +250,8 @@ function Result({ result }: { result: WriteResult }) {
         <ul className="space-y-0.5 text-xs text-warning">
           {result.warnings.map(([p, why]) => (
             <li key={p}>
-              <span className="font-mono">{p}</span>: git 제외 목록을 고치지 못했어요 ({why})
+              <span className="font-mono">{p}</span>:{" "}
+              {t("composer.write.gitExcludeFailed", { reason: why })}
             </li>
           ))}
         </ul>

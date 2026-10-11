@@ -1,17 +1,19 @@
 import { useEffect } from "react";
+import { type MessageKey, useT } from "../../i18n";
 import { type ApplyStatus, type LibraryItem, useLibraryStore } from "../../store/library";
 import { useProjectStore } from "../../store/project";
 import { ModeButtons, smallButton } from "./ModeButtons";
 
-const STATUS_TEXT: Record<ApplyStatus, { label: string; className: string }> = {
-  current: { label: "적용됨", className: "text-success" },
-  outdated: { label: "업데이트 있음", className: "text-info" },
-  modified: { label: "프로젝트에서 수정됨", className: "text-warning" },
-  missing: { label: "복사본 없음", className: "text-warning" },
-  conflict: { label: "같은 이름이 이미 있음", className: "text-text-muted" },
+const STATUS_TEXT: Record<ApplyStatus, { label: MessageKey; className: string }> = {
+  current: { label: "docs.status.current", className: "text-success" },
+  outdated: { label: "docs.status.outdated", className: "text-info" },
+  modified: { label: "docs.status.modified", className: "text-warning" },
+  missing: { label: "docs.status.missing", className: "text-warning" },
+  conflict: { label: "docs.status.conflict", className: "text-text-muted" },
 };
 
 export function LibraryPanel() {
+  const t = useT();
   const current = useProjectStore((s) => s.current);
   const { overview, busy, error, load, chooseDir, useDefaultDir } = useLibraryStore();
 
@@ -32,34 +34,24 @@ export function LibraryPanel() {
             {overview ? overview.dir : "…"}
           </span>
           <button type="button" onClick={chooseDir} className={smallButton} disabled={busy}>
-            폴더 변경
+            {t("docs.library.changeFolder")}
           </button>
           {overview && !overview.isDefault && (
             <button type="button" onClick={useDefaultDir} className={smallButton} disabled={busy}>
-              기본값
+              {t("docs.library.default")}
             </button>
           )}
         </div>
-        <p className="mt-1 text-[10px] text-text-muted">
-          skills/&lt;이름&gt;/SKILL.md, agents/&lt;이름&gt;.md 구조. git 레포 폴더를 고르면 여러
-          PC에서 같이 쓸 수 있습니다.
-        </p>
+        <p className="mt-1 text-[10px] text-text-muted">{t("docs.library.structureHint")}</p>
       </div>
 
       {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
-      {!current && (
-        <p className="text-xs text-text-muted">
-          설정 지도에서 프로젝트를 고르면 항목을 그 프로젝트에 적용하거나 뺄 수 있습니다.
-        </p>
-      )}
+      {!current && <p className="text-xs text-text-muted">{t("docs.library.pickProject")}</p>}
 
-      <Section title="Skills" items={skills} />
-      <Section title="Subagents" items={agents} />
+      <Section title={t("docs.section.skill")} items={skills} />
+      <Section title={t("docs.section.agent")} items={agents} />
       {overview && overview.items.length === 0 && (
-        <p className="text-xs text-text-muted">
-          라이브러리가 비어 있습니다. 설정 지도에서 skill·agent의 "라이브러리에 추가"를 누르거나
-          폴더에 직접 넣어 주세요.
-        </p>
+        <p className="text-xs text-text-muted">{t("docs.library.empty")}</p>
       )}
     </div>
   );
@@ -82,6 +74,7 @@ function Section({ title, items }: { title: string; items: LibraryItem[] }) {
 }
 
 function LibraryRow({ item }: { item: LibraryItem }) {
+  const t = useT();
   const current = useProjectStore((s) => s.current);
   const { busy, apply, remove, update, forget } = useLibraryStore();
   const status = item.status ? STATUS_TEXT[item.status] : null;
@@ -95,11 +88,11 @@ function LibraryRow({ item }: { item: LibraryItem }) {
         </span>
         {item.mode && (
           <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-muted">
-            {item.mode === "personal" ? "나만" : "팀"}
+            {t(item.mode === "personal" ? "docs.mode.personal" : "docs.mode.team")}
           </span>
         )}
         {status && (
-          <span className={`shrink-0 text-[10px] ${status.className}`}>{status.label}</span>
+          <span className={`shrink-0 text-[10px] ${status.className}`}>{t(status.label)}</span>
         )}
       </div>
       {item.description && (
@@ -108,7 +101,11 @@ function LibraryRow({ item }: { item: LibraryItem }) {
       {current && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {item.status === null && (
-            <ModeButtons label="적용" disabled={busy} onPick={(mode) => apply(item, mode)} />
+            <ModeButtons
+              label={t("docs.library.apply")}
+              disabled={busy}
+              onPick={(mode) => apply(item, mode)}
+            />
           )}
           {item.status === "outdated" && (
             <button
@@ -117,7 +114,7 @@ function LibraryRow({ item }: { item: LibraryItem }) {
               disabled={busy}
               onClick={() => update(item)}
             >
-              업데이트
+              {t("docs.library.update")}
             </button>
           )}
           {item.status === "modified" && (
@@ -127,7 +124,7 @@ function LibraryRow({ item }: { item: LibraryItem }) {
               disabled={busy}
               onClick={() => update(item)}
             >
-              라이브러리 버전으로 덮어쓰기
+              {t("docs.library.overwrite")}
             </button>
           )}
           {applied && (
@@ -137,7 +134,7 @@ function LibraryRow({ item }: { item: LibraryItem }) {
               disabled={busy}
               onClick={() => (item.status === "missing" ? forget(item) : remove(item))}
             >
-              {item.status === "missing" ? "기록 지우기" : "빼기"}
+              {t(item.status === "missing" ? "docs.library.forget" : "docs.library.remove")}
             </button>
           )}
         </div>

@@ -1,3 +1,4 @@
+import { useT } from "../../i18n";
 import type { Mode } from "../../store/library";
 
 export const smallButton =
@@ -16,26 +17,27 @@ export function ModeButtons({
   personalOnly?: boolean;
   onPick: (mode: Mode) => void;
 }) {
+  const t = useT();
   return (
     <>
       <button
         type="button"
         className={smallButton}
         disabled={disabled}
-        title="git에 올리지 않고 나만 사용"
+        title={t("docs.mode.personalHint")}
         onClick={() => onPick("personal")}
       >
-        {label} · 나만
+        {label} · {t("docs.mode.personal")}
       </button>
       {!personalOnly && (
         <button
           type="button"
           className={smallButton}
           disabled={disabled}
-          title="커밋해서 팀과 공유"
+          title={t("docs.mode.teamHint")}
           onClick={() => onPick("team")}
         >
-          {label} · 팀
+          {label} · {t("docs.mode.team")}
         </button>
       )}
     </>

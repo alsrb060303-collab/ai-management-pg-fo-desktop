@@ -231,7 +231,10 @@ pub(crate) fn check_id(id: &str) -> ops::Result<()> {
         || id.contains("..")
         || RESERVED.contains(&stem.as_str());
     if bad {
-        Err(format!("사용할 수 없는 이름입니다: {id}"))
+        Err(crate::tr!(
+            "사용할 수 없는 이름입니다: {id}",
+            "This name can't be used: {id}"
+        ))
     } else {
         Ok(())
     }
@@ -370,7 +373,10 @@ fn apply(lib: &Library, project: &Path, kind: ItemKind, id: &str, mode: Mode) ->
     let mut state = lib.lock();
     let src = source_path(&lib.dir(&state), kind, id);
     if ops::hash_path(&src)?.is_none() {
-        return Err(format!("라이브러리에 없습니다: {id}"));
+        return Err(crate::tr!(
+            "라이브러리에 없습니다: {id}",
+            "Not in the library: {id}"
+        ));
     }
     let dest = project_path(project, kind, id);
     let key = project_key(project);
@@ -387,14 +393,15 @@ fn apply(lib: &Library, project: &Path, kind: ItemKind, id: &str, mode: Mode) ->
                     == Some(&file)
         })
     {
-        return Err(
-            "같은 저장소의 다른 worktree에 '팀'으로 적용되어 있어 '나만'으로 적용할 수 없습니다"
-                .into(),
-        );
+        return Err(crate::tr!(
+            "같은 저장소의 다른 worktree에 '팀'으로 적용되어 있어 '나만'으로 적용할 수 없습니다",
+            "Can't apply as 'Just me' because another worktree of this repository has it applied as 'Team'"
+        ));
     }
     if std::fs::symlink_metadata(&dest).is_ok() {
-        return Err(format!(
+        return Err(crate::tr!(
             "프로젝트에 같은 이름이 이미 있습니다: {}",
+            "The project already has something with this name: {}",
             dest.display()
         ));
     }
@@ -404,9 +411,9 @@ fn apply(lib: &Library, project: &Path, kind: ItemKind, id: &str, mode: Mode) ->
         Ok(Some(hash)) => hash,
         other => {
             let _ = ops::remove_path(&dest);
-            return Err(other
-                .err()
-                .unwrap_or_else(|| "복사본을 확인할 수 없습니다".into()));
+            return Err(other.err().unwrap_or_else(|| {
+                crate::tr!("복사본을 확인할 수 없습니다", "Couldn't verify the copy")
+            }));
         }
     };
     if mode == Mode::Personal
@@ -435,11 +442,17 @@ fn remove(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
     let key = project_key(project);
     let record = find_record(&state.records, &key, kind, id)
         .cloned()
-        .ok_or_else(|| "이 앱이 적용한 항목이 아닙니다".to_string())?;
+        .ok_or_else(|| {
+            crate::tr!(
+                "이 앱이 적용한 항목이 아닙니다",
+                "This item wasn't applied by this app"
+            )
+        })?;
     let dest = project_path(project, kind, id);
     if !force && !unchanged(&dest, &record.hash) {
-        return Err(format!(
-            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다"
+        return Err(crate::tr!(
+            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다",
+            "{MODIFIED_ERROR}It was changed in the project"
         ));
     }
     ops::remove_path(&dest)?;
@@ -482,14 +495,20 @@ fn forget(lib: &Library, project: &Path, kind: ItemKind, id: &str) -> ops::Resul
     let key = project_key(project);
     let dest = project_path(project, kind, id);
     if std::fs::symlink_metadata(&dest).is_ok() {
-        return Err("프로젝트에 아직 파일이 있습니다. '빼기'를 사용해 주세요".into());
+        return Err(crate::tr!(
+            "프로젝트에 아직 파일이 있습니다. '빼기'를 사용해 주세요",
+            "The files are still in the project. Use 'Remove' instead"
+        ));
     }
     let before = state.records.len();
     state
         .records
         .retain(|r| !(r.project == key && r.kind == kind && r.id == id));
     if state.records.len() == before {
-        return Err("이 앱이 적용한 항목이 아닙니다".into());
+        return Err(crate::tr!(
+            "이 앱이 적용한 항목이 아닙니다",
+            "This item wasn't applied by this app"
+        ));
     }
     lib.save(&state)
 }
@@ -500,21 +519,31 @@ fn update(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
     let key = project_key(project);
     let src = source_path(&lib.dir(&state), kind, id);
     if ops::hash_path(&src)?.is_none() {
-        return Err(format!("라이브러리에 없습니다: {id}"));
+        return Err(crate::tr!(
+            "라이브러리에 없습니다: {id}",
+            "Not in the library: {id}"
+        ));
     }
     let dest = project_path(project, kind, id);
     let record = state
         .records
         .iter_mut()
         .find(|r| r.project == key && r.kind == kind && r.id == id)
-        .ok_or_else(|| "이 앱이 적용한 항목이 아닙니다".to_string())?;
+        .ok_or_else(|| {
+            crate::tr!(
+                "이 앱이 적용한 항목이 아닙니다",
+                "This item wasn't applied by this app"
+            )
+        })?;
     if !force && !unchanged(&dest, &record.hash) {
-        return Err(format!(
-            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다"
+        return Err(crate::tr!(
+            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다",
+            "{MODIFIED_ERROR}It was changed in the project"
         ));
     }
     ops::copy_over(&src, &dest)?;
-    record.hash = ops::hash_path(&dest)?.ok_or("복사본을 확인할 수 없습니다")?;
+    record.hash = ops::hash_path(&dest)?
+        .ok_or_else(|| crate::tr!("복사본을 확인할 수 없습니다", "Couldn't verify the copy"))?;
     lib.save(&state)
 }
 
@@ -525,7 +554,12 @@ fn import(lib: &Library, path: &Path, kind: ItemKind) -> ops::Result<()> {
     let dir = lib.dir(&state);
     let (src, id) = match kind {
         ItemKind::Skill => {
-            let folder = path.parent().ok_or("skill 폴더를 찾을 수 없습니다")?;
+            let folder = path.parent().ok_or_else(|| {
+                crate::tr!(
+                    "skill 폴더를 찾을 수 없습니다",
+                    "Couldn't find the skill folder"
+                )
+            })?;
             (folder.to_path_buf(), file_name(folder).unwrap_or_default())
         }
         ItemKind::Agent => (
@@ -538,7 +572,10 @@ fn import(lib: &Library, path: &Path, kind: ItemKind) -> ops::Result<()> {
     check_id(&id)?;
     let dest = source_path(&dir, kind, &id);
     if dest.exists() {
-        return Err(format!("라이브러리에 같은 이름이 이미 있습니다: {id}"));
+        return Err(crate::tr!(
+            "라이브러리에 같은 이름이 이미 있습니다: {id}",
+            "The library already has something named {id}"
+        ));
     }
     ops::copy_new(&src, &dest)
 }
@@ -559,14 +596,17 @@ fn turn_off(
         .iter()
         .any(|t| t.project == key && t.kind == kind && t.name == name)
     {
-        return Err("이미 이 앱으로 꺼 둔 항목입니다".into());
+        return Err(crate::tr!(
+            "이미 이 앱으로 꺼 둔 항목입니다",
+            "This app has already turned it off"
+        ));
     }
     let file = settings_file(project, mode);
     if mode == Mode::Personal && file.exists() && ops::is_tracked(&file) {
-        return Err(
-            "settings.local.json이 git에 커밋되어 있어 '나만' 설정을 쓸 수 없습니다. '팀'으로 꺼 주세요."
-                .into(),
-        );
+        return Err(crate::tr!(
+            "settings.local.json이 git에 커밋되어 있어 '나만' 설정을 쓸 수 없습니다. '팀'으로 꺼 주세요.",
+            "settings.local.json is committed to git, so 'Just me' can't be used. Turn it off for 'Team' instead."
+        ));
     }
     let created = !file.exists();
     let previous = match kind {
@@ -582,7 +622,10 @@ fn turn_off(
     };
     if previous.as_deref() == Some("off") || !ops::apply_change(&file, change)? {
         // Already off by someone else's rule: nothing of ours to undo later.
-        return Err("이미 이 설정 파일에서 꺼져 있습니다".into());
+        return Err(crate::tr!(
+            "이미 이 설정 파일에서 꺼져 있습니다",
+            "It's already off in this settings file"
+        ));
     }
     // Record before anything else can fail, so the change can always be undone.
     state.toggles.push(Toggle {
@@ -609,7 +652,12 @@ fn turn_on(lib: &Library, project: &Path, kind: ItemKind, name: &str) -> ops::Re
         .toggles
         .iter()
         .position(|t| t.project == key && t.kind == kind && t.name == name)
-        .ok_or("이 앱으로 끈 항목이 아니라 되돌릴 수 없습니다")?;
+        .ok_or_else(|| {
+            crate::tr!(
+                "이 앱으로 끈 항목이 아니라 되돌릴 수 없습니다",
+                "Can't turn it back on because this app didn't turn it off"
+            )
+        })?;
     let toggle = state.toggles[index].clone();
     let file = settings_file(project, toggle.mode);
     if file.exists() {

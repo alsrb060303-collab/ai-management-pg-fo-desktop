@@ -350,11 +350,17 @@ fn count_changes(path: &str) -> Option<u32> {
 /// The repository root of `project`, or `None` outside git.
 pub fn root(project: &Path) -> git::Result<Option<PathBuf>> {
     if !project.is_dir() {
-        return Err("프로젝트 폴더를 찾을 수 없어요".into());
+        return Err(crate::tr!(
+            "프로젝트 폴더를 찾을 수 없어요",
+            "Couldn't find the project folder"
+        ));
     }
     match git::run(project, &["rev-parse", "--show-toplevel"]) {
         Ok(root) => Ok(Some(PathBuf::from(root))),
-        Err(e) if git::inside_git(project) => Err(format!("git 저장소를 읽지 못했어요: {e}")),
+        Err(e) if git::inside_git(project) => Err(crate::tr!(
+            "git 저장소를 읽지 못했어요: {e}",
+            "Couldn't read the git repository: {e}"
+        )),
         Err(_) => Ok(None),
     }
 }

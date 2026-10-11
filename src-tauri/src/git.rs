@@ -40,9 +40,12 @@ pub fn inside_git(dir: &Path) -> bool {
 pub fn run_raw(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = command(dir).args(args).output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            "git을 찾을 수 없어요. Git을 설치한 뒤 다시 시도해 주세요".to_string()
+            crate::tr!(
+                "git을 찾을 수 없어요. Git을 설치한 뒤 다시 시도해 주세요",
+                "Couldn't find git. Install Git and try again"
+            )
         } else {
-            format!("git을 실행하지 못했어요: {e}")
+            crate::tr!("git을 실행하지 못했어요: {e}", "Couldn't run git: {e}")
         }
     })?;
     if output.status.success() {

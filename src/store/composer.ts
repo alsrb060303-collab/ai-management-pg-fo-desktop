@@ -11,7 +11,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import { create } from "zustand";
-import { useLocaleStore } from "../i18n";
+import { t, useLocaleStore } from "../i18n";
 import type { Mode } from "./library";
 
 // Mirrors src-tauri/src/composer.
@@ -156,7 +156,7 @@ function blankDoc(): ComposerDoc {
   return {
     version: 1,
     id: newId("d"),
-    name: "새 문서",
+    name: t("composer.untitled"),
     updatedAt: Date.now(),
     nodes: [
       {
@@ -307,8 +307,12 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       );
       await get().loadCatalog();
       const parts = [
-        r.updated.length > 0 ? `${r.updated.length}개 업데이트` : "새 버전 없음",
-        r.failed.length > 0 ? `${r.failed.length}개 실패 (${r.failed[0][1]})` : "",
+        r.updated.length > 0
+          ? t("composer.palette.updated", { n: r.updated.length })
+          : t("composer.palette.upToDate"),
+        r.failed.length > 0
+          ? t("composer.palette.failed", { n: r.failed.length, reason: r.failed[0][1] })
+          : "",
       ];
       return parts.filter(Boolean).join(" · ");
     },

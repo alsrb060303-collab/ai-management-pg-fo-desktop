@@ -76,7 +76,10 @@ fn check_doc_id(id: &str) -> ops::Result<()> {
     if ok {
         Ok(())
     } else {
-        Err(format!("잘못된 문서 id: {id}"))
+        Err(crate::tr!(
+            "잘못된 문서 id: {id}",
+            "Invalid document id: {id}"
+        ))
     }
 }
 
@@ -101,7 +104,10 @@ fn list_docs(dir: &Path) -> Vec<DocMeta> {
             }
             let value: Value = serde_json::from_slice(&fs::read(&path).ok()?).ok()?;
             Some(DocMeta {
-                name: value["name"].as_str().unwrap_or("제목 없음").to_string(),
+                name: value["name"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| crate::tr!("제목 없음", "Untitled")),
                 updated_at: value["updatedAt"].as_f64().unwrap_or(0.0),
                 id,
             })
@@ -117,15 +123,27 @@ fn catalog_for(app: &AppHandle) -> Vec<Block> {
 }
 
 fn parse_doc(doc: Value) -> ops::Result<Doc> {
-    serde_json::from_value(doc).map_err(|e| format!("문서를 읽지 못했어요: {e}"))
+    serde_json::from_value(doc).map_err(|e| {
+        crate::tr!(
+            "문서를 읽지 못했어요: {e}",
+            "Couldn't read the document: {e}"
+        )
+    })
 }
 
 /// The project folder, resolved so records match however the path was typed.
 fn project_root(project: &str) -> ops::Result<(PathBuf, String)> {
-    let root =
-        fs::canonicalize(project).map_err(|e| format!("프로젝트 폴더를 열 수 없어요: {e}"))?;
+    let root = fs::canonicalize(project).map_err(|e| {
+        crate::tr!(
+            "프로젝트 폴더를 열 수 없어요: {e}",
+            "Couldn't open the project folder: {e}"
+        )
+    })?;
     if !root.is_dir() {
-        return Err("프로젝트 폴더가 아니에요".into());
+        return Err(crate::tr!(
+            "프로젝트 폴더가 아니에요",
+            "Not a project folder"
+        ));
     }
     let key = root.display().to_string();
     Ok((root, key))
@@ -165,8 +183,14 @@ pub async fn composer_docs(app: AppHandle) -> Result<Vec<DocMeta>, String> {
 pub async fn composer_doc_load(app: AppHandle, id: String) -> Result<Value, String> {
     blocking(app, move |app| {
         let path = app.state::<Composer>().doc_path(&id)?;
-        let bytes = fs::read(&path).map_err(|e| format!("문서를 열 수 없어요: {e}"))?;
-        serde_json::from_slice(&bytes).map_err(|e| format!("문서가 손상됐어요: {e}"))
+        let bytes = fs::read(&path).map_err(|e| {
+            crate::tr!(
+                "문서를 열 수 없어요: {e}",
+                "Couldn't open the document: {e}"
+            )
+        })?;
+        serde_json::from_slice(&bytes)
+            .map_err(|e| crate::tr!("문서가 손상됐어요: {e}", "The document is corrupted: {e}"))
     })
     .await
 }
@@ -174,7 +198,9 @@ pub async fn composer_doc_load(app: AppHandle, id: String) -> Result<Value, Stri
 #[tauri::command]
 pub async fn composer_doc_save(app: AppHandle, doc: Value) -> Result<(), String> {
     blocking(app, move |app| {
-        let id = doc["id"].as_str().ok_or("문서 id가 없어요")?;
+        let id = doc["id"]
+            .as_str()
+            .ok_or_else(|| crate::tr!("문서 id가 없어요", "The document has no id"))?;
         let path = app.state::<Composer>().doc_path(id)?;
         let text = serde_json::to_string(&doc).map_err(|e| e.to_string())?;
         ops::write_atomic(&path, text)
@@ -189,7 +215,10 @@ pub async fn composer_doc_delete(app: AppHandle, id: String) -> Result<(), Strin
         match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("문서를 지우지 못했어요: {e}")),
+            Err(e) => Err(crate::tr!(
+                "문서를 지우지 못했어요: {e}",
+                "Couldn't delete the document: {e}"
+            )),
         }
     })
     .await
@@ -267,9 +296,10 @@ pub async fn composer_write(
             let skip = match &item.status {
                 write::Status::Unchanged => None,
                 write::Status::Blocked(reason) => Some(reason.clone()),
-                s if s.needs_confirm() && !approved => {
-                    Some("확인하지 않았거나 확인한 뒤에 파일이 바뀌어서 건너뛰었어요".into())
-                }
+                s if s.needs_confirm() && !approved => Some(crate::tr!(
+                    "확인하지 않았거나 확인한 뒤에 파일이 바뀌어서 건너뛰었어요",
+                    "Skipped: not confirmed, or the file changed after you confirmed"
+                )),
                 _ => None,
             };
             if let Some(reason) = skip {

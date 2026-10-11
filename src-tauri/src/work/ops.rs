@@ -45,7 +45,10 @@ fn require_branch(root: &Path, name: &str) -> git::Result<()> {
     if local_branches(root)?.iter().any(|b| b == name) {
         Ok(())
     } else {
-        Err(format!("'{name}' 브랜치가 없어요"))
+        Err(crate::tr!(
+            "'{name}' 브랜치가 없어요",
+            "There's no branch named '{name}'"
+        ))
     }
 }
 
@@ -53,13 +56,22 @@ fn require_branch(root: &Path, name: &str) -> git::Result<()> {
 /// dash, so names never read as options).
 fn valid_branch_name(root: &Path, name: &str) -> git::Result<()> {
     if name.trim().is_empty() {
-        return Err("브랜치 이름을 입력해 주세요".into());
+        return Err(crate::tr!(
+            "브랜치 이름을 입력해 주세요",
+            "Enter a branch name"
+        ));
     }
     if name.starts_with('-') || git::run(root, &["check-ref-format", "--branch", name]).is_err() {
-        return Err(format!("'{name}'은(는) 브랜치 이름으로 쓸 수 없어요"));
+        return Err(crate::tr!(
+            "'{name}'은(는) 브랜치 이름으로 쓸 수 없어요",
+            "'{name}' can't be used as a branch name"
+        ));
     }
     if local_branches(root)?.iter().any(|b| b == name) {
-        return Err(format!("'{name}' 브랜치가 이미 있어요"));
+        return Err(crate::tr!(
+            "'{name}' 브랜치가 이미 있어요",
+            "A branch named '{name}' already exists"
+        ));
     }
     Ok(())
 }
@@ -111,7 +123,10 @@ pub fn check_branch(root: &Path, name: &str) -> git::Result<BranchCheck> {
 
 pub fn delete_branch(root: &Path, name: &str, force: bool) -> git::Result<()> {
     if !force && check_branch(root, name)?.unmerged > 0 {
-        return Err(format!("'{name}' 브랜치에 병합되지 않은 커밋이 있어요"));
+        return Err(crate::tr!(
+            "'{name}' 브랜치에 병합되지 않은 커밋이 있어요",
+            "The '{name}' branch has unmerged commits"
+        ));
     }
     require_branch(root, name)?;
     git::run(root, &["branch", if force { "-D" } else { "-d" }, name]).map(drop)
@@ -128,7 +143,10 @@ fn valid_worktree_name(name: &str) -> git::Result<()> {
     if ok {
         Ok(())
     } else {
-        Err("worktree 이름은 영문·숫자·-·_·. 만 쓸 수 있어요 (64자까지)".into())
+        Err(crate::tr!(
+            "worktree 이름은 영문·숫자·-·_·. 만 쓸 수 있어요 (64자까지)",
+            "A worktree name can only use letters, digits, -, _ and . (up to 64 characters)"
+        ))
     }
 }
 
@@ -138,7 +156,10 @@ pub fn add_worktree(root: &Path, name: &str, base: Option<&str>) -> git::Result<
     valid_worktree_name(name)?;
     let overview = read::overview(root, false)?;
     if overview.head.commit.is_none() {
-        return Err("첫 커밋을 만든 뒤에 worktree를 추가할 수 있어요".into());
+        return Err(crate::tr!(
+            "첫 커밋을 만든 뒤에 worktree를 추가할 수 있어요",
+            "Make the first commit before adding a worktree"
+        ));
     }
     let branch = format!("worktree-{name}");
     valid_branch_name(root, &branch)?;
@@ -148,7 +169,11 @@ pub fn add_worktree(root: &Path, name: &str, base: Option<&str>) -> git::Result<
     let dir = PathBuf::from(&overview.main_root).join(WORKTREES_DIR);
     let path = dir.join(name);
     if path.exists() {
-        return Err(format!("{} 폴더가 이미 있어요", path.display()));
+        return Err(crate::tr!(
+            "{} 폴더가 이미 있어요",
+            "The folder {} already exists",
+            path.display()
+        ));
     }
     // Keep the nested worktrees out of the main worktree's status.
     crate::library::ops::exclude_add(&dir, true)?;
@@ -168,18 +193,28 @@ pub fn remove_worktree(root: &Path, path: &str, force: bool) -> git::Result<()> 
         .iter()
         .find(|w| read::path_key(&w.path) == key)
     else {
-        return Err("목록에 없는 worktree예요".into());
+        return Err(crate::tr!(
+            "목록에 없는 worktree예요",
+            "This worktree isn't in the list"
+        ));
     };
     if wt.is_main {
-        return Err("기본 worktree는 지울 수 없어요".into());
+        return Err(crate::tr!(
+            "기본 worktree는 지울 수 없어요",
+            "The main worktree can't be deleted"
+        ));
     }
     if wt.is_current {
-        return Err(
-            "지금 열려 있는 worktree는 지울 수 없어요. 다른 폴더를 연 뒤 지워 주세요".into(),
-        );
+        return Err(crate::tr!(
+            "지금 열려 있는 worktree는 지울 수 없어요. 다른 폴더를 연 뒤 지워 주세요",
+            "The open worktree can't be deleted. Open another folder first"
+        ));
     }
     if wt.locked {
-        return Err("잠긴 worktree예요. `git worktree unlock`으로 푼 뒤 지워 주세요".into());
+        return Err(crate::tr!(
+            "잠긴 worktree예요. `git worktree unlock`으로 푼 뒤 지워 주세요",
+            "This worktree is locked. Unlock it with `git worktree unlock` first"
+        ));
     }
     if wt.prunable {
         return forget_missing(root, &wt.path);
@@ -188,7 +223,10 @@ pub fn remove_worktree(root: &Path, path: &str, force: bool) -> git::Result<()> 
         let dir = Path::new(&wt.path);
         let raw = git::run_raw(dir, &["status", "--porcelain=v2", "-z"])?;
         if read::parse_status(&raw).2 > 0 {
-            return Err("커밋하지 않은 변경이 있는 worktree예요".into());
+            return Err(crate::tr!(
+                "커밋하지 않은 변경이 있는 worktree예요",
+                "This worktree has uncommitted changes"
+            ));
         }
         // A detached HEAD's commits live only in its reflog, which goes too.
         if wt.branch.is_none() {
@@ -203,8 +241,9 @@ pub fn remove_worktree(root: &Path, path: &str, force: bool) -> git::Result<()> 
             ];
             let lost: u32 = git::run(dir, &args)?.trim().parse().unwrap_or(0);
             if lost > 0 {
-                return Err(format!(
-                    "어느 브랜치에도 없는 커밋이 {lost}개 있는 worktree예요"
+                return Err(crate::tr!(
+                    "어느 브랜치에도 없는 커밋이 {lost}개 있는 worktree예요",
+                    "This worktree has {lost} commit(s) that aren't on any branch"
                 ));
             }
         }
@@ -226,8 +265,12 @@ fn forget_missing(root: &Path, path: &str) -> git::Result<()> {
     )?;
     let admin = Path::new(&common).join("worktrees");
     let key = read::path_key(path);
-    let entries =
-        std::fs::read_dir(&admin).map_err(|e| format!("worktree 기록을 읽을 수 없어요: {e}"))?;
+    let entries = std::fs::read_dir(&admin).map_err(|e| {
+        crate::tr!(
+            "worktree 기록을 읽을 수 없어요: {e}",
+            "Couldn't read the worktree records: {e}"
+        )
+    })?;
     for entry in entries.flatten() {
         // `gitdir` holds `<worktree>/.git`.
         let Ok(gitdir) = std::fs::read_to_string(entry.path().join("gitdir")) else {
@@ -236,11 +279,18 @@ fn forget_missing(root: &Path, path: &str) -> git::Result<()> {
         let gitdir = gitdir.trim();
         let folder = gitdir.strip_suffix(".git").unwrap_or(gitdir);
         if read::path_key(folder) == key {
-            return std::fs::remove_dir_all(entry.path())
-                .map_err(|e| format!("worktree 기록을 지울 수 없어요: {e}"));
+            return std::fs::remove_dir_all(entry.path()).map_err(|e| {
+                crate::tr!(
+                    "worktree 기록을 지울 수 없어요: {e}",
+                    "Couldn't delete the worktree record: {e}"
+                )
+            });
         }
     }
-    Err("worktree 기록을 찾지 못했어요".into())
+    Err(crate::tr!(
+        "worktree 기록을 찾지 못했어요",
+        "Couldn't find the worktree record"
+    ))
 }
 
 pub fn prune_worktrees(root: &Path) -> git::Result<()> {
@@ -290,24 +340,27 @@ pub fn diff(
             .components()
             .all(|c| matches!(c, Component::Normal(_)));
     if !normal {
-        return Err("잘못된 경로예요".into());
+        return Err(crate::tr!("잘못된 경로예요", "Invalid path"));
     }
     if untracked {
         let file = root.join(path);
-        let meta =
-            std::fs::symlink_metadata(&file).map_err(|e| format!("파일을 읽을 수 없어요: {e}"))?;
+        let meta = std::fs::symlink_metadata(&file)
+            .map_err(|e| crate::tr!("파일을 읽을 수 없어요: {e}", "Couldn't read the file: {e}"))?;
         if meta.file_type().is_symlink() {
             let target = std::fs::read_link(&file)
                 .map(|t| t.display().to_string())
                 .unwrap_or_default();
             return Ok(Diff {
-                text: format!("심볼릭 링크예요 → {target}\n"),
+                text: crate::tr!("심볼릭 링크예요 → {target}\n", "Symbolic link → {target}\n"),
                 ..Diff::default()
             });
         }
         if meta.is_dir() {
             return Ok(Diff {
-                text: "새 폴더예요. 안의 파일은 목록에 따로 나오지 않아요.\n".into(),
+                text: crate::tr!(
+                    "새 폴더예요. 안의 파일은 목록에 따로 나오지 않아요.\n",
+                    "New folder. The files inside aren't listed separately.\n"
+                ),
                 ..Diff::default()
             });
         }
@@ -320,7 +373,7 @@ pub fn diff(
                     &mut bytes,
                 )
             })
-            .map_err(|e| format!("파일을 읽을 수 없어요: {e}"))?;
+            .map_err(|e| crate::tr!("파일을 읽을 수 없어요: {e}", "Couldn't read the file: {e}"))?;
         if bytes.iter().take(8000).any(|&b| b == 0) {
             return Ok(Diff {
                 binary: true,

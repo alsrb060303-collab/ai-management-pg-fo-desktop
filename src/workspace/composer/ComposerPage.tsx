@@ -11,6 +11,7 @@ import {
 import { Check, CloudOff, Loader2, PanelRight, Redo2, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IconButton } from "../../components/ui";
+import { useT } from "../../i18n";
 import { useComposerStore } from "../../store/composer";
 import { useThemeStore } from "../../store/theme";
 import { nodeTypes } from "./nodes";
@@ -33,6 +34,7 @@ export default function ComposerPage() {
   const doc = useComposerStore((s) => s.doc);
   const [writing, setWriting] = useState(false);
   const [preview, setPreview] = useState(readPreviewPref);
+  const t = useT();
   const togglePreview = () => {
     setPreview(!preview);
     try {
@@ -49,7 +51,7 @@ export default function ComposerPage() {
   useUndoShortcuts();
 
   if (!doc) {
-    return <div className="p-10 text-sm text-text-muted">불러오는 중…</div>;
+    return <div className="p-10 text-sm text-text-muted">{t("composer.loading")}</div>;
   }
 
   return (
@@ -130,13 +132,14 @@ function Toolbar({ preview, onTogglePreview }: { preview: boolean; onTogglePrevi
   const saveState = useComposerStore((s) => s.saveState);
   const error = useComposerStore((s) => s.error);
   const [name, setName] = useState(doc?.name ?? "");
+  const t = useT();
 
   useEffect(() => {
     setName(doc?.name ?? "");
   }, [doc?.name]);
 
   const commitName = () => {
-    const trimmed = name.trim() || "새 문서";
+    const trimmed = name.trim() || t("composer.untitled");
     if (trimmed !== doc?.name) rename(trimmed);
     setName(trimmed);
   };
@@ -144,7 +147,7 @@ function Toolbar({ preview, onTogglePreview }: { preview: boolean; onTogglePrevi
   return (
     <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3">
       <input
-        aria-label="문서 이름"
+        aria-label={t("composer.docName")}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onBlur={commitName}
@@ -158,17 +161,21 @@ function Toolbar({ preview, onTogglePreview }: { preview: boolean; onTogglePrevi
         {saveState === "saving" && <Loader2 size={12} className="animate-spin" />}
         {saveState === "saved" && <Check size={12} />}
         {saveState === "error" && <CloudOff size={12} className="text-danger" />}
-        {saveState === "saving" ? "저장 중" : saveState === "saved" ? "저장됨" : "저장 실패"}
+        {saveState === "saving"
+          ? t("composer.saving")
+          : saveState === "saved"
+            ? t("composer.saved")
+            : t("composer.saveFailed")}
       </span>
       <div className="ml-auto flex items-center gap-0.5">
-        <IconButton label="실행 취소 (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
+        <IconButton label={t("composer.undo")} disabled={!canUndo} onClick={undo}>
           <Undo2 size={16} />
         </IconButton>
-        <IconButton label="다시 실행 (Ctrl+Shift+Z)" disabled={!canRedo} onClick={redo}>
+        <IconButton label={t("composer.redo")} disabled={!canRedo} onClick={redo}>
           <Redo2 size={16} />
         </IconButton>
         <IconButton
-          label={preview ? "미리보기 닫기" : "미리보기 열기"}
+          label={preview ? t("composer.hidePreview") : t("composer.showPreview")}
           aria-pressed={preview}
           onClick={onTogglePreview}
           className={preview ? "text-text" : ""}

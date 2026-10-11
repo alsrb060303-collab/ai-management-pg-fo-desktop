@@ -1,5 +1,6 @@
 import { Check, GitBranch, GripVertical, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { type MessageKey, type Params, useT } from "../../i18n";
 import { type BranchInfo, shownBranch, type Todo, useMemoStore } from "../../store/memo";
 import { useProjectStore } from "../../store/project";
 
@@ -11,6 +12,7 @@ const POLL_MS = 4000;
  * (`compact`) and the main window's memo page.
  */
 export function MemoPanel({ compact = false }: { compact?: boolean }) {
+  const t = useT();
   const project = useProjectStore((s) => s.current);
   const choose = useProjectStore((s) => s.choose);
   const { context, picked, loading, error, load, poll, flushNote } = useMemoStore();
@@ -37,15 +39,13 @@ export function MemoPanel({ compact = false }: { compact?: boolean }) {
   if (!project) {
     return (
       <div className="space-y-3 text-sm">
-        <p className="text-text-muted">
-          프로젝트 폴더를 고르면 브랜치마다 메모와 할 일을 남길 수 있어요.
-        </p>
+        <p className="text-text-muted">{t("memo.pickProject")}</p>
         <button
           type="button"
           onClick={() => void choose()}
           className="rounded-lg border border-border bg-surface-raised px-3 py-1.5 text-sm hover:border-border-strong"
         >
-          폴더 선택
+          {t("memo.chooseFolder")}
         </button>
       </div>
     );
@@ -55,7 +55,7 @@ export function MemoPanel({ compact = false }: { compact?: boolean }) {
     <div className={compact ? "space-y-3" : "space-y-5"}>
       <BranchBar compact={compact} />
       {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
-      {loading && !context && <p className="text-xs text-text-muted">불러오는 중…</p>}
+      {loading && !context && <p className="text-xs text-text-muted">{t("memo.loading")}</p>}
       {context && branch !== null && (
         <>
           <NoteEditor compact={compact} />
@@ -66,14 +66,24 @@ export function MemoPanel({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function branchLabel(b: BranchInfo, isGit: boolean, detachedAt: string | null): string {
-  const name = !isGit ? "이 폴더" : b.name || `분리된 HEAD${detachedAt ? ` (${detachedAt})` : ""}`;
+function branchLabel(
+  t: (key: MessageKey, params?: Params) => string,
+  b: BranchInfo,
+  isGit: boolean,
+  detachedAt: string | null,
+): string {
+  const name = !isGit
+    ? t("memo.branch.thisFolder")
+    : b.name || `${t("memo.branch.detached")}${detachedAt ? ` (${detachedAt})` : ""}`;
   const counts = b.total > 0 ? ` · ${b.open}/${b.total}` : "";
-  const tags = [b.current ? "현재" : "", b.exists ? "" : "삭제됨"].filter(Boolean).join(", ");
+  const tags = [b.current ? t("memo.branch.current") : "", b.exists ? "" : t("memo.branch.deleted")]
+    .filter(Boolean)
+    .join(", ");
   return `${name}${tags ? ` (${tags})` : ""}${counts}`;
 }
 
 function BranchBar({ compact }: { compact: boolean }) {
+  const t = useT();
   const { context, picked, pick } = useMemoStore();
   const choose = useProjectStore((s) => s.choose);
   if (!context) return null;
@@ -90,14 +100,14 @@ function BranchBar({ compact }: { compact: boolean }) {
           onClick={() => void choose()}
           className="shrink-0 rounded-md px-1.5 py-0.5 hover:bg-hover hover:text-text"
         >
-          폴더 변경
+          {t("memo.changeFolder")}
         </button>
       </div>
       {context.isGit && (
         <div className="flex items-center gap-1.5">
           <GitBranch size={compact ? 14 : 15} className="shrink-0 text-text-subtle" />
           <select
-            aria-label="브랜치"
+            aria-label={t("memo.branch")}
             value={branch}
             onChange={(e) => void pick(e.target.value)}
             className={`min-w-0 flex-1 truncate rounded-lg border border-border bg-surface-raised px-2 ${
@@ -106,22 +116,22 @@ function BranchBar({ compact }: { compact: boolean }) {
           >
             {context.branches.map((b) => (
               <option key={b.name} value={b.name}>
-                {branchLabel(b, context.isGit, context.detachedAt)}
+                {branchLabel(t, b, context.isGit, context.detachedAt)}
               </option>
             ))}
             {/* A picked branch that was deleted and has no memos left. */}
             {!context.branches.some((b) => b.name === branch) && (
-              <option value={branch}>{`${branch} (삭제됨)`}</option>
+              <option value={branch}>{`${branch} (${t("memo.branch.deleted")})`}</option>
             )}
           </select>
           {picked !== null && (
             <button
               type="button"
               onClick={() => void pick(null)}
-              title="체크아웃한 브랜치를 따라가요"
+              title={t("memo.branch.followHint")}
               className="shrink-0 rounded-md px-1.5 py-1 text-xs text-accent hover:bg-hover"
             >
-              현재 브랜치로
+              {t("memo.branch.follow")}
             </button>
           )}
         </div>
@@ -131,6 +141,7 @@ function BranchBar({ compact }: { compact: boolean }) {
 }
 
 function NoteEditor({ compact }: { compact: boolean }) {
+  const t = useT();
   const { note, noteDirty, setNote, flushNote } = useMemoStore();
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -146,15 +157,17 @@ function NoteEditor({ compact }: { compact: boolean }) {
   return (
     <section>
       <h3 className="mb-1.5 flex items-center gap-2 text-xs font-semibold">
-        메모
-        <span className="font-normal text-text-subtle">{noteDirty ? "저장 중…" : ""}</span>
+        {t("memo.note.title")}
+        <span className="font-normal text-text-subtle">
+          {noteDirty ? t("memo.note.saving") : ""}
+        </span>
       </h3>
       <textarea
         ref={ref}
         value={note}
         onChange={(e) => setNote(e.target.value)}
         onBlur={() => void flushNote()}
-        placeholder="이 브랜치에서 하던 일, 다음에 이어서 할 일을 적어 두세요."
+        placeholder={t("memo.note.placeholder")}
         spellCheck={false}
         className={`selectable block w-full resize-none rounded-lg border border-border bg-surface-raised px-3 py-2 leading-relaxed outline-none placeholder:text-text-subtle focus:border-border-strong ${
           compact ? "text-xs" : "text-sm"
@@ -165,11 +178,12 @@ function NoteEditor({ compact }: { compact: boolean }) {
 }
 
 function TodoList({ compact }: { compact: boolean }) {
+  const t = useT();
   const { todos, addTodo, moveTodo, clearDone } = useMemoStore();
   const [draft, setDraft] = useState("");
   const [showDone, setShowDone] = useState(false);
-  const open = todos.filter((t) => !t.done);
-  const done = todos.filter((t) => t.done);
+  const open = todos.filter((todo) => !todo.done);
+  const done = todos.filter((todo) => todo.done);
 
   const submit = () => {
     const text = draft.trim();
@@ -184,11 +198,11 @@ function TodoList({ compact }: { compact: boolean }) {
   /** Reorders among open items; done items keep their slots in the full order. */
   const reorder = (from: number, to: number) => {
     if (from === to) return;
-    const ids = open.map((t) => t.id);
+    const ids = open.map((todo) => todo.id);
     const [moved] = ids.splice(from, 1);
     ids.splice(to, 0, moved);
     let next = 0;
-    const full = todos.map((t) => (t.done ? t.id : ids[next++]));
+    const full = todos.map((todo) => (todo.done ? todo.id : ids[next++]));
     void moveTodo(moved, full.indexOf(moved));
   };
 
@@ -197,9 +211,13 @@ function TodoList({ compact }: { compact: boolean }) {
   return (
     <section>
       <h3 className="mb-1.5 flex items-center gap-2 text-xs font-semibold">
-        할 일
+        {t("memo.todo.title")}
         <span className="font-normal text-text-subtle">
-          {open.length > 0 ? `${open.length}개 남음` : todos.length > 0 ? "모두 끝냄" : ""}
+          {open.length > 0
+            ? t("memo.todo.remaining", { n: open.length })
+            : todos.length > 0
+              ? t("memo.todo.allDone")
+              : ""}
         </span>
       </h3>
       <form
@@ -213,7 +231,7 @@ function TodoList({ compact }: { compact: boolean }) {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="할 일 추가 (Enter)"
+          placeholder={t("memo.todo.add")}
           className={`min-w-0 flex-1 bg-transparent py-1.5 outline-none placeholder:text-text-subtle ${text}`}
         />
       </form>
@@ -228,20 +246,20 @@ function TodoList({ compact }: { compact: boolean }) {
               onClick={() => setShowDone(!showDone)}
               className="rounded px-1 py-0.5 hover:bg-hover hover:text-text"
             >
-              {showDone ? "▾" : "▸"} 완료 {done.length}개
+              {showDone ? "▾" : "▸"} {t("memo.todo.doneCount", { n: done.length })}
             </button>
             <button
               type="button"
               onClick={() => void clearDone()}
               className="ml-auto rounded px-1 py-0.5 hover:bg-hover hover:text-danger"
             >
-              완료 항목 지우기
+              {t("memo.todo.clearDone")}
             </button>
           </div>
           {showDone && (
             <ul className="mt-1 space-y-0.5">
-              {done.map((t) => (
-                <TodoRow key={t.id} todo={t} compact={compact} />
+              {done.map((todo) => (
+                <TodoRow key={todo.id} todo={todo} compact={compact} />
               ))}
             </ul>
           )}
@@ -261,6 +279,7 @@ function Reorderable({
   onReorder: (from: number, to: number) => void;
   compact: boolean;
 }) {
+  const t = useT();
   const listRef = useRef<HTMLUListElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
 
@@ -275,10 +294,10 @@ function Reorderable({
 
   return (
     <ul ref={listRef} className="space-y-0.5">
-      {items.map((t, i) => (
+      {items.map((todo, i) => (
         <TodoRow
-          key={t.id}
-          todo={t}
+          key={todo.id}
+          todo={todo}
           compact={compact}
           highlight={drag !== null && drag.from !== drag.to && drag.to === i}
           dragging={drag?.from === i}
@@ -286,7 +305,7 @@ function Reorderable({
             <button
               type="button"
               tabIndex={-1}
-              aria-label={`${t.text} 순서 바꾸기`}
+              aria-label={t("memo.todo.reorder", { text: todo.text })}
               className="cursor-grab touch-none text-text-subtle opacity-0 group-hover:opacity-100 active:cursor-grabbing"
               onPointerDown={(e) => {
                 e.currentTarget.setPointerCapture(e.pointerId);
@@ -323,6 +342,7 @@ function TodoRow({
   highlight?: boolean;
   dragging?: boolean;
 }) {
+  const t = useT();
   const { toggleTodo, editTodo, deleteTodo } = useMemoStore();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(todo.text);
@@ -345,7 +365,7 @@ function TodoRow({
         <input
           type="checkbox"
           checked={todo.done}
-          aria-label={todo.done ? "다시 할 일로" : "완료"}
+          aria-label={t(todo.done ? "memo.todo.markOpen" : "memo.todo.markDone")}
           onChange={() => void toggleTodo(todo.id)}
           className="peer size-4 cursor-pointer appearance-none rounded border border-border-strong bg-surface-raised transition-colors checked:border-accent checked:bg-accent hover:border-accent"
         />
@@ -378,7 +398,7 @@ function TodoRow({
             setText(todo.text);
             setEditing(true);
           }}
-          title="눌러서 고치기"
+          title={t("memo.todo.edit")}
           className={`selectable min-w-0 flex-1 text-left break-words ${size} ${
             todo.done ? "text-text-subtle line-through" : ""
           }`}
@@ -389,7 +409,7 @@ function TodoRow({
       {editing ? (
         <button
           type="button"
-          aria-label="취소"
+          aria-label={t("memo.todo.cancel")}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             setText(todo.text);
@@ -402,7 +422,7 @@ function TodoRow({
       ) : (
         <button
           type="button"
-          aria-label="삭제"
+          aria-label={t("memo.todo.delete")}
           onClick={() => void deleteTodo(todo.id)}
           className="shrink-0 rounded p-0.5 text-text-subtle opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
         >
