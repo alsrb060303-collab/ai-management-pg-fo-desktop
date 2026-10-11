@@ -12,10 +12,11 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useT } from "../../i18n";
 import { type Checks, type Pull, useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { useWorkStore } from "../../store/work";
-import { Command } from "./GitSetupGuide";
+import { Command, rich } from "./GitSetupGuide";
 
 /** GitHub is polled far less often than local git (5,000 requests an hour). */
 const POLL_MS = 60_000;
@@ -30,6 +31,7 @@ const open = (url: string) => {
  * request and checks (or a form to open one), and open PRs and issues.
  */
 export function GitHubSection({ compact }: { compact: boolean }) {
+  const t = useT();
   const project = useProjectStore((s) => s.current);
   const overview = useWorkStore((s) => s.overview);
   const { status, view, loading, error, init, load } = useGitHubStore();
@@ -73,9 +75,7 @@ export function GitHubSection({ compact }: { compact: boolean }) {
         </p>
       )}
       {status.offline ? (
-        <p className="text-xs text-text-subtle">
-          GitHub에 연결하지 못했어요. 인터넷이 돌아오면 다시 불러와요.
-        </p>
+        <p className="text-xs text-text-subtle">{t("work.github.offline")}</p>
       ) : !signedIn ? (
         <SignIn />
       ) : view ? (
@@ -85,17 +85,14 @@ export function GitHubSection({ compact }: { compact: boolean }) {
           <IssueList />
         </>
       ) : (
-        !loading && (
-          <p className="text-xs text-text-subtle">
-            github.com 저장소가 아니라서 PR·이슈를 보여줄 수 없어요.
-          </p>
-        )
+        !loading && <p className="text-xs text-text-subtle">{t("work.github.notGitHub")}</p>
       )}
     </section>
   );
 }
 
 function Header({ compact }: { compact: boolean }) {
+  const t = useT();
   const { status, view, logout } = useGitHubStore();
   const account = status?.account;
   return (
@@ -106,7 +103,7 @@ function Header({ compact }: { compact: boolean }) {
           type="button"
           onClick={() => open(view.url)}
           className="flex min-w-0 items-center gap-1 truncate font-normal text-text-subtle hover:text-text"
-          title="GitHub에서 열기"
+          title={t("work.github.openOnGitHub")}
         >
           {view.slug}
           <ExternalLink size={11} className="shrink-0" />
@@ -118,35 +115,38 @@ function Header({ compact }: { compact: boolean }) {
           <button
             type="button"
             onClick={() => void logout()}
-            title={`@${account.login} 로그아웃`}
+            title={t("work.github.signOutAccount", { login: account.login })}
             className="rounded px-1 py-0.5 hover:bg-hover hover:text-text"
           >
-            로그아웃
+            {t("work.github.signOut")}
           </button>
         </span>
       )}
-      {status?.offline && <span className="ml-auto font-normal text-text-subtle">연결 안 됨</span>}
+      {status?.offline && (
+        <span className="ml-auto font-normal text-text-subtle">
+          {t("work.github.disconnected")}
+        </span>
+      )}
     </h3>
   );
 }
 
 function SignIn() {
+  const t = useT();
   const { login, loginError, startLogin, cancelLogin } = useGitHubStore();
   const [copied, setCopied] = useState(false);
 
   if (!login) {
     return (
       <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
-        <p className="text-text-muted">
-          GitHub에 로그인하면 이 브랜치의 PR·CI 상태와 열린 PR·이슈를 보고, PR을 만들 수 있어요.
-        </p>
+        <p className="text-text-muted">{t("work.github.signInIntro")}</p>
         {loginError && <p className="text-xs text-danger">{loginError}</p>}
         <button
           type="button"
           onClick={() => void startLogin()}
           className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-fg hover:bg-primary-hover"
         >
-          GitHub 로그인
+          {t("work.github.signIn")}
         </button>
       </div>
     );
@@ -154,7 +154,7 @@ function SignIn() {
 
   return (
     <div className="space-y-2.5 rounded-lg border border-border bg-surface-raised p-3">
-      <p className="text-text-muted">브라우저에서 GitHub에 아래 코드를 입력하면 로그인돼요.</p>
+      <p className="text-text-muted">{t("work.github.enterCode")}</p>
       <p className="selectable text-center font-mono text-2xl font-semibold tracking-[0.2em]">
         {login.userCode}
       </p>
@@ -169,35 +169,38 @@ function SignIn() {
         }}
         className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-fg hover:bg-primary-hover"
       >
-        {copied ? "복사됨 · " : ""}코드 복사하고 GitHub 열기
+        {copied ? t("work.github.copied") : ""}
+        {t("work.github.copyAndOpen")}
         <ExternalLink size={12} />
       </button>
       <div className="flex items-center gap-2 text-xs text-text-subtle">
         <Clock size={12} className="animate-pulse" />
-        기다리는 중… ({login.verificationUri})
+        {t("work.github.waiting", { url: login.verificationUri })}
         <button
           type="button"
           onClick={cancelLogin}
           className="ml-auto rounded px-1.5 py-0.5 hover:bg-hover hover:text-text"
         >
-          취소
+          {t("work.cancel")}
         </button>
       </div>
     </div>
   );
 }
 
-const STATE: Record<Pull["state"], { label: string; className: string }> = {
-  open: { label: "열림", className: "bg-success/15 text-success" },
-  merged: { label: "병합됨", className: "bg-info/15 text-info" },
-  closed: { label: "닫힘", className: "bg-danger/15 text-danger" },
+/** Labels are `work.github.state.<state>`. */
+const STATE: Record<Pull["state"], string> = {
+  open: "bg-success/15 text-success",
+  merged: "bg-info/15 text-info",
+  closed: "bg-danger/15 text-danger",
 };
 
 function PullBadge({ pull }: { pull: Pull }) {
+  const t = useT();
   const s =
     pull.draft && pull.state === "open"
-      ? { label: "초안", className: "bg-sunken text-text-muted" }
-      : STATE[pull.state];
+      ? { label: t("work.github.draft"), className: "bg-sunken text-text-muted" }
+      : { label: t(`work.github.state.${pull.state}`), className: STATE[pull.state] };
   return (
     <span className={`shrink-0 rounded-full px-1.5 py-px text-[10px] ${s.className}`}>
       {s.label}
@@ -206,7 +209,8 @@ function PullBadge({ pull }: { pull: Pull }) {
 }
 
 function ChecksSummary({ checks }: { checks: Checks | null }) {
-  if (!checks) return <span className="text-[11px] text-text-subtle">CI 없음</span>;
+  const t = useT();
+  if (!checks) return <span className="text-[11px] text-text-subtle">{t("work.github.noCi")}</span>;
   const parts: ReactNode[] = [];
   if (checks.failed)
     parts.push(
@@ -229,15 +233,20 @@ function ChecksSummary({ checks }: { checks: Checks | null }) {
         {checks.passed}
       </span>,
     );
-  const title = `CI: 성공 ${checks.passed}, 실패 ${checks.failed}, 진행 중 ${checks.pending}, 건너뜀 ${checks.skipped}`;
+  const title = t("work.github.ciTitle", { ...checks });
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-[11px]" title={title}>
-      {parts.length ? parts : <span className="text-text-subtle">건너뜀 {checks.skipped}</span>}
+      {parts.length ? (
+        parts
+      ) : (
+        <span className="text-text-subtle">{t("work.github.skipped", { n: checks.skipped })}</span>
+      )}
     </span>
   );
 }
 
 function CurrentBranch({ compact }: { compact: boolean }) {
+  const t = useT();
   const view = useGitHubStore((s) => s.view);
   const overview = useWorkStore((s) => s.overview);
   const [creating, setCreating] = useState(false);
@@ -251,8 +260,7 @@ function CurrentBranch({ compact }: { compact: boolean }) {
     return (
       <div className="space-y-1.5 rounded-lg border border-border bg-surface-raised p-3">
         <p className="text-text-muted">
-          <b className="text-text">{branch}</b> 브랜치가 아직 GitHub에 없어요. PR을 만들려면 먼저
-          올려 주세요.
+          {rich(t("work.github.notPushed"), { branch: <b className="text-text">{branch}</b> })}
         </p>
         <Command lines={[`git push -u origin ${branch}`]} />
       </div>
@@ -279,7 +287,9 @@ function CurrentBranch({ compact }: { compact: boolean }) {
         <div className="flex items-center gap-2">
           <GitPullRequest size={15} className="shrink-0 text-text-subtle" />
           <span className="min-w-0 flex-1 truncate text-text-muted">
-            {branch === view.defaultBranch ? `${branch} (기본 브랜치)` : "이 브랜치의 PR이 없어요"}
+            {branch === view.defaultBranch
+              ? t("work.github.defaultBranch", { branch })
+              : t("work.github.noPull")}
           </span>
           <ChecksSummary checks={view.checks} />
         </div>
@@ -294,7 +304,7 @@ function CurrentBranch({ compact }: { compact: boolean }) {
             onClick={() => setCreating(true)}
             className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-fg hover:bg-primary-hover"
           >
-            {current ? "새 PR 만들기" : "PR 만들기"}
+            {t(current ? "work.github.newPull" : "work.github.createPull")}
           </button>
         ))}
     </div>
@@ -305,6 +315,7 @@ const inputClass =
   "w-full min-w-0 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong";
 
 function NewPull({ compact, onDone }: { compact: boolean; onDone: () => void }) {
+  const t = useT();
   const view = useGitHubStore((s) => s.view);
   const createPr = useGitHubStore((s) => s.createPr);
   const overview = useWorkStore((s) => s.overview);
@@ -341,20 +352,20 @@ function NewPull({ compact, onDone }: { compact: boolean; onDone: () => void }) 
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="PR 제목"
+        placeholder={t("work.github.pullTitle")}
         className={inputClass}
       />
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="설명 (선택, 마크다운)"
+        placeholder={t("work.github.pullBody")}
         rows={compact ? 3 : 4}
         className={`${inputClass} resize-y`}
       />
       <div className="flex items-center gap-1.5 text-xs text-text-muted">
         <span className="shrink-0">{branch} →</span>
         <select
-          aria-label="기준 브랜치"
+          aria-label={t("work.baseBranch")}
           value={base}
           onChange={(e) => setBase(e.target.value)}
           className={inputClass}
@@ -368,28 +379,30 @@ function NewPull({ compact, onDone }: { compact: boolean; onDone: () => void }) 
       </div>
       {ahead > 0 && (
         <p className="text-[11px] text-warning">
-          아직 push 안 한 커밋 {ahead}개는 PR에 들어가지 않아요. <code>git push</code> 후 만들면
-          같이 들어가요.
+          {rich(t(ahead === 1 ? "work.github.unpushed.one" : "work.github.unpushed"), {
+            n: ahead,
+            push: <code>git push</code>,
+          })}
         </p>
       )}
       <div className="flex items-center gap-2 text-xs">
         <label className="flex items-center gap-1.5 text-text-muted">
           <input type="checkbox" checked={draft} onChange={(e) => setDraft(e.target.checked)} />
-          초안으로
+          {t("work.github.asDraft")}
         </label>
         <button
           type="button"
           onClick={onDone}
           className="ml-auto rounded-md px-2 py-1 text-text-muted hover:bg-hover"
         >
-          취소
+          {t("work.cancel")}
         </button>
         <button
           type="submit"
           disabled={busy || !title.trim()}
           className="rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
         >
-          {busy ? "만드는 중…" : "PR 만들기"}
+          {t(busy ? "work.github.creating" : "work.github.createPull")}
         </button>
       </div>
     </form>
@@ -405,6 +418,7 @@ function Collapsible({
   count: number;
   children: ReactNode;
 }) {
+  const t = useT();
   const [shown, setShown] = useState(false);
   return (
     <div>
@@ -418,7 +432,7 @@ function Collapsible({
       </button>
       {shown &&
         (count === 0 ? (
-          <p className="px-2 py-1 text-[11px] text-text-subtle">없어요.</p>
+          <p className="px-2 py-1 text-[11px] text-text-subtle">{t("work.github.none")}</p>
         ) : (
           <ul className="mt-0.5 space-y-px">{children}</ul>
         ))}
@@ -460,8 +474,9 @@ function Row({
 }
 
 function PullList({ pulls }: { pulls: Pull[] }) {
+  const t = useT();
   return (
-    <Collapsible title="열린 PR" count={pulls.length}>
+    <Collapsible title={t("work.github.openPulls")} count={pulls.length}>
       {pulls.map((p) => (
         <Row
           key={p.number}
@@ -478,9 +493,10 @@ function PullList({ pulls }: { pulls: Pull[] }) {
 }
 
 function IssueList() {
+  const t = useT();
   const issues = useGitHubStore((s) => s.view?.issues ?? []);
   return (
-    <Collapsible title="열린 이슈" count={issues.length}>
+    <Collapsible title={t("work.github.openIssues")} count={issues.length}>
       {issues.map((i) => (
         <Row
           key={i.number}
