@@ -1,0 +1,2 @@
+# Catalog blocks are compared and hashed as text; keep LF on every checkout.
+src-tauri/catalog/** text eol=lf

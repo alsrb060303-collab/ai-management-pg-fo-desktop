@@ -22,6 +22,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | 린트/포맷 | Biome (TS), rustfmt + clippy (Rust) | |
 | 라이선스 | **Apache-2.0** | OSI 승인 라이선스. 무료 코드 서명(SignPath) 조건도 충족 |
 | 앱 이름 | 임시 코드네임 `ai-management` | 이름에 "Claude"·"Anthropic" 사용 금지(Anthropic 정책) |
+| 창 구성 | **메인 창 + 사이드바, 한 번에 하나만 표시** | 실행하면 메인 창. "사이드바로 전환"하면 메인 창을 닫고 사이드바가 터미널 옆에 붙음. 트레이·단축키로 다시 메인 창 |
+| 디자인 | Claude 데스크탑 앱 같은 스타일(따뜻한 무채색, 왼쪽 사이드바, 강조색 하나). 테마는 시스템 따라감 + 설정에서 라이트/다크 | 로고·이름·전용 폰트는 쓰지 않고 무료 폰트(OFL)로 대체 |
 | 도킹 방식 | **지금 쓰는 창 따라가기** | Windows Terminal / VS Code / Claude 데스크탑 중 활성 창 옆에 자동으로 붙음 |
 | 대상 AI 도구 | Claude Code만 (다른 도구는 나중에) | |
 | 문서 생성 | 템플릿 + 로컬 `claude` CLI headless 호출 | 사용자 구독 그대로 사용, 비용 0 |
@@ -31,6 +33,9 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | git | 설치된 `git` CLI 실행 | worktree·push·인증(GCM)까지 레퍼런스 동작 |
 | GitHub | GitHub App + Device Flow 로그인 | 클라이언트 시크릿 불필요(오픈소스 OK), 레포 단위 권한 |
 | 배포 | GitHub Releases + Tauri updater, NSIS 설치 파일 | 무료 |
+| 외부 블록을 사용자 파일에 써넣을 때의 저작자 표시(NOTICE) 의무 | 공개 전 법률 검토 |
+| React Flow의 WebKitGTK(Linux)·WebView2 실제 조작(드래그, 연결 거부) | 실기 테스트 필요 |
+| 작업 중 사용량 한도에 걸리면 | 풀리는 시각에 바로 이어서 하도록 예약(send_later) |
 | 코드 서명 | 처음엔 미서명 → 공개 릴리스 후 SignPath Foundation(OSS 무료) 신청 | 비용 0 |
 
 ## 2. 아키텍처
@@ -112,13 +117,23 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - `git` CLI 실행. Git for Windows가 없을 수 있으므로(Claude Code에선 선택 사항) 감지해서 안내한다.
 - Claude Code가 만드는 worktree(`.claude/worktrees/<name>`, 브랜치 `worktree-<name>`)도 함께 표시한다.
 
+**Phase 7 결정 (2026-10-11)**
+- 앱이 하는 조작: 상태·변경 파일·diff 보기, 브랜치 전환·만들기·삭제, worktree 만들기·삭제·정리. 커밋·push·pull은 Claude Code나 터미널에 맡긴다(나중에 확장 가능).
+- 변경 파일은 목록 + 읽기 전용 diff(HEAD 기준, 스테이징 여부 무관).
+- 앱에서 만드는 worktree도 Claude Code 규칙을 따른다(`.claude/worktrees/<이름>`, 브랜치 `worktree-<이름>`). `.claude/worktrees/`는 `.git/info/exclude`에 넣는다.
+- 되돌리기 어려운 조작은 확인창. 병합 안 된 브랜치 삭제·변경이 남은 worktree 삭제는 기본으로 막고, 경고를 두 번 확인해야 강제로 지운다. 기본·열린 worktree는 지울 수 없다.
+
 ### 3.6 GitHub
-- GitHub App(선택한 레포만 접근) + Device Flow. 토큰은 8시간, refresh token은 6개월(사용할 때마다 교체).
+- ~~GitHub App(선택한 레포만 접근) + Device Flow~~ → **Phase 9 결정 (2026-10-11): OAuth App + Device Flow**, scope `repo`. 레포마다 App을 설치할 필요가 없는 대신 모든 비공개 레포에 접근할 수 있는 권한이다. OAuth App 토큰은 만료되지 않는다(사용자가 GitHub 설정에서 취소 가능).
+- Client ID는 공개 값이라 코드에 넣는다(`src-tauri/src/github/mod.rs`의 `CLIENT_ID`, 개발 중에는 환경 변수 `AIM_GITHUB_CLIENT_ID`). Client secret은 쓰지 않는다.
+- 9a 범위: 작업 탭 안 GitHub 섹션. 현재 브랜치 PR·CI 상태, 열린 PR·이슈 목록, 현재 브랜치로 PR 만들기. 리뷰·머지·댓글은 GitHub 웹으로 연결한다. GitHub 요청은 60초마다(화면이 보일 때)·창 포커스·브랜치 변경 때만.
 - 토큰은 OS 자격 증명 저장소(`keyring` 4.x)에 보관한다. Tauri Stronghold 플러그인은 v3에서 제거 예정이라 쓰지 않는다.
 - API 한도: 사용자당 시간당 5,000회(사용자의 다른 앱과 공유).
 
 ### 3.7 메모 & 동기화
-- 로컬 SQLite가 원본. 프로젝트는 정규화한 git remote URL로 식별(없으면 경로).
+- 로컬 SQLite가 원본(`<앱 데이터>/memo.db`). 프로젝트는 정규화한 git remote URL로 식별(없으면 공통 git 폴더, git 밖이면 폴더 경로). 같은 저장소의 clone·worktree는 메모를 공유한다.
+- 브랜치마다 메모 1개 + 할 일 목록. 터미널에서 브랜치를 바꾸면 4초 안에 따라 바뀐다(창이 보일 때만 확인). 삭제된 브랜치의 메모도 남아 있다.
+- 동기화 대비: 모든 행에 `updated_at`·`device_id`, 삭제는 tombstone(`deleted = 1`).
 - 동기화는 어댑터 인터페이스로 분리해서 백엔드를 갈아끼울 수 있게 한다.
 - 무료 사용자는 로컬만, **유료 고객만 Firebase 동기화**를 쓴다.
   - Firestore 경로: `users/{uid}/repos/{repoKey}/branches/{branchKey}/items/{itemId}` (repoKey = 정규화한 remote URL의 SHA-256)
@@ -128,27 +143,53 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - 로그인: GitHub(Device Flow) 토큰 → `GithubAuthProvider.credential(token)` → `signInWithCredential`. 앱 안 팝업 로그인은 안 되므로 쓰지 않는다.
 - 유료 권한 부여에는 결제 웹훅을 받을 서버 코드가 필요하다(Cloud Functions는 Blaze 요금제 필요, 또는 다른 호스팅).
 
+### 3.8 메인 창 & 문서 작성기 (2026-10-10 결정)
+- 창: `sidebar`(기존 창, 라벨만 변경) + `main`(새 창, 작업 표시줄에 표시, 크기 조절 가능). 같은 Vite 앱에서 창 라벨로 화면을 나누고, 작성기 코드는 메인 창에서만 지연 로드.
+  - 창 생성은 항상 비동기 작업에서 한다(Windows에서 동기 핸들러 안 생성 시 교착).
+  - 권한은 창별 capability 파일로 나눈다.
+- 디자인: 왼쪽 사이드바(새 문서, 메뉴, 최근 문서) + 본문. 폰트는 UI Pretendard, 영문 Hanken Grotesk, 본문 미리보기 Source Serif 4, 코드 JetBrains Mono (모두 OFL, 앱에 포함). 아이콘 Lucide.
+- 작성기(유니티 셰이더 그래프 방식)
+  - 화면: 왼쪽 블록 목록(검색·분류) / 가운데 캔버스(@xyflow/react, MIT) / 오른쪽 실제 파일 미리보기(줄 수 표시, CLAUDE.md는 200줄 권장선)
+  - 블록 종류: 지침(CLAUDE.md용), 규칙(`.claude/rules`, 경로 지정 가능), skill, subagent
+  - 출력 노드: CLAUDE.md(나만이면 CLAUDE.local.md) / 규칙 / skills / agents. 연결 가능한 종류만 연결된다.
+  - CLAUDE.md 안의 블록 순서는 출력 노드 안 목록에서 드래그로 정한다.
+  - 파일 쓰기: 종류별 위치로 나눠서 쓴다. CLAUDE.md는 앱이 쓴 구역만 HTML 주석 표시로 감싸서 관리하고(Claude Code는 이 주석을 읽지 않음), 그 밖의 내용은 건드리지 않는다. 쓰기 전에 변경 미리보기를 보여주고, 앱이 쓰지 않았거나 사용자가 수정한 파일은 묻지 않고 덮어쓰지 않는다.
+  - 실행 취소/다시 실행은 직접 구현한다(React Flow의 Pro 예제 코드는 라이선스상 쓰지 않음).
+- 블록 출처
+  - 내장 블록: 직접 작성(본문 영어, 이름·설명 한국어). 공식 문서는 인용하지 않고 요약해서 출처 링크만 단다.
+  - 외부 인기 항목: Apache-2.0/MIT 항목만, 커밋 SHA 고정 + 라이선스 표시(`src-tauri/catalog/external/`, `THIRD_PARTY_NOTICES.md`). hooks·scripts·MCP 설정 등 실행되는 부분은 가져오지 않는다.
+  - "최신 받아오기": 같은 저장소의 같은 파일을 최신 커밋(git `info/refs`, API 토큰·한도 없음)으로 받고, 라이선스 파일이 그대로인지 확인한 뒤 앱 데이터 `catalog-cache/`에 저장. subagent의 `model`은 빼서 세션 모델을 쓴다.
+  - 쓴 파일에는 출처를 남긴다: SKILL.md는 `license`·`metadata`, 그 밖의 frontmatter는 `# Source:` 주석, CLAUDE.md 구역은 HTML 주석.
+  - 내 라이브러리(Phase 3) 항목도 블록으로 쓴다.
+- 나중에: `claude -p`로 "내 프로젝트에 맞게 다듬기"(미리보기 후 저장), 기술 스택 감지로 블록 추천.
+
 ## 4. 로드맵
 
 - [x] **Phase 0. 초기 세팅**: Tauri + React 스캐폴드, 린트, CI(Windows 설치 파일 빌드), 문서
 - [~] **Phase 1. 사이드바 셸 + 도킹 PoC** (구현 완료, Windows 실기 테스트 대기: `docs/testing/phase1-windows.md`): 활성 창 따라가기, 가장자리 고정 대체 동작, 트레이, 전역 단축키
 - [x] **Phase 2. 설정 지도(읽기 전용)**: 프로젝트 선택, Claude Code 설정 스캔·표시
-- [ ] **Phase 3. 라이브러리 적용/제외**
-- [ ] **Phase 4. 문서 생성**: 스택 감지, 템플릿, `claude -p`
-- [ ] **Phase 5. Git 작업 관리**: 브랜치·worktree·상태·조작
-- [ ] **Phase 6. 메모/TODO + 동기화**
-- [ ] **Phase 7. GitHub 연동**: 로그인, PR·이슈
-- [ ] **Phase 8. 배포**: 자동 업데이트, 코드 서명, winget
+- [~] **Phase 3. 라이브러리 적용/제외** (구현·리뷰 완료, Windows 테스트 후 완료 처리)
+- [~] **Phase 4. 메인 창 + 디자인 시스템** (구현·리뷰 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md`): 창 2개 전환, 테마(라이트/다크/시스템), 폰트, 메인 레이아웃. 기존 화면(설정 지도·라이브러리)을 메인 창에도 배치
+- [~] **Phase 5. 문서 작성기** (구현·리뷰 완료, Linux UI 확인. Windows 테스트 대기: `docs/testing/phase4-windows.md` E): 블록 그래프 편집, 미리보기, 저장·불러오기, 실행 취소, 프로젝트에 쓰기
+- [~] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
+- [~] **Phase 7. Git 작업 관리** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` G): 브랜치·worktree·상태·diff·조작
+- [x] **Phase 8a. 브랜치 메모/TODO (로컬)**: 저장소·브랜치별 메모와 할 일, 브랜치 따라가기, 두 창 동기화
+- [ ] **Phase 8b. 메모 동기화** (유료 고객 Firebase)
+- [~] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
+- [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크
 
 | 항목 | 상태 |
 |---|---|
-| 유료 플랜: 결제 수단(Paddle·Lemon Squeezy·Stripe 등), 가격, 사업자 등록·세금, 유료 기능 범위 | Phase 6 전에 결정 |
-| 유료 사용자가 늘면 Firebase Blaze(종량제) 전환 필요. Firestore·Auth에는 지출 상한이 없음 | Phase 6 전에 결정 |
+| 유료 플랜: 결제 수단(Paddle·Lemon Squeezy·Stripe 등), 가격, 사업자 등록·세금, 유료 기능 범위 | Phase 8 전에 결정 |
+| 유료 사용자가 늘면 Firebase Blaze(종량제) 전환 필요. Firestore·Auth에는 지출 상한이 없음 | Phase 8 전에 결정 |
 | GitHub Device Flow 토큰 → Firebase 로그인 동작 여부 | PoC 필요 |
 | 도킹 PoC: owner 지정, 포커스, DPI, 관리자 권한 터미널 | 실제 Windows에서 테스트 필요 |
 | 정식 앱 이름 | 미정 |
 | UI 다국어(영어) | 오픈소스 공개 전에 추가 |
 | Claude Code "mods"(터미널 안 패널) 연동 | 나중에 확장으로 검토 |
+| 외부 블록을 사용자 파일에 써넣을 때의 저작자 표시(NOTICE) 의무 | 공개 전 법률 검토 |
+| React Flow의 WebKitGTK(Linux)·WebView2 실제 조작(드래그, 연결 거부) | 실기 테스트 필요 |
+| 작업 중 사용량 한도에 걸리면 | 풀리는 시각에 바로 이어서 하도록 예약(send_later) |
 | 코드 서명 | SignPath는 이미 공개된 릴리스가 있어야 신청 가능 |

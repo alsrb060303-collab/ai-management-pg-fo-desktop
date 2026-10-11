@@ -12,13 +12,25 @@
   "app": {
     "windows": [
       {
-        "label": "main",
+        "label": "sidebar",
         "title": "AI Management",
         "width": 360,
         "height": 760,
         "decorations": false,
         "resizable": false,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
+        "label": "main",
+        "title": "AI Management",
+        "width": 1400,
+        "height": 880,
+        "minWidth": 1000,
+        "minHeight": 620,
+        "center": true,
+        "create": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

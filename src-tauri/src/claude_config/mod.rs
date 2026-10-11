@@ -123,7 +123,11 @@ pub async fn claude_config_scan(app: AppHandle, path: String) -> Result<ConfigMa
         if project.is_dir() {
             Ok(scan(&project, &env))
         } else {
-            Err(format!("폴더를 찾을 수 없습니다: {}", project.display()))
+            Err(crate::tr!(
+                "폴더를 찾을 수 없습니다: {}",
+                "Folder not found: {}",
+                project.display()
+            ))
         }
     })
     .await

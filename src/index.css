@@ -1,22 +1,119 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans:
-    "Pretendard", "Segoe UI", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic",
-    sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", ui-monospace, monospace;
+/* `dark:` follows the app theme (data-theme on <html>), not only the OS setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-  --color-surface: #16181d;
-  --color-surface-raised: #1e2128;
-  --color-border: #2b2f38;
-  --color-text: #e6e8ec;
-  --color-text-muted: #8b919c;
-  --color-accent: #6ea8fe;
+/*
+ * Design tokens. Warm neutral surfaces, near-black text, one warm accent.
+ * Components use the semantic names below; the raw values live in the
+ * light/dark blocks so both windows switch theme together.
+ */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --c-bg: #faf9f6;
+  --c-sidebar: #f2f0e9;
+  --c-raised: #ffffff;
+  --c-sunken: #efede5;
+  --c-hover: rgb(40 36 28 / 0.06);
+  --c-active: rgb(40 36 28 / 0.1);
+  --c-border: rgb(40 36 28 / 0.13);
+  --c-border-strong: rgb(40 36 28 / 0.26);
+  --c-text: #1d1b17;
+  --c-text-muted: #5e5b54;
+  /* Still >= 4.5:1 on every light surface, for small labels. */
+  --c-text-subtle: #6d6a62;
+  --c-accent: #c4643c;
+  --c-accent-hover: #ad5531;
+  --c-accent-soft: rgb(196 100 60 / 0.12);
+  --c-accent-fg: #ffffff;
+  --c-primary: #1d1b17;
+  --c-primary-hover: #3a3731;
+  --c-primary-fg: #faf9f6;
+  --c-success: #2f6b1f;
+  --c-info: #2f63a6;
+  --c-warning: #8a5a0b;
+  --c-danger: #a3322b;
+  --c-danger-soft: rgb(163 50 43 / 0.1);
+  --c-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.04);
+  --c-kind-instruction: #c4643c;
+  --c-kind-rule: #2f6fb8;
+  --c-kind-skill: #3b8547;
+  --c-kind-agent: #8357c2;
 }
 
-:root {
-  /* Native controls (select, scrollbars) follow the dark theme. */
+[data-theme="dark"] {
   color-scheme: dark;
+  --c-bg: #262522;
+  --c-sidebar: #1e1d1b;
+  --c-raised: #302f2c;
+  --c-sunken: #1a1917;
+  --c-hover: rgb(240 236 226 / 0.06);
+  --c-active: rgb(240 236 226 / 0.1);
+  --c-border: rgb(240 236 226 / 0.12);
+  --c-border-strong: rgb(240 236 226 / 0.24);
+  --c-text: #f3f1ea;
+  --c-text-muted: #b3b0a6;
+  --c-text-subtle: #9a978e;
+  --c-accent: #d9825d;
+  --c-accent-hover: #e39472;
+  --c-accent-soft: rgb(217 130 93 / 0.16);
+  --c-accent-fg: #1d1b17;
+  --c-primary: #f3f1ea;
+  --c-primary-hover: #dedbd2;
+  --c-primary-fg: #1d1b17;
+  --c-success: #86c35a;
+  --c-info: #86b2e3;
+  --c-warning: #d9ab4c;
+  --c-danger: #ef8d86;
+  --c-danger-soft: rgb(239 141 134 / 0.12);
+  --c-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 16px rgb(0 0 0 / 0.2);
+  --c-kind-instruction: #d9825d;
+  --c-kind-rule: #6fa3e0;
+  --c-kind-skill: #74b77f;
+  --c-kind-agent: #b08ce6;
+}
+
+@theme inline {
+  --font-sans:
+    "Pretendard Variable", Pretendard, "Segoe UI", system-ui, -apple-system, "Apple SD Gothic Neo",
+    "Malgun Gothic", sans-serif;
+  --font-serif:
+    "Source Serif 4 Variable", "Noto Serif KR", "Nanum Myeongjo", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Code", "D2Coding", ui-monospace, monospace;
+
+  --color-surface: var(--c-bg);
+  --color-sidebar: var(--c-sidebar);
+  --color-surface-raised: var(--c-raised);
+  --color-sunken: var(--c-sunken);
+  --color-hover: var(--c-hover);
+  --color-active: var(--c-active);
+  --color-border: var(--c-border);
+  --color-border-strong: var(--c-border-strong);
+  --color-text: var(--c-text);
+  --color-text-muted: var(--c-text-muted);
+  --color-text-subtle: var(--c-text-subtle);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-fg: var(--c-accent-fg);
+  /* The logo's gradient (src-tauri/icons/source/logo.svg); same in both themes. */
+  --color-brand-from: #f2915f;
+  --color-brand-via: #c85d9a;
+  --color-brand-to: #6d4fe8;
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-primary-fg: var(--c-primary-fg);
+  --color-success: var(--c-success);
+  --color-info: var(--c-info);
+  --color-warning: var(--c-warning);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --shadow-card: var(--c-shadow);
+  --color-kind-instruction: var(--c-kind-instruction);
+  --color-kind-rule: var(--c-kind-rule);
+  --color-kind-skill: var(--c-kind-skill);
+  --color-kind-agent: var(--c-kind-agent);
 }
 
 html,
@@ -27,11 +124,90 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--c-bg);
+  color: var(--c-text);
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
+}
+
+/* Text the user may want to copy (paths, previews) opts back in. */
+.selectable {
+  user-select: text;
+}
+
+/* Quiet scrollbars, like the rest of the chrome. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-border-strong) transparent;
+}
+
+/* In the base layer so utilities such as `outline-none` can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+  }
+}
+
+/* React Flow, restyled with the app tokens. The extra specificity beats its
+   own stylesheet (incl. `.react-flow.dark`), which loads later. */
+html[data-theme] .react-flow {
+  --xy-background-color: var(--c-bg);
+  --xy-background-pattern-color: var(--c-border-strong);
+  --xy-edge-stroke: var(--c-border-strong);
+  --xy-edge-stroke-selected: var(--c-accent);
+  --xy-connectionline-stroke: var(--c-accent);
+  --xy-handle-background-color: var(--c-raised);
+  --xy-handle-border-color: var(--c-border-strong);
+  --xy-minimap-background-color: var(--c-raised);
+  --xy-minimap-mask-background-color: rgb(0 0 0 / 0.06);
+  --xy-controls-button-background-color: var(--c-raised);
+  --xy-controls-button-background-color-hover: var(--c-hover);
+  --xy-controls-button-color: var(--c-text-muted);
+  --xy-controls-button-color-hover: var(--c-text);
+  --xy-controls-button-border-color: var(--c-border);
+  --xy-controls-box-shadow: var(--c-shadow);
+  --xy-attribution-background-color: transparent;
+  --xy-selection-background-color: var(--c-accent-soft);
+  --xy-selection-border: 1px dashed var(--c-accent);
+  /* Nodes draw their own card, border and selection state. */
+  --xy-node-border: 0;
+  --xy-node-background-color: transparent;
+  --xy-node-color: inherit;
+  --xy-node-boxshadow-hover: none;
+  --xy-node-boxshadow-selected: none;
+}
+
+/* Our "output" node type also gets React Flow's built-in output-node box. */
+html[data-theme] .react-flow__node-output {
+  padding: 0;
+  width: auto;
+  border-radius: 0;
+  font-size: inherit;
+  text-align: inherit;
+}
+
+.react-flow__attribution a {
+  color: var(--c-text-subtle);
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
 }

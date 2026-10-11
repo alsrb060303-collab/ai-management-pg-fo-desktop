@@ -1,0 +1,118 @@
+import type { Messages } from "./types";
+
+export const ko = {
+  // Main window navigation
+  "shell.nav.home": "홈",
+  "shell.nav.composer": "문서 작성기",
+  "shell.nav.library": "라이브러리",
+  "shell.nav.config": "설정 지도",
+  "shell.nav.work": "작업",
+  "shell.nav.memo": "메모",
+  "shell.nav.settings": "설정",
+  "shell.nav.expand": "메뉴 펼치기",
+  "shell.nav.collapse": "메뉴 접기",
+  "shell.nav.newDoc": "새 문서",
+  "shell.nav.soon": "준비 중",
+  "shell.nav.recentDocs": "최근 문서",
+  "shell.nav.noDocs": "아직 만든 문서가 없어요.",
+  "shell.nav.delete": "삭제",
+  "shell.nav.deleteDoc": "{name} 삭제",
+  "shell.nav.deleteDocTitle": "문서 삭제",
+  "shell.nav.deleteDocConfirm": "'{name}' 문서를 삭제할까요? 프로젝트에 쓴 파일은 그대로 남아요.",
+  "shell.switchToSidebar": "사이드바로 전환",
+
+  // Home page
+  "shell.home.morning": "좋은 아침이에요",
+  "shell.home.afternoon": "좋은 오후예요",
+  "shell.home.evening": "좋은 저녁이에요",
+  "shell.home.prompt": "오늘은 어떤 문서를 만들어 볼까요?",
+  "shell.home.newClaudeMd": "새 CLAUDE.md 만들기",
+  "shell.home.newClaudeMdDesc": "추천 블록을 연결해서 지침 · 규칙 · skill · agent 문서를 만들어요.",
+  "shell.home.config": "프로젝트 설정 보기",
+  "shell.home.configDesc": "Claude Code가 이 프로젝트에서 읽는 설정을 범위별로 확인해요.",
+  "shell.home.libraryDesc": "내 skill · subagent를 프로젝트에 적용하거나 빼요.",
+  "shell.home.sidebarDesc": "터미널 옆에 붙여서 작업하면서 봐요.",
+  "shell.home.recentProjects": "최근 프로젝트",
+
+  // Sidebar window: tabs
+  "shell.tab.docs": "문서",
+  "shell.tab.work": "작업",
+  "shell.tab.memo": "메모",
+
+  // Sidebar window: title bar
+  "shell.title.toMain": "메인 창으로 전환",
+  "shell.title.undock": "터미널에서 떼기",
+  "shell.title.dock": "터미널 옆에 붙이기",
+  "shell.title.unpin": "항상 위 해제",
+  "shell.title.pin": "항상 위",
+  "shell.title.hide": "숨기기 (Ctrl+Alt+Space)",
+
+  // Sidebar window: docking status bar
+  "shell.dock.connecting": "연결 중…",
+  "shell.dock.console": "콘솔",
+  "shell.dock.claudeDesktop": "Claude 데스크탑",
+  "shell.dock.window": "창",
+  "shell.dock.right": "{app} 오른쪽에 붙음",
+  "shell.dock.left": "{app} 왼쪽에 붙음",
+  "shell.dock.inside": "{app} 위에 겹쳐서 붙음",
+  "shell.dock.waiting": "{app} 대기 중",
+  "shell.dock.edge": "화면 가장자리",
+  "shell.dock.floating": "도킹 꺼짐",
+} as const;
+
+export const en: Messages<typeof ko> = {
+  "shell.nav.home": "Home",
+  "shell.nav.composer": "Document composer",
+  "shell.nav.library": "Library",
+  "shell.nav.config": "Settings map",
+  "shell.nav.work": "Work",
+  "shell.nav.memo": "Notes",
+  "shell.nav.settings": "Settings",
+  "shell.nav.expand": "Expand menu",
+  "shell.nav.collapse": "Collapse menu",
+  "shell.nav.newDoc": "New document",
+  "shell.nav.soon": "Coming soon",
+  "shell.nav.recentDocs": "Recent documents",
+  "shell.nav.noDocs": "No documents yet.",
+  "shell.nav.delete": "Delete",
+  "shell.nav.deleteDoc": "Delete {name}",
+  "shell.nav.deleteDocTitle": "Delete document",
+  "shell.nav.deleteDocConfirm":
+    "Delete the document '{name}'? Files already written to your project stay as they are.",
+  "shell.switchToSidebar": "Switch to sidebar",
+
+  "shell.home.morning": "Good morning",
+  "shell.home.afternoon": "Good afternoon",
+  "shell.home.evening": "Good evening",
+  "shell.home.prompt": "What would you like to make today?",
+  "shell.home.newClaudeMd": "Create a new CLAUDE.md",
+  "shell.home.newClaudeMdDesc":
+    "Connect suggested blocks to build instructions, rules, skills and agents.",
+  "shell.home.config": "View project settings",
+  "shell.home.configDesc": "See the settings Claude Code reads in this project, by scope.",
+  "shell.home.libraryDesc": "Add your skills and subagents to a project, or take them out.",
+  "shell.home.sidebarDesc": "Dock it next to your terminal and keep it in view while you work.",
+  "shell.home.recentProjects": "Recent projects",
+
+  "shell.tab.docs": "Docs",
+  "shell.tab.work": "Work",
+  "shell.tab.memo": "Notes",
+
+  "shell.title.toMain": "Switch to main window",
+  "shell.title.undock": "Undock from terminal",
+  "shell.title.dock": "Dock next to terminal",
+  "shell.title.unpin": "Turn off always on top",
+  "shell.title.pin": "Always on top",
+  "shell.title.hide": "Hide (Ctrl+Alt+Space)",
+
+  "shell.dock.connecting": "Connecting…",
+  "shell.dock.console": "Console",
+  "shell.dock.claudeDesktop": "Claude desktop",
+  "shell.dock.window": "a window",
+  "shell.dock.right": "Docked right of {app}",
+  "shell.dock.left": "Docked left of {app}",
+  "shell.dock.inside": "Docked over {app}",
+  "shell.dock.waiting": "Waiting for {app}",
+  "shell.dock.edge": "Screen edge",
+  "shell.dock.floating": "Docking off",
+};

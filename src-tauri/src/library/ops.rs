@@ -14,90 +14,218 @@ const EXCLUDE_TAG: &str = "# ai-management";
 
 pub type Result<T> = std::result::Result<T, String>;
 
-fn io_err(context: &str, path: &Path, e: io::Error) -> String {
-    format!("{context} 실패 ({}): {e}", path.display())
+/// The file operation an `io_err` message names.
+#[derive(Clone, Copy)]
+enum Op {
+    Read,
+    Write,
+    Copy,
+    CreateDir,
+    Replace,
+    Delete,
+}
+
+fn io_err(op: Op, path: &Path, e: io::Error) -> String {
+    let path = path.display();
+    match op {
+        Op::Read => crate::tr!("읽기 실패 ({path}): {e}", "Couldn't read {path}: {e}"),
+        Op::Write => crate::tr!("쓰기 실패 ({path}): {e}", "Couldn't write {path}: {e}"),
+        Op::Copy => crate::tr!("복사 실패 ({path}): {e}", "Couldn't copy to {path}: {e}"),
+        Op::CreateDir => crate::tr!(
+            "폴더 만들기 실패 ({path}): {e}",
+            "Couldn't create the folder {path}: {e}"
+        ),
+        Op::Replace => crate::tr!("교체 실패 ({path}): {e}", "Couldn't replace {path}: {e}"),
+        Op::Delete => crate::tr!("삭제 실패 ({path}): {e}", "Couldn't delete {path}: {e}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Hashing and copying
 
-/// SHA-256 over a file, or over every file under a directory (relative paths
-/// and contents, in a stable order). `None` when the path does not exist.
-pub fn hash_path(path: &Path) -> Option<String> {
-    let mut hasher = Sha256::new();
-    if path.is_file() {
-        hasher.update(fs::read(path).ok()?);
-    } else if path.is_dir() {
-        for file in files_under(path) {
-            let rel = file.strip_prefix(path).unwrap_or(&file);
-            hasher.update(rel.to_string_lossy().replace('\\', "/").as_bytes());
-            hasher.update([0]);
-            hasher.update(fs::read(&file).ok()?);
-            hasher.update([0]);
-        }
-    } else {
-        return None;
-    }
-    Some(format!("{:x}", hasher.finalize()))
+/// Symlinks are followed up to this depth, so link cycles end.
+const MAX_DEPTH: usize = 16;
+
+/// One entry of a tree, relative to its root, with `/` separators.
+enum Entry {
+    Dir(String),
+    File(String, PathBuf),
 }
 
-fn files_under(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            match entry.file_type() {
-                Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file() => out.push(path),
-                _ => {}
+/// Lists a tree, following symlinks. Any unreadable entry is an error, so a
+/// caller never mistakes "could not look" for "nothing there".
+fn walk(root: &Path) -> Result<Vec<Entry>> {
+    fn visit(root: &Path, dir: &Path, depth: usize, out: &mut Vec<Entry>) -> Result<()> {
+        if depth > MAX_DEPTH {
+            return Err(crate::tr!(
+                "폴더가 너무 깊습니다: {}",
+                "Folder nesting is too deep: {}",
+                dir.display()
+            ));
+        }
+        let mut entries: Vec<PathBuf> = fs::read_dir(dir)
+            .map_err(|e| io_err(Op::Read, dir, e))?
+            .map(|e| e.map(|e| e.path()).map_err(|e| io_err(Op::Read, dir, e)))
+            .collect::<Result<_>>()?;
+        entries.sort();
+        for path in entries {
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let meta = fs::metadata(&path).map_err(|e| io_err(Op::Read, &path, e))?;
+            if meta.is_dir() {
+                out.push(Entry::Dir(rel));
+                visit(root, &path, depth + 1, out)?;
+            } else {
+                out.push(Entry::File(rel, path));
             }
         }
+        Ok(())
     }
-    out.sort();
-    out
+    let mut out = Vec::new();
+    visit(root, root, 0, &mut out)?;
+    Ok(out)
 }
 
-/// Copies a file or directory tree to `dest`, which must not exist yet.
-pub fn copy_new(src: &Path, dest: &Path) -> Result<()> {
-    if dest.exists() {
-        return Err(format!("이미 있습니다: {}", dest.display()));
-    }
-    copy_over(src, dest)
+/// Number of files in a tree (following symlinks like `walk`).
+pub fn file_count(root: &Path) -> Result<usize> {
+    Ok(walk(root)?
+        .iter()
+        .filter(|e| matches!(e, Entry::File(..)))
+        .count())
 }
 
-/// Copies a file or directory tree to `dest`, replacing what is there.
-pub fn copy_over(src: &Path, dest: &Path) -> Result<()> {
-    remove_path(dest)?;
-    if src.is_file() {
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_err("폴더 만들기", parent, e))?;
+/// SHA-256 over a file, or over a directory tree (names, empty folders and
+/// contents, in a stable order). `Ok(None)` only when nothing is there; a path
+/// that exists but cannot be fully read is an error.
+pub fn hash_path(path: &Path) -> Result<Option<String>> {
+    let meta = match fs::metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_err(Op::Read, path, e)),
+    };
+    let mut hasher = Sha256::new();
+    if meta.is_dir() {
+        for entry in walk(path)? {
+            match entry {
+                Entry::Dir(rel) => {
+                    hasher.update(b"D");
+                    hasher.update(rel.as_bytes());
+                    hasher.update([0]);
+                }
+                Entry::File(rel, file) => {
+                    hasher.update(b"F");
+                    hasher.update(rel.as_bytes());
+                    hasher.update([0]);
+                    hasher.update(fs::read(&file).map_err(|e| io_err(Op::Read, &file, e))?);
+                    hasher.update([0]);
+                }
+            }
         }
-        fs::copy(src, dest).map_err(|e| io_err("복사", dest, e))?;
+    } else {
+        hasher.update(fs::read(path).map_err(|e| io_err(Op::Read, path, e))?);
+    }
+    Ok(Some(format!("{:x}", hasher.finalize())))
+}
+
+/// Copies a file or tree (following symlinks) to `dest`, which must not exist.
+fn copy_tree(src: &Path, dest: &Path) -> Result<()> {
+    if fs::metadata(src)
+        .map_err(|e| io_err(Op::Read, src, e))?
+        .is_file()
+    {
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| io_err(Op::CreateDir, parent, e))?;
+        }
+        fs::copy(src, dest).map_err(|e| io_err(Op::Copy, dest, e))?;
         return Ok(());
     }
-    for file in files_under(src) {
-        let target = dest.join(file.strip_prefix(src).unwrap_or(&file));
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_err("폴더 만들기", parent, e))?;
+    fs::create_dir_all(dest).map_err(|e| io_err(Op::CreateDir, dest, e))?;
+    for entry in walk(src)? {
+        match entry {
+            Entry::Dir(rel) => {
+                let target = dest.join(&rel);
+                fs::create_dir_all(&target).map_err(|e| io_err(Op::CreateDir, &target, e))?;
+            }
+            Entry::File(rel, file) => {
+                let target = dest.join(&rel);
+                fs::copy(&file, &target).map_err(|e| io_err(Op::Copy, &target, e))?;
+            }
         }
-        fs::copy(&file, &target).map_err(|e| io_err("복사", &target, e))?;
     }
     Ok(())
 }
 
+/// Hidden sibling used while copying; Claude Code ignores dot-folders and
+/// non-`.md` files, so a half-done copy is never loaded.
+fn sibling(dest: &Path, suffix: &str) -> Result<PathBuf> {
+    let name = dest
+        .file_name()
+        .ok_or_else(|| crate::tr!("잘못된 경로: {}", "Invalid path: {}", dest.display()))?
+        .to_string_lossy();
+    Ok(dest.with_file_name(format!(".{name}.ai-management-{suffix}")))
+}
+
+/// Copies into a hidden temporary sibling first, so `dest` only ever holds a
+/// complete copy.
+fn copy_to_temp(src: &Path, dest: &Path) -> Result<PathBuf> {
+    let tmp = sibling(dest, "tmp")?;
+    remove_path(&tmp)?;
+    if let Err(e) = copy_tree(src, &tmp) {
+        let _ = remove_path(&tmp);
+        return Err(e);
+    }
+    Ok(tmp)
+}
+
+/// Copies a file or directory tree to `dest`, which must not exist yet.
+pub fn copy_new(src: &Path, dest: &Path) -> Result<()> {
+    if fs::symlink_metadata(dest).is_ok() {
+        return Err(crate::tr!(
+            "이미 있습니다: {}",
+            "Already exists: {}",
+            dest.display()
+        ));
+    }
+    let tmp = copy_to_temp(src, dest)?;
+    fs::rename(&tmp, dest).map_err(|e| {
+        let _ = remove_path(&tmp);
+        io_err(Op::Copy, dest, e)
+    })
+}
+
+/// Replaces `dest` with a copy of `src`. The old content is only removed once
+/// the new copy is complete, and is put back if the swap fails.
+pub fn copy_over(src: &Path, dest: &Path) -> Result<()> {
+    if fs::symlink_metadata(dest).is_err() {
+        return copy_new(src, dest);
+    }
+    let tmp = copy_to_temp(src, dest)?;
+    let old = sibling(dest, "old")?;
+    remove_path(&old)?;
+    if let Err(e) = fs::rename(dest, &old) {
+        let _ = remove_path(&tmp);
+        return Err(io_err(Op::Replace, dest, e));
+    }
+    if let Err(e) = fs::rename(&tmp, dest) {
+        let _ = fs::rename(&old, dest);
+        let _ = remove_path(&tmp);
+        return Err(io_err(Op::Replace, dest, e));
+    }
+    remove_path(&old)
+}
+
 pub fn remove_path(path: &Path) -> Result<()> {
-    let result = if path.is_dir() {
-        fs::remove_dir_all(path)
-    } else if path.exists() {
-        fs::remove_file(path)
-    } else {
-        return Ok(());
+    // symlink_metadata: a link is removed itself, never what it points to.
+    let result = match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => fs::remove_dir_all(path),
+        Ok(_) => fs::remove_file(path),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => Err(e),
     };
-    result.map_err(|e| io_err("삭제", path, e))
+    result.map_err(|e| io_err(Op::Delete, path, e))
 }
 
 // ---------------------------------------------------------------------------
@@ -151,15 +279,24 @@ pub fn exclude_add(path: &Path, is_dir: bool) -> Result<()> {
     else {
         return Ok(());
     };
-    let mut text = fs::read_to_string(&file).unwrap_or_default();
-    if text.lines().any(|l| l.trim() == pattern) {
+    // Keep the existing bytes as they are (the file may not be UTF-8); a file
+    // we cannot read is an error, never "empty".
+    let mut bytes = match fs::read(&file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(io_err(Op::Read, &file, e)),
+    };
+    if String::from_utf8_lossy(&bytes)
+        .lines()
+        .any(|l| l.trim() == pattern)
+    {
         return Ok(());
     }
-    if !text.is_empty() && !text.ends_with('\n') {
-        text.push('\n');
+    if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+        bytes.push(b'\n');
     }
-    text.push_str(&format!("{EXCLUDE_TAG}\n{pattern}\n"));
-    write_atomic(&file, &text)
+    bytes.extend_from_slice(format!("{EXCLUDE_TAG}\n{pattern}\n").as_bytes());
+    write_atomic(&file, &bytes)
 }
 
 /// Removes a pattern this app added for `path` (and its tag line).
@@ -196,108 +333,156 @@ pub fn exclude_remove(path: &Path, is_dir: bool) -> Result<()> {
     write_atomic(&file, &out)
 }
 
-/// Whether git tracks `path` (best effort: looks for it in the index file).
+/// Whether git tracks `path`. Asks git itself; without git the answer is "no".
 pub fn is_tracked(path: &Path) -> bool {
     let Some(root) = repo_root(path) else {
         return false;
     };
-    let Some(index) =
-        exclude_file(&root).and_then(|f| f.parent()?.parent().map(|g| g.join("index")))
-    else {
+    let Ok(rel) = path.strip_prefix(&root) else {
         return false;
     };
-    let (Ok(bytes), Ok(rel)) = (fs::read(index), path.strip_prefix(&root)) else {
-        return false;
-    };
-    let needle = rel.to_string_lossy().replace('\\', "/");
-    bytes
-        .windows(needle.len() + 1)
-        .any(|w| w[..needle.len()] == *needle.as_bytes() && w[needle.len()] == 0)
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C")
+        .arg(&root)
+        .args(["ls-files", "--error-unmatch", "--"])
+        .arg(rel)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: no console flash from a GUI app.
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.status().is_ok_and(|s| s.success())
+}
+
+/// The shared `info/exclude` file `path` would be excluded through, if any.
+/// Linked worktrees of one repository share it.
+pub fn exclude_file_for(path: &Path) -> Option<PathBuf> {
+    let file = exclude_file(&repo_root(path)?)?;
+    // Normalize `worktrees/<name>/../..` so worktrees compare equal.
+    let git_dir = file.parent()?.parent()?;
+    Some(
+        fs::canonicalize(git_dir)
+            .map(|d| d.join("info").join("exclude"))
+            .unwrap_or(file),
+    )
 }
 
 // ---------------------------------------------------------------------------
 // Claude Code settings
 
-/// What a settings toggle turns off.
+/// One edit to a Claude Code settings file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Target<'a> {
-    Skill(&'a str),
-    Agent(&'a str),
+pub enum Change<'a> {
+    /// Set `skillOverrides[name]` to `value`, or remove the key for `None`.
+    SkillOverride {
+        name: &'a str,
+        value: Option<&'a str>,
+    },
+    /// Add (`deny = true`) or remove the `Agent(name)` rule in `permissions.deny`.
+    AgentDeny { name: &'a str, deny: bool },
 }
 
-/// Turns a skill or subagent off (`enabled = false`) or back on in one settings
-/// file, keeping every other key. Skills use `skillOverrides`, subagents a
-/// `permissions.deny` rule, as documented by Claude Code.
-pub fn set_enabled(settings_file: &Path, target: Target, enabled: bool) -> Result<()> {
-    let mut root = match fs::read(settings_file) {
-        Ok(bytes) => {
-            let text = String::from_utf8_lossy(&bytes);
-            let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-            if text.trim().is_empty() {
-                Map::new()
-            } else {
-                match serde_json::from_str::<Value>(text) {
-                    Ok(Value::Object(map)) => map,
-                    // Never overwrite a file we cannot parse.
-                    _ => {
-                        return Err(format!(
-                            "{}을(를) 읽을 수 없어 바꾸지 않았습니다 (JSON 오류)",
-                            settings_file.display()
-                        ));
-                    }
-                }
-            }
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Map::new(),
-        Err(e) => return Err(io_err("읽기", settings_file, e)),
-    };
+/// Current `skillOverrides[name]` in a settings file.
+pub fn skill_override(settings_file: &Path, name: &str) -> Result<Option<String>> {
+    let root = read_settings(settings_file)?;
+    Ok(root
+        .get("skillOverrides")
+        .and_then(|o| o.get(name))
+        .and_then(Value::as_str)
+        .map(str::to_string))
+}
 
-    match target {
-        Target::Skill(name) => {
+/// Applies `change` to a settings file, keeping every other key. Writes only
+/// when something changed, and only removes a container this edit emptied.
+/// Returns whether the file was written.
+pub fn apply_change(settings_file: &Path, change: Change) -> Result<bool> {
+    let mut root = read_settings(settings_file)?;
+    let changed = match change {
+        Change::SkillOverride { name, value } => {
+            let had_container = root.contains_key("skillOverrides");
             let overrides = object_entry(&mut root, "skillOverrides")?;
-            if enabled {
-                if overrides.get(name).and_then(Value::as_str) == Some("off") {
+            let before = overrides.get(name).cloned();
+            match value {
+                Some(v) => {
+                    overrides.insert(name.to_string(), Value::from(v));
+                }
+                None => {
                     overrides.remove(name);
                 }
-            } else {
-                overrides.insert(name.to_string(), Value::from("off"));
             }
-            if overrides.is_empty() {
+            let changed = overrides.get(name).cloned() != before;
+            if overrides.is_empty() && (!had_container || changed) {
                 root.remove("skillOverrides");
             }
+            changed
         }
-        Target::Agent(name) => {
-            let rule = format!("Agent({name})");
+        Change::AgentDeny { name, deny } => {
+            let rule = Value::from(format!("Agent({name})"));
+            let had_permissions = root.contains_key("permissions");
             let permissions = object_entry(&mut root, "permissions")?;
-            let deny = match permissions
+            let had_deny = permissions.contains_key("deny");
+            let list = match permissions
                 .entry("deny")
                 .or_insert_with(|| Value::Array(Vec::new()))
             {
                 Value::Array(list) => list,
-                _ => return Err("permissions.deny가 배열이 아니라 바꾸지 않았습니다".into()),
+                _ => {
+                    return Err(crate::tr!(
+                        "permissions.deny가 배열이 아니라 바꾸지 않았습니다",
+                        "Left unchanged because permissions.deny isn't an array"
+                    ));
+                }
             };
-            let legacy = format!("Task({name})");
-            deny.retain(|v| {
-                let s = v.as_str();
-                !(enabled && (s == Some(rule.as_str()) || s == Some(legacy.as_str())))
-                    && !(!enabled && s == Some(rule.as_str()))
-            });
-            if !enabled {
-                deny.push(Value::from(rule));
+            let present = list.contains(&rule);
+            let changed = present != deny;
+            if deny && !present {
+                list.push(rule);
+            } else if !deny && present {
+                list.retain(|v| *v != rule);
             }
-            if deny.is_empty() {
+            if list.is_empty() && (!had_deny || changed) {
                 permissions.remove("deny");
             }
-            if permissions.is_empty() {
+            if permissions.is_empty() && (!had_permissions || changed) {
                 root.remove("permissions");
             }
+            changed
         }
+    };
+    if !changed {
+        return Ok(false);
     }
-
     let mut text = serde_json::to_string_pretty(&Value::Object(root))
-        .map_err(|e| format!("JSON 쓰기 실패: {e}"))?;
+        .map_err(|e| crate::tr!("JSON 쓰기 실패: {e}", "Couldn't write JSON: {e}"))?;
     text.push('\n');
-    write_atomic(settings_file, &text)
+    write_atomic(settings_file, &text)?;
+    Ok(true)
+}
+
+/// Parses a settings file; a missing or empty file is an empty object. A file
+/// that does not parse is an error, so it is never overwritten.
+fn read_settings(settings_file: &Path) -> Result<Map<String, Value>> {
+    let bytes = match fs::read(settings_file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
+        Err(e) => return Err(io_err(Op::Read, settings_file, e)),
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    if text.trim().is_empty() {
+        return Ok(Map::new());
+    }
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(map)) => Ok(map),
+        _ => Err(crate::tr!(
+            "{}을(를) 읽을 수 없어 바꾸지 않았습니다 (JSON 오류)",
+            "Left {} unchanged because it couldn't be read (JSON error)",
+            settings_file.display()
+        )),
+    }
 }
 
 fn object_entry<'a>(
@@ -306,20 +491,39 @@ fn object_entry<'a>(
 ) -> Result<&'a mut Map<String, Value>> {
     match root.entry(key).or_insert_with(|| Value::Object(Map::new())) {
         Value::Object(map) => Ok(map),
-        _ => Err(format!("{key}가 객체가 아니라 바꾸지 않았습니다")),
+        _ => Err(crate::tr!(
+            "{key}가 객체가 아니라 바꾸지 않았습니다",
+            "Left unchanged because {key} isn't an object"
+        )),
     }
 }
 
-/// Writes through a temporary file so a crash never leaves a half-written file.
-pub fn write_atomic(path: &Path, text: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| io_err("폴더 만들기", parent, e))?;
+/// Writes through a temporary file so a crash never leaves a half-written
+/// file. A symlinked target is written through to the real file, and the
+/// existing file's permissions are kept.
+pub fn write_atomic(path: &Path, contents: impl AsRef<[u8]>) -> Result<()> {
+    let target = match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            fs::canonicalize(path).map_err(|e| io_err(Op::Write, path, e))?
+        }
+        _ => path.to_path_buf(),
+    };
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|e| io_err(Op::CreateDir, parent, e))?;
     }
-    let tmp = path.with_extension("ai-management.tmp");
-    fs::write(&tmp, text).map_err(|e| io_err("쓰기", &tmp, e))?;
-    fs::rename(&tmp, path).map_err(|e| {
+    let tmp = sibling(&target, "tmp")?;
+    let write = || -> io::Result<()> {
+        let mut file = fs::File::create(&tmp)?;
+        io::Write::write_all(&mut file, contents.as_ref())?;
+        file.sync_all()?;
+        if let Ok(meta) = fs::metadata(&target) {
+            fs::set_permissions(&tmp, meta.permissions())?;
+        }
+        fs::rename(&tmp, &target)
+    };
+    write().map_err(|e| {
         let _ = fs::remove_file(&tmp);
-        io_err("쓰기", path, e)
+        io_err(Op::Write, path, e)
     })
 }
 
@@ -341,7 +545,7 @@ mod tests {
         let first = hash_path(&dir).unwrap();
         fs::write(dir.join("sub").join("x.sh"), "c").unwrap();
         assert_ne!(first, hash_path(&dir).unwrap());
-        assert!(hash_path(&tmp.path().join("missing")).is_none());
+        assert!(hash_path(&tmp.path().join("missing")).unwrap().is_none());
     }
 
     #[test]
@@ -390,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn toggles_skills_and_agents_keeping_other_keys() {
+    fn changes_keep_other_keys_and_user_rules() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join(".claude").join("settings.local.json");
         write_atomic(
@@ -399,9 +603,20 @@ mod tests {
         )
         .unwrap();
 
-        set_enabled(&file, Target::Skill("deploy"), false).unwrap();
-        set_enabled(&file, Target::Agent("reviewer"), false).unwrap();
-        set_enabled(&file, Target::Agent("reviewer"), false).unwrap();
+        let skill_off = Change::SkillOverride {
+            name: "deploy",
+            value: Some("off"),
+        };
+        let agent_off = Change::AgentDeny {
+            name: "reviewer",
+            deny: true,
+        };
+        assert!(apply_change(&file, skill_off).unwrap());
+        assert!(apply_change(&file, agent_off).unwrap());
+        assert!(
+            !apply_change(&file, agent_off).unwrap(),
+            "no rewrite when nothing changes"
+        );
         let v: Value = serde_json::from_str(&read(&file)).unwrap();
         assert_eq!(v["model"], "opus");
         assert_eq!(v["skillOverrides"]["deploy"], "off");
@@ -409,18 +624,49 @@ mod tests {
             v["permissions"]["deny"],
             serde_json::json!(["Task(old)", "Agent(reviewer)"])
         );
-        // Key order of the original file is kept.
         assert!(
             read(&file).find("\"model\"").unwrap() < read(&file).find("\"permissions\"").unwrap()
         );
 
-        set_enabled(&file, Target::Skill("deploy"), true).unwrap();
-        set_enabled(&file, Target::Agent("reviewer"), true).unwrap();
-        set_enabled(&file, Target::Agent("old"), true).unwrap();
+        apply_change(
+            &file,
+            Change::SkillOverride {
+                name: "deploy",
+                value: None,
+            },
+        )
+        .unwrap();
+        apply_change(
+            &file,
+            Change::AgentDeny {
+                name: "reviewer",
+                deny: false,
+            },
+        )
+        .unwrap();
         let v: Value = serde_json::from_str(&read(&file)).unwrap();
         assert!(v.get("skillOverrides").is_none());
-        assert!(v["permissions"].get("deny").is_none());
-        assert_eq!(v["permissions"]["allow"], serde_json::json!(["Bash(ls)"]));
+        // The user's own legacy rule stays.
+        assert_eq!(v["permissions"]["deny"], serde_json::json!(["Task(old)"]));
+        assert_eq!(skill_override(&file, "deploy").unwrap(), None);
+    }
+
+    #[test]
+    fn untouched_file_is_not_rewritten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("settings.json");
+        let original = "{\n\t\"skillOverrides\": {},\n\t\"x\": 1\n}\n";
+        fs::write(&file, original).unwrap();
+        let changed = apply_change(
+            &file,
+            Change::SkillOverride {
+                name: "lint",
+                value: None,
+            },
+        )
+        .unwrap();
+        assert!(!changed);
+        assert_eq!(read(&file), original);
     }
 
     #[test]
@@ -428,7 +674,67 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("settings.json");
         fs::write(&file, "{ broken").unwrap();
-        assert!(set_enabled(&file, Target::Skill("x"), false).is_err());
+        let change = Change::SkillOverride {
+            name: "x",
+            value: Some("off"),
+        };
+        assert!(apply_change(&file, change).is_err());
         assert_eq!(read(&file), "{ broken");
+    }
+
+    #[test]
+    fn exclude_add_keeps_non_utf8_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let info = repo.join(".git").join("info");
+        fs::create_dir_all(&info).unwrap();
+        // "한글" in CP949.
+        let original = b"/\xc7\xd1\xb1\xdb/\n".to_vec();
+        fs::write(info.join("exclude"), &original).unwrap();
+        exclude_add(&repo.join(".claude/skills/a"), true).unwrap();
+        let bytes = fs::read(info.join("exclude")).unwrap();
+        assert!(bytes.starts_with(&original));
+        assert!(bytes.ends_with(b"# ai-management\n/.claude/skills/a/\n"));
+    }
+
+    #[test]
+    fn copy_over_swaps_complete_copies_and_leaves_no_temp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir_all(src.join("empty")).unwrap();
+        fs::write(src.join("SKILL.md"), "new").unwrap();
+        let dest = tmp.path().join("skills").join("s");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("SKILL.md"), "old").unwrap();
+        fs::write(dest.join("stale.txt"), "x").unwrap();
+        copy_over(&src, &dest).unwrap();
+        assert_eq!(read(&dest.join("SKILL.md")), "new");
+        assert!(dest.join("empty").is_dir());
+        assert!(!dest.join("stale.txt").exists());
+        let leftovers: Vec<_> = fs::read_dir(dest.parent().unwrap())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(leftovers, ["s"]);
+        // A failed copy (missing source) leaves the old content in place.
+        assert!(copy_over(&tmp.path().join("missing"), &dest).is_err());
+        assert_eq!(read(&dest.join("SKILL.md")), "new");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_content_is_an_error_not_missing() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("s");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("SKILL.md");
+        fs::write(&file, "x").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).unwrap();
+        // Root can read anything; the check only means something for normal users.
+        if fs::read(&file).is_err() {
+            assert!(hash_path(&dir).is_err());
+        }
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
     }
 }

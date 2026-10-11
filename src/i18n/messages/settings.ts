@@ -1,0 +1,61 @@
+import type { Messages } from "./types";
+
+export const ko = {
+  "settings.title": "설정",
+  "settings.display": "화면",
+  "settings.theme": "테마",
+  "settings.themeHint": "시스템을 고르면 OS의 라이트 · 다크 설정을 따라가요.",
+  "settings.theme.system": "시스템",
+  "settings.theme.light": "라이트",
+  "settings.theme.dark": "다크",
+  "settings.language": "언어",
+  "settings.languageHint": "시스템을 고르면 OS 언어를 따라가요 (한국어가 아니면 영어).",
+  "settings.language.system": "시스템",
+  "settings.sidebar": "사이드바",
+  "settings.dock": "터미널 옆에 붙이기",
+  "settings.dockHint":
+    "Windows Terminal · VS Code · Claude 데스크탑 중 지금 쓰는 창 옆에 자동으로 붙어요.",
+  "settings.pin": "항상 위",
+  "settings.pinHint": "다른 창보다 항상 위에 보여요.",
+  "settings.shortcut": "보이기 / 숨기기 단축키",
+  "settings.library": "라이브러리",
+  "settings.libraryDir": "라이브러리 폴더",
+  "settings.loading": "불러오는 중…",
+  "settings.default": "기본값",
+  "settings.changeFolder": "폴더 변경",
+  "settings.about": "정보",
+  "settings.version": "버전",
+  "settings.license": "라이선스",
+  "settings.licenseHint":
+    "Apache-2.0 오픈소스. Anthropic 또는 Claude와 관련 없는 독립 프로젝트예요.",
+} as const;
+
+export const en: Messages<typeof ko> = {
+  "settings.title": "Settings",
+  "settings.display": "Display",
+  "settings.theme": "Theme",
+  "settings.themeHint": "System follows your OS's light or dark setting.",
+  "settings.theme.system": "System",
+  "settings.theme.light": "Light",
+  "settings.theme.dark": "Dark",
+  "settings.language": "Language",
+  "settings.languageHint": "System follows your OS language (English unless it is Korean).",
+  "settings.language.system": "System",
+  "settings.sidebar": "Sidebar",
+  "settings.dock": "Dock next to terminal",
+  "settings.dockHint":
+    "Docks automatically next to the window you're using: Windows Terminal, VS Code or Claude desktop.",
+  "settings.pin": "Always on top",
+  "settings.pinHint": "Stays above other windows.",
+  "settings.shortcut": "Show / hide shortcut",
+  "settings.library": "Library",
+  "settings.libraryDir": "Library folder",
+  "settings.loading": "Loading…",
+  "settings.default": "Default",
+  "settings.changeFolder": "Change folder",
+  "settings.about": "About",
+  "settings.version": "Version",
+  "settings.license": "License",
+  "settings.licenseHint":
+    "Apache-2.0 open source. An independent project, not affiliated with Anthropic or Claude.",
+};

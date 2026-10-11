@@ -6,7 +6,7 @@
 //! app data folder, so a copy the user edited is never removed or overwritten
 //! without asking.
 
-mod ops;
+pub(crate) mod ops;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::claude_config::frontmatter;
-use ops::Target;
+use ops::Change;
 
 /// Error prefix the UI uses to ask before discarding the user's edits.
 const MODIFIED_ERROR: &str = "MODIFIED:";
@@ -63,6 +63,43 @@ struct Record {
     hash: String,
 }
 
+/// A skill or subagent this app turned off, so turning it back on only undoes
+/// what the app wrote.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Toggle {
+    project: String,
+    kind: ItemKind,
+    /// Name as Claude Code sees it (frontmatter `name`).
+    name: String,
+    mode: Mode,
+    /// `skillOverrides` value before we set "off", restored on enable.
+    previous: Option<String>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Applied {
+    copies: Vec<Record>,
+    toggles: Vec<Toggle>,
+}
+
+/// `applied.json` from before toggles were tracked was a bare list of copies.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AppliedFile {
+    Current(Applied),
+    Legacy(Vec<Record>),
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToggledOff {
+    pub kind: ItemKind,
+    pub name: String,
+    pub mode: Mode,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Config {
@@ -89,6 +126,8 @@ pub struct Overview {
     pub dir: String,
     pub is_default: bool,
     pub items: Vec<LibraryItem>,
+    /// Items this app turned off in the selected project.
+    pub toggled_off: Vec<ToggledOff>,
 }
 
 pub struct Library {
@@ -99,18 +138,36 @@ pub struct Library {
 struct State {
     config: Config,
     records: Vec<Record>,
+    toggles: Vec<Toggle>,
 }
 
 impl Library {
     pub fn manage(app: &AppHandle) -> tauri::Result<()> {
         let data_dir = app.path().app_data_dir()?;
         let config = read_json(&data_dir.join("config.json")).unwrap_or_default();
-        let records = read_json(&data_dir.join("applied.json")).unwrap_or_default();
+        let applied = match read_json(&data_dir.join("applied.json")) {
+            Some(AppliedFile::Current(a)) => a,
+            Some(AppliedFile::Legacy(copies)) => Applied {
+                copies,
+                toggles: Vec::new(),
+            },
+            None => Applied::default(),
+        };
         app.manage(Library {
             data_dir,
-            state: Mutex::new(State { config, records }),
+            state: Mutex::new(State {
+                config,
+                records: applied.copies,
+                toggles: applied.toggles,
+            }),
         });
         Ok(())
+    }
+
+    /// The current library folder's items, for the composer's block catalog.
+    pub(crate) fn items(&self) -> Vec<LibraryItem> {
+        let dir = self.dir(&self.lock());
+        list(&dir)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -132,7 +189,11 @@ impl Library {
 
     fn save(&self, state: &State) -> ops::Result<()> {
         write_json(&self.data_dir.join("config.json"), &state.config)?;
-        write_json(&self.data_dir.join("applied.json"), &state.records)
+        let applied = Applied {
+            copies: state.records.clone(),
+            toggles: state.toggles.clone(),
+        };
+        write_json(&self.data_dir.join("applied.json"), &applied)
     }
 }
 
@@ -154,12 +215,26 @@ fn project_path(project: &Path, kind: ItemKind, id: &str) -> PathBuf {
     }
 }
 
-/// Rejects ids that could escape the target folder.
-fn check_id(id: &str) -> ops::Result<()> {
-    let bad =
-        id.is_empty() || id.starts_with('.') || id.contains(['/', '\\', ':']) || id.contains("..");
+/// Rejects ids that could escape the target folder, need escaping in gitignore
+/// patterns, or are invalid file names on Windows.
+pub(crate) fn check_id(id: &str) -> ops::Result<()> {
+    const RESERVED: [&str; 22] = [
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let stem = id.split('.').next().unwrap_or(id).to_ascii_lowercase();
+    let bad = id.is_empty()
+        || id.starts_with(['.', '!', '#'])
+        || id.ends_with(['.', ' '])
+        || id.contains(['/', '\\', ':', '*', '?', '[', ']', '"', '<', '>', '|'])
+        || id.chars().any(char::is_control)
+        || id.contains("..")
+        || RESERVED.contains(&stem.as_str());
     if bad {
-        Err(format!("사용할 수 없는 이름입니다: {id}"))
+        Err(crate::tr!(
+            "사용할 수 없는 이름입니다: {id}",
+            "This name can't be used: {id}"
+        ))
     } else {
         Ok(())
     }
@@ -221,18 +296,20 @@ fn status_of(
     let Some(record) = record else {
         return dest.exists().then_some(ApplyStatus::Conflict);
     };
-    let Some(dest_hash) = ops::hash_path(&dest) else {
-        return Some(ApplyStatus::Missing);
-    };
-    if dest_hash != record.hash {
-        return Some(ApplyStatus::Modified);
+    match ops::hash_path(&dest) {
+        Ok(None) => return Some(ApplyStatus::Missing),
+        Ok(Some(h)) if h == record.hash => {}
+        // Edited, or unreadable: either way not safe to treat as ours.
+        _ => return Some(ApplyStatus::Modified),
     }
     let src_hash = ops::hash_path(&source_path(library, item.kind, &item.id));
-    Some(if src_hash.as_deref() == Some(record.hash.as_str()) {
-        ApplyStatus::Current
-    } else {
-        ApplyStatus::Outdated
-    })
+    Some(
+        if src_hash.ok().flatten().as_deref() == Some(record.hash.as_str()) {
+            ApplyStatus::Current
+        } else {
+            ApplyStatus::Outdated
+        },
+    )
 }
 
 fn project_key(project: &Path) -> String {
@@ -268,10 +345,26 @@ fn overview(lib: &Library, project: Option<&Path>) -> Overview {
             item.status = status_of(&dir, project, item, record);
         }
     }
+    let toggled_off = project
+        .map(|p| {
+            let key = project_key(p);
+            state
+                .toggles
+                .iter()
+                .filter(|t| t.project == key)
+                .map(|t| ToggledOff {
+                    kind: t.kind,
+                    name: t.name.clone(),
+                    mode: t.mode,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Overview {
         dir: dir.display().to_string(),
         is_default: state.config.library_dir.is_none(),
         items,
+        toggled_off,
     }
 }
 
@@ -279,19 +372,57 @@ fn apply(lib: &Library, project: &Path, kind: ItemKind, id: &str, mode: Mode) ->
     check_id(id)?;
     let mut state = lib.lock();
     let src = source_path(&lib.dir(&state), kind, id);
-    let hash = ops::hash_path(&src).ok_or_else(|| format!("라이브러리에 없습니다: {id}"))?;
+    if ops::hash_path(&src)?.is_none() {
+        return Err(crate::tr!(
+            "라이브러리에 없습니다: {id}",
+            "Not in the library: {id}"
+        ));
+    }
     let dest = project_path(project, kind, id);
-    if dest.exists() {
-        return Err(format!(
+    let key = project_key(project);
+    // Linked worktrees share one exclude file, so a personal exclude would also
+    // hide a teammate-visible copy applied to a sibling worktree.
+    if mode == Mode::Personal
+        && let Some(file) = ops::exclude_file_for(&dest)
+        && state.records.iter().any(|r| {
+            r.project != key
+                && r.kind == kind
+                && r.id == id
+                && r.mode == Mode::Team
+                && ops::exclude_file_for(&project_path(Path::new(&r.project), kind, id)).as_ref()
+                    == Some(&file)
+        })
+    {
+        return Err(crate::tr!(
+            "같은 저장소의 다른 worktree에 '팀'으로 적용되어 있어 '나만'으로 적용할 수 없습니다",
+            "Can't apply as 'Just me' because another worktree of this repository has it applied as 'Team'"
+        ));
+    }
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return Err(crate::tr!(
             "프로젝트에 같은 이름이 이미 있습니다: {}",
+            "The project already has something with this name: {}",
             dest.display()
         ));
     }
     ops::copy_new(&src, &dest)?;
-    if mode == Mode::Personal {
-        ops::exclude_add(&dest, kind == ItemKind::Skill)?;
+    // Record what is actually in the project, so status compares like with like.
+    let hash = match ops::hash_path(&dest) {
+        Ok(Some(hash)) => hash,
+        other => {
+            let _ = ops::remove_path(&dest);
+            return Err(other.err().unwrap_or_else(|| {
+                crate::tr!("복사본을 확인할 수 없습니다", "Couldn't verify the copy")
+            }));
+        }
+    };
+    if mode == Mode::Personal
+        && let Err(e) = ops::exclude_add(&dest, kind == ItemKind::Skill)
+    {
+        // Roll back: a copy git would see is not what the user asked for.
+        let _ = ops::remove_path(&dest);
+        return Err(e);
     }
-    let key = project_key(project);
     state
         .records
         .retain(|r| !(r.project == key && r.kind == kind && r.id == id));
@@ -311,15 +442,33 @@ fn remove(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
     let key = project_key(project);
     let record = find_record(&state.records, &key, kind, id)
         .cloned()
-        .ok_or_else(|| "이 앱이 적용한 항목이 아닙니다".to_string())?;
+        .ok_or_else(|| {
+            crate::tr!(
+                "이 앱이 적용한 항목이 아닙니다",
+                "This item wasn't applied by this app"
+            )
+        })?;
     let dest = project_path(project, kind, id);
-    if !force && ops::hash_path(&dest).is_some_and(|h| h != record.hash) {
-        return Err(format!(
-            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다"
+    if !force && !unchanged(&dest, &record.hash) {
+        return Err(crate::tr!(
+            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다",
+            "{MODIFIED_ERROR}It was changed in the project"
         ));
     }
     ops::remove_path(&dest)?;
-    if record.mode == Mode::Personal {
+    // Linked worktrees share one exclude file; keep the line while another
+    // checkout still has its own personal copy.
+    let shared_line = ops::exclude_file_for(&dest).is_some_and(|file| {
+        state.records.iter().any(|r| {
+            r.project != key
+                && r.kind == kind
+                && r.id == id
+                && r.mode == Mode::Personal
+                && ops::exclude_file_for(&project_path(Path::new(&r.project), kind, id)).as_ref()
+                    == Some(&file)
+        })
+    });
+    if record.mode == Mode::Personal && !shared_line {
         ops::exclude_remove(&dest, kind == ItemKind::Skill)?;
     }
     state
@@ -328,25 +477,73 @@ fn remove(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) 
     lib.save(&state)
 }
 
+/// `dest` holds exactly what we recorded, or nothing at all. Unreadable counts
+/// as changed, so nothing is deleted on a guess.
+fn unchanged(dest: &Path, hash: &str) -> bool {
+    match ops::hash_path(dest) {
+        Ok(None) => true,
+        Ok(Some(h)) => h == hash,
+        Err(_) => false,
+    }
+}
+
+/// Drops the record of a copy that is gone from the project, without touching
+/// any project files.
+fn forget(lib: &Library, project: &Path, kind: ItemKind, id: &str) -> ops::Result<()> {
+    check_id(id)?;
+    let mut state = lib.lock();
+    let key = project_key(project);
+    let dest = project_path(project, kind, id);
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return Err(crate::tr!(
+            "프로젝트에 아직 파일이 있습니다. '빼기'를 사용해 주세요",
+            "The files are still in the project. Use 'Remove' instead"
+        ));
+    }
+    let before = state.records.len();
+    state
+        .records
+        .retain(|r| !(r.project == key && r.kind == kind && r.id == id));
+    if state.records.len() == before {
+        return Err(crate::tr!(
+            "이 앱이 적용한 항목이 아닙니다",
+            "This item wasn't applied by this app"
+        ));
+    }
+    lib.save(&state)
+}
+
 fn update(lib: &Library, project: &Path, kind: ItemKind, id: &str, force: bool) -> ops::Result<()> {
     check_id(id)?;
     let mut state = lib.lock();
     let key = project_key(project);
     let src = source_path(&lib.dir(&state), kind, id);
-    let hash = ops::hash_path(&src).ok_or_else(|| format!("라이브러리에 없습니다: {id}"))?;
+    if ops::hash_path(&src)?.is_none() {
+        return Err(crate::tr!(
+            "라이브러리에 없습니다: {id}",
+            "Not in the library: {id}"
+        ));
+    }
     let dest = project_path(project, kind, id);
     let record = state
         .records
         .iter_mut()
         .find(|r| r.project == key && r.kind == kind && r.id == id)
-        .ok_or_else(|| "이 앱이 적용한 항목이 아닙니다".to_string())?;
-    if !force && ops::hash_path(&dest).is_some_and(|h| h != record.hash) {
-        return Err(format!(
-            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다"
+        .ok_or_else(|| {
+            crate::tr!(
+                "이 앱이 적용한 항목이 아닙니다",
+                "This item wasn't applied by this app"
+            )
+        })?;
+    if !force && !unchanged(&dest, &record.hash) {
+        return Err(crate::tr!(
+            "{MODIFIED_ERROR}프로젝트에서 수정된 내용이 있습니다",
+            "{MODIFIED_ERROR}It was changed in the project"
         ));
     }
     ops::copy_over(&src, &dest)?;
-    record.hash = hash;
+    record.hash = ops::hash_path(&dest)?
+        .ok_or_else(|| crate::tr!("복사본을 확인할 수 없습니다", "Couldn't verify the copy"))?;
     lib.save(&state)
 }
 
@@ -357,7 +554,12 @@ fn import(lib: &Library, path: &Path, kind: ItemKind) -> ops::Result<()> {
     let dir = lib.dir(&state);
     let (src, id) = match kind {
         ItemKind::Skill => {
-            let folder = path.parent().ok_or("skill 폴더를 찾을 수 없습니다")?;
+            let folder = path.parent().ok_or_else(|| {
+                crate::tr!(
+                    "skill 폴더를 찾을 수 없습니다",
+                    "Couldn't find the skill folder"
+                )
+            })?;
             (folder.to_path_buf(), file_name(folder).unwrap_or_default())
         }
         ItemKind::Agent => (
@@ -370,50 +572,119 @@ fn import(lib: &Library, path: &Path, kind: ItemKind) -> ops::Result<()> {
     check_id(&id)?;
     let dest = source_path(&dir, kind, &id);
     if dest.exists() {
-        return Err(format!("라이브러리에 같은 이름이 이미 있습니다: {id}"));
+        return Err(crate::tr!(
+            "라이브러리에 같은 이름이 이미 있습니다: {id}",
+            "The library already has something named {id}"
+        ));
     }
     ops::copy_new(&src, &dest)
 }
 
-fn set_enabled(
+/// Turns a skill/subagent off in the settings file for `mode`, remembering
+/// what was there so turning it back on restores exactly that.
+fn turn_off(
+    lib: &Library,
     project: &Path,
     kind: ItemKind,
     name: &str,
-    enabled: bool,
     mode: Mode,
 ) -> ops::Result<()> {
-    let target = match kind {
-        ItemKind::Skill => Target::Skill(name),
-        ItemKind::Agent => Target::Agent(name),
-    };
-    let claude = project.join(".claude");
-    let local = claude.join("settings.local.json");
-    let shared = claude.join("settings.json");
-
-    if enabled {
-        // Turning back on clears the switch wherever this app could have put it.
-        for file in [&local, &shared] {
-            if file.is_file() {
-                ops::set_enabled(file, target, true)?;
-            }
-        }
-        return Ok(());
+    let mut state = lib.lock();
+    let key = project_key(project);
+    if state
+        .toggles
+        .iter()
+        .any(|t| t.project == key && t.kind == kind && t.name == name)
+    {
+        return Err(crate::tr!(
+            "이미 이 앱으로 꺼 둔 항목입니다",
+            "This app has already turned it off"
+        ));
     }
-
-    let file = match mode {
-        Mode::Personal => &local,
-        Mode::Team => &shared,
-    };
+    let file = settings_file(project, mode);
+    if mode == Mode::Personal && file.exists() && ops::is_tracked(&file) {
+        return Err(crate::tr!(
+            "settings.local.json이 git에 커밋되어 있어 '나만' 설정을 쓸 수 없습니다. '팀'으로 꺼 주세요.",
+            "settings.local.json is committed to git, so 'Just me' can't be used. Turn it off for 'Team' instead."
+        ));
+    }
     let created = !file.exists();
-    ops::set_enabled(file, target, false)?;
+    let previous = match kind {
+        ItemKind::Skill => ops::skill_override(&file, name)?,
+        ItemKind::Agent => None,
+    };
+    let change = match kind {
+        ItemKind::Skill => Change::SkillOverride {
+            name,
+            value: Some("off"),
+        },
+        ItemKind::Agent => Change::AgentDeny { name, deny: true },
+    };
+    if previous.as_deref() == Some("off") || !ops::apply_change(&file, change)? {
+        // Already off by someone else's rule: nothing of ours to undo later.
+        return Err(crate::tr!(
+            "이미 이 설정 파일에서 꺼져 있습니다",
+            "It's already off in this settings file"
+        ));
+    }
+    // Record before anything else can fail, so the change can always be undone.
+    state.toggles.push(Toggle {
+        project: key,
+        kind,
+        name: name.to_string(),
+        mode,
+        previous,
+    });
+    lib.save(&state)?;
     // Claude Code only git-excludes settings.local.json when it creates the
     // file itself, so do it here for a file we created.
-    if mode == Mode::Personal && created && !ops::is_tracked(file) {
-        ops::exclude_add(file, false)?;
+    if mode == Mode::Personal && created {
+        ops::exclude_add(&file, false)?;
     }
     Ok(())
 }
 
+/// Undoes a `turn_off` of this app. Rules the user wrote are never touched.
+fn turn_on(lib: &Library, project: &Path, kind: ItemKind, name: &str) -> ops::Result<()> {
+    let mut state = lib.lock();
+    let key = project_key(project);
+    let index = state
+        .toggles
+        .iter()
+        .position(|t| t.project == key && t.kind == kind && t.name == name)
+        .ok_or_else(|| {
+            crate::tr!(
+                "이 앱으로 끈 항목이 아니라 되돌릴 수 없습니다",
+                "Can't turn it back on because this app didn't turn it off"
+            )
+        })?;
+    let toggle = state.toggles[index].clone();
+    let file = settings_file(project, toggle.mode);
+    if file.exists() {
+        let change = match kind {
+            // Only undo our "off"; if the user changed the value since, keep it.
+            ItemKind::Skill => (ops::skill_override(&file, name)?.as_deref() == Some("off"))
+                .then_some(Change::SkillOverride {
+                    name,
+                    value: toggle.previous.as_deref(),
+                }),
+            ItemKind::Agent => Some(Change::AgentDeny { name, deny: false }),
+        };
+        if let Some(change) = change {
+            ops::apply_change(&file, change)?;
+        }
+    }
+    state.toggles.remove(index);
+    lib.save(&state)
+}
+
+fn settings_file(project: &Path, mode: Mode) -> PathBuf {
+    let claude = project.join(".claude");
+    match mode {
+        Mode::Personal => claude.join("settings.local.json"),
+        Mode::Team => claude.join("settings.json"),
+    }
+}
 // ---------------------------------------------------------------------------
 // Small IO helpers
 
@@ -437,8 +708,17 @@ fn read_frontmatter(path: &Path) -> std::collections::BTreeMap<String, String> {
     frontmatter::parse(&text).unwrap_or_default()
 }
 
+/// Reads app state. A file that exists but does not parse is moved aside
+/// (`*.corrupt`) instead of being silently overwritten with empty state.
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Option<T> {
-    serde_json::from_slice(&fs::read(path).ok()?).ok()
+    let bytes = fs::read(path).ok()?;
+    match serde_json::from_slice(&bytes) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            let _ = fs::rename(path, path.with_extension("json.corrupt"));
+            None
+        }
+    }
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> ops::Result<()> {
@@ -523,6 +803,16 @@ pub async fn library_update(
 }
 
 #[tauri::command]
+pub async fn library_forget(
+    app: AppHandle,
+    project: String,
+    kind: ItemKind,
+    id: String,
+) -> Result<(), String> {
+    blocking(app, move |lib| forget(lib, Path::new(&project), kind, &id)).await
+}
+
+#[tauri::command]
 pub async fn library_import(app: AppHandle, path: String, kind: ItemKind) -> Result<(), String> {
     blocking(app, move |lib| import(lib, Path::new(&path), kind)).await
 }
@@ -536,8 +826,13 @@ pub async fn config_set_enabled(
     enabled: bool,
     mode: Mode,
 ) -> Result<(), String> {
-    blocking(app, move |_| {
-        set_enabled(Path::new(&project), kind, &name, enabled, mode)
+    blocking(app, move |lib| {
+        let project = Path::new(&project);
+        if enabled {
+            turn_on(lib, project, kind, &name)
+        } else {
+            turn_off(lib, project, kind, &name, mode)
+        }
     })
     .await
 }
@@ -562,6 +857,7 @@ mod tests {
             state: Mutex::new(State {
                 config: Config::default(),
                 records: Vec::new(),
+                toggles: Vec::new(),
             }),
         };
         let dir = lib.default_dir();
@@ -684,29 +980,74 @@ mod tests {
     }
 
     #[test]
-    fn toggles_write_the_right_settings_file() {
+    fn toggles_write_the_right_file_and_restore_previous_values() {
         let f = fixture();
-        set_enabled(&f.project, ItemKind::Skill, "deploy", false, Mode::Personal).unwrap();
-        set_enabled(&f.project, ItemKind::Agent, "reviewer", false, Mode::Team).unwrap();
-        let local = fs::read_to_string(f.project.join(".claude/settings.local.json")).unwrap();
-        let shared = fs::read_to_string(f.project.join(".claude/settings.json")).unwrap();
-        assert!(local.contains("\"deploy\": \"off\""));
-        assert!(shared.contains("Agent(reviewer)"));
-        assert!(exclude(&f).contains("/.claude/settings.local.json"));
+        let local = f.project.join(".claude/settings.local.json");
+        let shared = f.project.join(".claude/settings.json");
+        // The user had chosen "name-only" for deploy and wrote their own deny rule.
+        ops::write_atomic(
+            &local,
+            r#"{"skillOverrides": {"deploy": "name-only"}, "permissions": {"deny": ["Agent(other)"]}}"#,
+        )
+        .unwrap();
 
-        set_enabled(&f.project, ItemKind::Skill, "deploy", true, Mode::Team).unwrap();
-        set_enabled(
+        turn_off(
+            &f.lib,
             &f.project,
-            ItemKind::Agent,
-            "reviewer",
-            true,
+            ItemKind::Skill,
+            "deploy",
             Mode::Personal,
         )
         .unwrap();
-        let local = fs::read_to_string(f.project.join(".claude/settings.local.json")).unwrap();
-        let shared = fs::read_to_string(f.project.join(".claude/settings.json")).unwrap();
-        assert!(!local.contains("deploy"));
-        assert!(!shared.contains("reviewer"));
+        turn_off(&f.lib, &f.project, ItemKind::Agent, "reviewer", Mode::Team).unwrap();
+        assert!(turn_off(&f.lib, &f.project, ItemKind::Agent, "reviewer", Mode::Team).is_err());
+        assert!(
+            fs::read_to_string(&local)
+                .unwrap()
+                .contains("\"deploy\": \"off\"")
+        );
+        assert!(
+            fs::read_to_string(&shared)
+                .unwrap()
+                .contains("Agent(reviewer)")
+        );
+        let toggled = overview(&f.lib, Some(&f.project)).toggled_off;
+        assert_eq!(toggled.len(), 2);
+
+        turn_on(&f.lib, &f.project, ItemKind::Skill, "deploy").unwrap();
+        turn_on(&f.lib, &f.project, ItemKind::Agent, "reviewer").unwrap();
+        let local_text = fs::read_to_string(&local).unwrap();
+        assert!(local_text.contains("\"deploy\": \"name-only\""));
+        assert!(local_text.contains("Agent(other)"));
+        assert!(!fs::read_to_string(&shared).unwrap().contains("reviewer"));
+        // Something the app did not turn off cannot be "turned on".
+        assert!(turn_on(&f.lib, &f.project, ItemKind::Agent, "other").is_err());
+    }
+
+    #[test]
+    fn worktrees_keep_a_shared_exclude_line_until_the_last_copy_goes() {
+        let f = fixture();
+        let main_git = f.project.join(".git");
+        let wt_git = main_git.join("worktrees").join("feature");
+        fs::create_dir_all(&wt_git).unwrap();
+        fs::write(wt_git.join("commondir"), "../..").unwrap();
+        let wt = f._tmp.path().join("feature");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_git.display())).unwrap();
+
+        apply(
+            &f.lib,
+            &f.project,
+            ItemKind::Skill,
+            "deploy",
+            Mode::Personal,
+        )
+        .unwrap();
+        apply(&f.lib, &wt, ItemKind::Skill, "deploy", Mode::Personal).unwrap();
+        remove(&f.lib, &f.project, ItemKind::Skill, "deploy", false).unwrap();
+        assert!(exclude(&f).contains("/.claude/skills/deploy/"));
+        remove(&f.lib, &wt, ItemKind::Skill, "deploy", false).unwrap();
+        assert!(!exclude(&f).contains("/.claude/skills/deploy/"));
     }
 
     #[test]
@@ -719,8 +1060,60 @@ mod tests {
         assert!(f.lib.default_dir().join("skills/lint/SKILL.md").is_file());
         assert!(import(&f.lib, &skill, ItemKind::Skill).is_err());
 
-        for bad in ["../x", "a/b", ".hidden", ""] {
+        for bad in [
+            "../x", "a/b", ".hidden", "", "a[1]", "x*", "nul", "con.txt", "trail.",
+        ] {
             assert!(apply(&f.lib, &f.project, ItemKind::Skill, bad, Mode::Team).is_err());
         }
+    }
+
+    #[test]
+    fn turning_off_an_already_off_item_is_refused() {
+        let f = fixture();
+        ops::write_atomic(
+            &f.project.join(".claude/settings.json"),
+            r#"{"permissions": {"deny": ["Agent(reviewer)"]}, "skillOverrides": {"deploy": "off"}}"#,
+        )
+        .unwrap();
+        assert!(turn_off(&f.lib, &f.project, ItemKind::Agent, "reviewer", Mode::Team).is_err());
+        assert!(turn_off(&f.lib, &f.project, ItemKind::Skill, "deploy", Mode::Team).is_err());
+        assert!(overview(&f.lib, Some(&f.project)).toggled_off.is_empty());
+    }
+
+    #[test]
+    fn forget_only_drops_records_of_missing_copies() {
+        let f = fixture();
+        apply(&f.lib, &f.project, ItemKind::Skill, "deploy", Mode::Team).unwrap();
+        assert!(forget(&f.lib, &f.project, ItemKind::Skill, "deploy").is_err());
+        fs::remove_dir_all(f.project.join(".claude/skills/deploy")).unwrap();
+        assert_eq!(
+            status(&f, ItemKind::Skill, "deploy"),
+            Some(ApplyStatus::Missing)
+        );
+        forget(&f.lib, &f.project, ItemKind::Skill, "deploy").unwrap();
+        assert_eq!(status(&f, ItemKind::Skill, "deploy"), None);
+    }
+
+    #[test]
+    fn personal_apply_refused_when_a_sibling_worktree_has_a_team_copy() {
+        let f = fixture();
+        let wt_git = f.project.join(".git").join("worktrees").join("feature");
+        fs::create_dir_all(&wt_git).unwrap();
+        fs::write(wt_git.join("commondir"), "../..").unwrap();
+        let wt = f._tmp.path().join("feature");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_git.display())).unwrap();
+        apply(&f.lib, &wt, ItemKind::Skill, "deploy", Mode::Team).unwrap();
+        assert!(
+            apply(
+                &f.lib,
+                &f.project,
+                ItemKind::Skill,
+                "deploy",
+                Mode::Personal
+            )
+            .is_err()
+        );
+        assert!(!f.project.join(".claude/skills/deploy").exists());
     }
 }

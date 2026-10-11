@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI Management</title>
+    <!-- Set the theme before the first paint, so a dark window never flashes light.
+         Mirrors src/store/theme.ts. -->
+    <script>
+      (() => {
+        try {
+          const pref = localStorage.getItem("theme");
+          const dark =
+            pref === "dark" ||
+            (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch {
+          // Storage unavailable: the app applies the theme once it loads.
+        }
+      })();
+    </script>
+    <style>
+      html[data-theme="dark"] body { background: #262522; }
+    </style>
   </head>
 
   <body>

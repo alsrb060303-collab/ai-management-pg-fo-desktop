@@ -1,14 +1,16 @@
+import { type MessageKey, useT } from "../i18n";
 import { type TabId, useUiStore } from "../store/ui";
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "docs", label: "문서" },
-  { id: "work", label: "작업" },
-  { id: "memo", label: "메모" },
+const TABS: { id: TabId; label: MessageKey }[] = [
+  { id: "docs", label: "shell.tab.docs" },
+  { id: "work", label: "shell.tab.work" },
+  { id: "memo", label: "shell.tab.memo" },
 ];
 
 export function TabNav() {
   const activeTab = useUiStore((s) => s.activeTab);
   const setActiveTab = useUiStore((s) => s.setActiveTab);
+  const t = useT();
 
   return (
     <div role="tablist" className="flex shrink-0 border-b border-border">
@@ -27,7 +29,7 @@ export function TabNav() {
                 : "border-b-2 border-transparent text-text-muted hover:text-text"
             }`}
           >
-            {tab.label}
+            {t(tab.label)}
           </button>
         );
       })}

@@ -1,0 +1,372 @@
+import type { Messages } from "./types";
+
+export const ko = {
+  // Work page
+  "work.title": "작업",
+  "work.description":
+    "브랜치와 worktree를 만들고 바꾸고, 커밋하지 않은 변경을 확인해요. 커밋과 푸시는 Claude Code나 터미널에서 해요.",
+
+  // Work panel: shared
+  "work.noProject": "프로젝트 폴더를 고르면 브랜치와 worktree를 여기서 다뤄요.",
+  "work.chooseFolder": "폴더 선택",
+  "work.close": "닫기",
+  "work.loading": "불러오는 중…",
+  "work.refresh": "새로 고침",
+  "work.cancel": "취소",
+  "work.create": "만들기",
+  "work.base": "기준",
+  "work.baseBranch": "기준 브랜치",
+  "work.currentHead": "현재 HEAD",
+  "work.detached": "분리된 HEAD {commit}",
+  "work.noCommits": "커밋 없음",
+  "work.deleteNamed": "{name} 삭제",
+  "work.forceDelete": "강제 삭제",
+  "work.forceDeleteConfirm": "정말 '{name}'을(를) 강제로 삭제할까요? 되돌릴 수 없어요.",
+
+  // Operation in progress
+  "work.op.rebase": "리베이스 중",
+  "work.op.merge": "병합 중",
+  "work.op.cherry-pick": "cherry-pick 중",
+  "work.op.revert": "되돌리기 중",
+  "work.op.bisect": "bisect 중",
+
+  // Ahead / behind
+  "work.track.gone": "원격 삭제됨",
+  "work.track.title": "원격보다 {ahead}개 앞, {behind}개 뒤",
+
+  // Changes
+  "work.changes": "변경 사항",
+  "work.changes.none": "커밋하지 않은 변경이 없어요.",
+  "work.changes.more": "외 {n}개",
+  "work.kind.modified": "수정",
+  "work.kind.added": "추가",
+  "work.kind.deleted": "삭제",
+  "work.kind.renamed": "이름 변경",
+  "work.kind.copied": "복사",
+  "work.kind.typeChanged": "종류 변경",
+  "work.kind.untracked": "새 파일",
+  "work.kind.conflicted": "충돌",
+  "work.staged": "스테이징됨",
+  "work.partlyStaged": "일부 스테이징됨",
+  "work.renamedFrom": "{path}에서",
+  "work.diff.loading": "diff 불러오는 중…",
+  "work.diff.binary": "바이너리 파일이라 표시하지 않아요.",
+  "work.diff.empty": "내용 변경 없음",
+  "work.diff.truncated": "너무 길어서 일부만 보여요.",
+
+  // Branches
+  "work.branches": "브랜치",
+  "work.branch.new": "새 브랜치",
+  "work.branch.current": "현재",
+  "work.branch.switch": "전환",
+  "work.branch.upstream": "원격: {upstream}",
+  "work.branch.worktree": "worktree: {path}",
+  "work.branch.showLess": "접기",
+  "work.branch.showMore": "{n}개 더 보기",
+  "work.branch.namePlaceholder": "새 브랜치 이름 (예: feature/login)",
+  "work.branch.switchAfter": "만든 뒤 전환",
+  "work.branch.deleteTitle": "브랜치 삭제",
+  "work.branch.deleteConfirm": "'{name}' 브랜치를 삭제할까요? 커밋은 모두 다른 곳에 남아 있어요.",
+  "work.branch.unmergedTitle": "병합되지 않은 브랜치",
+  "work.branch.unmergedConfirm":
+    "'{name}' 브랜치에만 있는 커밋이 {n}개 있어요. 삭제하면 이 커밋을 잃어요.\n그래도 삭제할까요?",
+  "work.branch.unmergedConfirm.one":
+    "'{name}' 브랜치에만 있는 커밋이 {n}개 있어요. 삭제하면 이 커밋을 잃어요.\n그래도 삭제할까요?",
+
+  // Worktrees
+  "work.worktree.new": "새 worktree",
+  "work.worktree.prune": "정리",
+  "work.worktree.pruneHint": "폴더가 사라진 worktree를 목록에서 지워요",
+  "work.worktree.main": "기본",
+  "work.worktree.open": "열림",
+  "work.worktree.locked": "잠김",
+  "work.worktree.missing": "폴더 없음",
+  "work.worktree.changes": "변경 {n}",
+  "work.worktree.openAction": "열기",
+  "work.worktree.reveal": "폴더 보기",
+  "work.worktree.deleteTitle": "worktree 삭제",
+  "work.worktree.deleteConfirm":
+    "'{name}' worktree 폴더를 삭제할까요? 브랜치 {branch}는 그대로 남아요.",
+  "work.worktree.dirtyTitle": "변경이 남은 worktree",
+  "work.worktree.dirtyConfirm":
+    "'{name}'에 {what}이(가) 있을 수 있어요. 삭제하면 잃어요.\n그래도 삭제할까요?",
+  "work.worktree.uncommittedCount": "커밋하지 않은 변경 {n}개",
+  "work.worktree.uncommittedCount.one": "커밋하지 않은 변경 {n}개",
+  "work.worktree.uncommitted": "커밋하지 않은 변경",
+  "work.worktree.orphanCommits": "어느 브랜치에도 없는 커밋",
+  "work.worktree.listJoin": ", ",
+  "work.worktree.namePlaceholder": "이름 (영문·숫자·-·_)",
+  "work.worktree.nameToken": "<이름>",
+  "work.worktree.invalidName": "영문·숫자·-·_·. 만 쓸 수 있어요.",
+  "work.worktree.hint": "{path} 에 브랜치 {branch} 로 만들어요.",
+
+  // Git setup guide
+  "work.setup.optional": "(선택)",
+  "work.setup.copyCommands": "명령어 복사",
+  "work.setup.copy": "복사",
+  "work.setup.title.none": "git 저장소가 아니에요. 아래 순서대로 설정해 주세요.",
+  "work.setup.title.noCommit": "아직 커밋이 없어요. 첫 커밋을 만들어 주세요.",
+  "work.setup.title.noRemote": "GitHub에 아직 연결하지 않았어요.",
+  "work.setup.localOnly": "로컬에서만 쓸게요",
+  "work.setup.installGit": "Git 설치",
+  "work.setup.installGit.body":
+    "이 컴퓨터에서 git을 찾지 못했어요. 터미널에서 설치하거나 공식 사이트에서 받아요.",
+  "work.setup.installGit.download": "git-scm.com에서 받기",
+  "work.setup.installGit.restart": "설치한 뒤에는 이 앱과 터미널을 껐다 켜야 git이 인식돼요.",
+  "work.setup.createRepo": "GitHub에서 저장소 만들기",
+  "work.setup.createRepo.body":
+    "GitHub에 로그인한 뒤 새 저장소를 만들어요. {noInit} 빈 저장소여야 아래 올리기 단계가 바로 돼요.",
+  "work.setup.createRepo.noInit": "README · .gitignore · license는 체크하지 마세요.",
+  "work.setup.createRepo.open": "github.com/new 열기",
+  "work.setup.createRepo.user": "GitHub 아이디",
+  "work.setup.createRepo.userPlaceholder": "예: octocat",
+  "work.setup.createRepo.repo": "저장소 이름",
+  "work.setup.createRepo.hint":
+    "입력하면 아래 명령어에 바로 채워져요. 로컬에서만 쓸 거면 건너뛰어도 돼요.",
+  "work.setup.userToken": "<GitHub-아이디>",
+  "work.setup.repoToken": "<저장소-이름>",
+  "work.setup.cd": "터미널에서 프로젝트 폴더로 이동",
+  "work.setup.cd.body": "터미널을 열고:",
+  "work.setup.cd.bodyWindows": "PowerShell이나 Windows 터미널을 열고:",
+  "work.setup.identity": "내 이름과 이메일 등록 (처음 한 번만)",
+  "work.setup.identity.body": "커밋에 남을 이름이에요. 이미 등록했으면 건너뛰어요.",
+  "work.setup.identity.name": "내 이름",
+  "work.setup.identity.noreply":
+    "이메일을 공개하기 싫으면 GitHub 설정 › Emails의 noreply 주소를 써요.",
+  "work.setup.init": "git 저장소 만들기",
+  "work.setup.init.hint": "끝나면 이 탭이 몇 초 안에 알아서 바뀌어요.",
+  "work.setup.firstCommit": "첫 커밋",
+  "work.setup.firstCommit.body":
+    "올리면 안 되는 파일({env}, 비밀번호, {modules} 등)은 먼저 {gitignore}에 적어 두세요. {status}로 올라갈 파일을 확인할 수 있어요.",
+  "work.setup.firstCommit.message": "첫 커밋",
+  "work.setup.push": "GitHub에 올리기",
+  "work.setup.push.hint": "처음 올릴 때 GitHub 로그인 창이 뜨면 로그인하면 돼요.",
+  "work.setup.push.hintWindows":
+    "처음 올릴 때 GitHub 로그인 창이 뜨면 로그인하면 돼요 (Git for Windows에 들어 있는 Git Credential Manager).",
+
+  // GitHub section
+  "work.github.offline": "GitHub에 연결하지 못했어요. 인터넷이 돌아오면 다시 불러와요.",
+  "work.github.notGitHub": "github.com 저장소가 아니라서 PR·이슈를 보여줄 수 없어요.",
+  "work.github.openOnGitHub": "GitHub에서 열기",
+  "work.github.signOut": "로그아웃",
+  "work.github.signOutAccount": "@{login} 로그아웃",
+  "work.github.disconnected": "연결 안 됨",
+  "work.github.signInIntro":
+    "GitHub에 로그인하면 이 브랜치의 PR·CI 상태와 열린 PR·이슈를 보고, PR을 만들 수 있어요.",
+  "work.github.signIn": "GitHub 로그인",
+  "work.github.enterCode": "브라우저에서 GitHub에 아래 코드를 입력하면 로그인돼요.",
+  "work.github.copied": "복사됨 · ",
+  "work.github.copyAndOpen": "코드 복사하고 GitHub 열기",
+  "work.github.waiting": "기다리는 중… ({url})",
+  "work.github.state.open": "열림",
+  "work.github.state.merged": "병합됨",
+  "work.github.state.closed": "닫힘",
+  "work.github.draft": "초안",
+  "work.github.noCi": "CI 없음",
+  "work.github.ciTitle": "CI: 성공 {passed}, 실패 {failed}, 진행 중 {pending}, 건너뜀 {skipped}",
+  "work.github.skipped": "건너뜀 {n}",
+  "work.github.notPushed":
+    "{branch} 브랜치가 아직 GitHub에 없어요. PR을 만들려면 먼저 올려 주세요.",
+  "work.github.defaultBranch": "{branch} (기본 브랜치)",
+  "work.github.noPull": "이 브랜치의 PR이 없어요",
+  "work.github.newPull": "새 PR 만들기",
+  "work.github.createPull": "PR 만들기",
+  "work.github.creating": "만드는 중…",
+  "work.github.pullTitle": "PR 제목",
+  "work.github.pullBody": "설명 (선택, 마크다운)",
+  "work.github.unpushed":
+    "아직 push 안 한 커밋 {n}개는 PR에 들어가지 않아요. {push} 후 만들면 같이 들어가요.",
+  "work.github.unpushed.one":
+    "아직 push 안 한 커밋 {n}개는 PR에 들어가지 않아요. {push} 후 만들면 같이 들어가요.",
+  "work.github.asDraft": "초안으로",
+  "work.github.none": "없어요.",
+  "work.github.openPulls": "열린 PR",
+  "work.github.openIssues": "열린 이슈",
+} as const;
+
+export const en: Messages<typeof ko> = {
+  // Work page
+  "work.title": "Work",
+  "work.description":
+    "Create and switch branches and worktrees, and review uncommitted changes. Commit and push from Claude Code or the terminal.",
+
+  // Work panel: shared
+  "work.noProject": "Choose a project folder to manage its branches and worktrees here.",
+  "work.chooseFolder": "Choose folder",
+  "work.close": "Close",
+  "work.loading": "Loading…",
+  "work.refresh": "Refresh",
+  "work.cancel": "Cancel",
+  "work.create": "Create",
+  "work.base": "From",
+  "work.baseBranch": "Base branch",
+  "work.currentHead": "Current HEAD",
+  "work.detached": "Detached HEAD {commit}",
+  "work.noCommits": "No commits",
+  "work.deleteNamed": "Delete {name}",
+  "work.forceDelete": "Force delete",
+  "work.forceDeleteConfirm": "Force delete '{name}'? This can't be undone.",
+
+  // Operation in progress
+  "work.op.rebase": "Rebasing",
+  "work.op.merge": "Merging",
+  "work.op.cherry-pick": "Cherry-picking",
+  "work.op.revert": "Reverting",
+  "work.op.bisect": "Bisecting",
+
+  // Ahead / behind
+  "work.track.gone": "Gone from remote",
+  "work.track.title": "{ahead} ahead, {behind} behind the remote",
+
+  // Changes
+  "work.changes": "Changes",
+  "work.changes.none": "No uncommitted changes.",
+  "work.changes.more": "{n} more",
+  "work.kind.modified": "Modified",
+  "work.kind.added": "Added",
+  "work.kind.deleted": "Deleted",
+  "work.kind.renamed": "Renamed",
+  "work.kind.copied": "Copied",
+  "work.kind.typeChanged": "Type changed",
+  "work.kind.untracked": "New file",
+  "work.kind.conflicted": "Conflict",
+  "work.staged": "Staged",
+  "work.partlyStaged": "Partly staged",
+  "work.renamedFrom": "from {path}",
+  "work.diff.loading": "Loading diff…",
+  "work.diff.binary": "Binary file, not shown.",
+  "work.diff.empty": "No content changes",
+  "work.diff.truncated": "Too long, showing only part of it.",
+
+  // Branches
+  "work.branches": "Branches",
+  "work.branch.new": "New branch",
+  "work.branch.current": "Current",
+  "work.branch.switch": "Switch",
+  "work.branch.upstream": "Remote: {upstream}",
+  "work.branch.worktree": "Worktree: {path}",
+  "work.branch.showLess": "Show less",
+  "work.branch.showMore": "Show {n} more",
+  "work.branch.namePlaceholder": "New branch name (e.g. feature/login)",
+  "work.branch.switchAfter": "Switch after creating",
+  "work.branch.deleteTitle": "Delete branch",
+  "work.branch.deleteConfirm":
+    "Delete the '{name}' branch? All of its commits are also on other branches.",
+  "work.branch.unmergedTitle": "Unmerged branch",
+  "work.branch.unmergedConfirm":
+    "'{name}' has {n} commits that aren't on any other branch. Deleting it will lose them.\nDelete it anyway?",
+  "work.branch.unmergedConfirm.one":
+    "'{name}' has 1 commit that isn't on any other branch. Deleting it will lose that commit.\nDelete it anyway?",
+
+  // Worktrees
+  "work.worktree.new": "New worktree",
+  "work.worktree.prune": "Clean up",
+  "work.worktree.pruneHint": "Removes worktrees whose folders are gone from the list",
+  "work.worktree.main": "Main",
+  "work.worktree.open": "Open",
+  "work.worktree.locked": "Locked",
+  "work.worktree.missing": "Folder missing",
+  "work.worktree.changes": "{n} changed",
+  "work.worktree.openAction": "Open",
+  "work.worktree.reveal": "Show folder",
+  "work.worktree.deleteTitle": "Delete worktree",
+  "work.worktree.deleteConfirm":
+    "Delete the '{name}' worktree folder? The {branch} branch will be kept.",
+  "work.worktree.dirtyTitle": "Worktree has changes",
+  "work.worktree.dirtyConfirm":
+    "'{name}' may have {what}. Deleting it will lose them.\nDelete it anyway?",
+  "work.worktree.uncommittedCount": "{n} uncommitted changes",
+  "work.worktree.uncommittedCount.one": "1 uncommitted change",
+  "work.worktree.uncommitted": "uncommitted changes",
+  "work.worktree.orphanCommits": "commits that aren't on any branch",
+  "work.worktree.listJoin": " and ",
+  "work.worktree.namePlaceholder": "Name (letters, digits, -, _)",
+  "work.worktree.nameToken": "<name>",
+  "work.worktree.invalidName": "Only letters, digits, -, _ and . are allowed.",
+  "work.worktree.hint": "Creates {path} on the branch {branch}.",
+
+  // Git setup guide
+  "work.setup.optional": "(optional)",
+  "work.setup.copyCommands": "Copy commands",
+  "work.setup.copy": "Copy",
+  "work.setup.title.none": "This isn't a git repository yet. Follow the steps below to set it up.",
+  "work.setup.title.noCommit": "No commits yet. Make your first commit.",
+  "work.setup.title.noRemote": "Not connected to GitHub yet.",
+  "work.setup.localOnly": "Keep it local",
+  "work.setup.installGit": "Install Git",
+  "work.setup.installGit.body":
+    "Git wasn't found on this computer. Install it from a terminal or download it from the official site.",
+  "work.setup.installGit.download": "Download from git-scm.com",
+  "work.setup.installGit.restart":
+    "After installing, restart this app and your terminal so they can find git.",
+  "work.setup.createRepo": "Create a repository on GitHub",
+  "work.setup.createRepo.body":
+    "Sign in to GitHub and create a new repository. {noInit} The push step below only works right away with an empty repository.",
+  "work.setup.createRepo.noInit": "Don't add a README, .gitignore or license.",
+  "work.setup.createRepo.open": "Open github.com/new",
+  "work.setup.createRepo.user": "GitHub username",
+  "work.setup.createRepo.userPlaceholder": "e.g. octocat",
+  "work.setup.createRepo.repo": "Repository name",
+  "work.setup.createRepo.hint":
+    "What you type fills in the commands below. Skip this if you'll only use git locally.",
+  "work.setup.userToken": "<github-username>",
+  "work.setup.repoToken": "<repository-name>",
+  "work.setup.cd": "Go to the project folder in a terminal",
+  "work.setup.cd.body": "Open a terminal and run:",
+  "work.setup.cd.bodyWindows": "Open PowerShell or Windows Terminal and run:",
+  "work.setup.identity": "Set your name and email (first time only)",
+  "work.setup.identity.body":
+    "This name is recorded in your commits. Skip this if you've already set it.",
+  "work.setup.identity.name": "Your Name",
+  "work.setup.identity.noreply":
+    "To keep your email private, use the noreply address from GitHub Settings › Emails.",
+  "work.setup.init": "Create a git repository",
+  "work.setup.init.hint": "Once it's done, this tab updates on its own within a few seconds.",
+  "work.setup.firstCommit": "First commit",
+  "work.setup.firstCommit.body":
+    "First list files that shouldn't be uploaded ({env}, passwords, {modules} and so on) in {gitignore}. Run {status} to see which files will be included.",
+  "work.setup.firstCommit.message": "First commit",
+  "work.setup.push": "Push to GitHub",
+  "work.setup.push.hint": "If a GitHub sign-in window opens on your first push, just sign in.",
+  "work.setup.push.hintWindows":
+    "If a GitHub sign-in window opens on your first push, just sign in (it's Git Credential Manager, included with Git for Windows).",
+
+  // GitHub section
+  "work.github.offline": "Couldn't connect to GitHub. It will reload once you're back online.",
+  "work.github.notGitHub": "This isn't a github.com repository, so PRs and issues can't be shown.",
+  "work.github.openOnGitHub": "Open on GitHub",
+  "work.github.signOut": "Sign out",
+  "work.github.signOutAccount": "Sign out @{login}",
+  "work.github.disconnected": "Offline",
+  "work.github.signInIntro":
+    "Sign in to GitHub to see this branch's PR and CI status, browse open PRs and issues, and create PRs.",
+  "work.github.signIn": "Sign in to GitHub",
+  "work.github.enterCode": "Enter the code below on GitHub in your browser to sign in.",
+  "work.github.copied": "Copied · ",
+  "work.github.copyAndOpen": "Copy code and open GitHub",
+  "work.github.waiting": "Waiting… ({url})",
+  "work.github.state.open": "Open",
+  "work.github.state.merged": "Merged",
+  "work.github.state.closed": "Closed",
+  "work.github.draft": "Draft",
+  "work.github.noCi": "No CI",
+  "work.github.ciTitle":
+    "CI: {passed} passed, {failed} failed, {pending} in progress, {skipped} skipped",
+  "work.github.skipped": "{n} skipped",
+  "work.github.notPushed": "The {branch} branch isn't on GitHub yet. Push it first to create a PR.",
+  "work.github.defaultBranch": "{branch} (default branch)",
+  "work.github.noPull": "No PR for this branch",
+  "work.github.newPull": "Create new PR",
+  "work.github.createPull": "Create PR",
+  "work.github.creating": "Creating…",
+  "work.github.pullTitle": "PR title",
+  "work.github.pullBody": "Description (optional, Markdown)",
+  "work.github.unpushed":
+    "{n} commits haven't been pushed yet and won't be in the PR. Run {push} first to include them.",
+  "work.github.unpushed.one":
+    "1 commit hasn't been pushed yet and won't be in the PR. Run {push} first to include it.",
+  "work.github.asDraft": "As draft",
+  "work.github.none": "None.",
+  "work.github.openPulls": "Open PRs",
+  "work.github.openIssues": "Open issues",
+};

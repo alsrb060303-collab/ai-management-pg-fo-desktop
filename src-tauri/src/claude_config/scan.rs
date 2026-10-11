@@ -37,13 +37,24 @@ pub fn scan(project: &Path, env: &Env) -> ConfigMap {
     plugins(&settings, &mut items);
 
     let mut notes = vec![
-        "개인 MCP 서버(~/.claude.json)는 로그인 정보가 함께 있어 읽지 않습니다.".to_string(),
-        "설치된 플러그인 안의 skill·agent는 아직 표시하지 않습니다.".to_string(),
-        "여러 설정 파일의 skillOverrides는 키 단위로 합쳐진다고 가정합니다(공식 문서에 명시 없음)."
-            .to_string(),
+        crate::tr!(
+            "개인 MCP 서버(~/.claude.json)는 로그인 정보가 함께 있어 읽지 않습니다.",
+            "Personal MCP servers (~/.claude.json) aren't read because that file also holds sign-in data."
+        ),
+        crate::tr!(
+            "설치된 플러그인 안의 skill·agent는 아직 표시하지 않습니다.",
+            "Skills and agents inside installed plugins aren't shown yet."
+        ),
+        crate::tr!(
+            "여러 설정 파일의 skillOverrides는 키 단위로 합쳐진다고 가정합니다(공식 문서에 명시 없음).",
+            "skillOverrides from several settings files are assumed to merge key by key (the official docs don't say)."
+        ),
     ];
     if cfg!(windows) {
-        notes.push("레지스트리·MDM으로 배포된 관리 정책은 표시하지 않습니다.".to_string());
+        notes.push(crate::tr!(
+            "레지스트리·MDM으로 배포된 관리 정책은 표시하지 않습니다.",
+            "Managed policies deployed through the registry or MDM aren't shown."
+        ));
     }
 
     ConfigMap {
@@ -143,8 +154,11 @@ impl Settings {
         };
         let (json, detail) = match serde_json::from_str::<Value>(&text) {
             Ok(Value::Object(map)) => (Some(map), None),
-            Ok(_) => (None, Some("JSON 객체가 아닙니다".to_string())),
-            Err(e) => (None, Some(format!("JSON 오류: {e}"))),
+            Ok(_) => (
+                None,
+                Some(crate::tr!("JSON 객체가 아닙니다", "Not a JSON object")),
+            ),
+            Err(e) => (None, Some(crate::tr!("JSON 오류: {e}", "JSON error: {e}"))),
         };
         let state = if json.is_some() {
             State::Active
@@ -233,7 +247,13 @@ impl Settings {
     /// Why a skill is off or limited, if it is.
     fn skill_state(&self, name: &str) -> Option<(State, String)> {
         if self.deny.iter().any(|rule| skill_rule_matches(rule, name)) {
-            return Some((State::Off, "permissions.deny 규칙으로 차단".into()));
+            return Some((
+                State::Off,
+                crate::tr!(
+                    "permissions.deny 규칙으로 차단",
+                    "Blocked by a permissions.deny rule"
+                ),
+            ));
         }
         let (value, scope) = self.skill_overrides.get(name)?;
         let source = layer_label(*scope);
@@ -241,11 +261,17 @@ impl Settings {
             "off" => Some((State::Off, format!("skillOverrides: off ({source})"))),
             "name-only" => Some((
                 State::Limited,
-                format!("skillOverrides: 이름만 노출 ({source})"),
+                crate::tr!(
+                    "skillOverrides: 이름만 노출 ({source})",
+                    "skillOverrides: name only ({source})"
+                ),
             )),
             "user-invocable-only" => Some((
                 State::Limited,
-                format!("skillOverrides: 사용자만 호출 ({source})"),
+                crate::tr!(
+                    "skillOverrides: 사용자만 호출 ({source})",
+                    "skillOverrides: user-invocable only ({source})"
+                ),
             )),
             _ => None,
         }
@@ -338,13 +364,13 @@ fn strings(value: Option<&Value>) -> Vec<String> {
         .collect()
 }
 
-fn layer_label(scope: Scope) -> &'static str {
+fn layer_label(scope: Scope) -> String {
     match scope {
-        Scope::Managed => "관리 정책",
-        Scope::User => "~/.claude/settings.json",
-        Scope::Project => ".claude/settings.json",
-        Scope::Local => ".claude/settings.local.json",
-        Scope::Parent => "상위 폴더",
+        Scope::Managed => crate::tr!("관리 정책", "managed policy"),
+        Scope::User => "~/.claude/settings.json".into(),
+        Scope::Project => ".claude/settings.json".into(),
+        Scope::Local => ".claude/settings.local.json".into(),
+        Scope::Parent => crate::tr!("상위 폴더", "parent folder"),
     }
 }
 
@@ -388,12 +414,9 @@ fn instructions(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
 
     for (scope, path) in &found {
         let (state, detail) = if managed_only && *scope != Scope::Managed {
-            (
-                State::NotLoaded,
-                Some("관리 정책 CLAUDE.md만 읽도록 설정됨".into()),
-            )
+            (State::NotLoaded, Some(managed_only_detail()))
         } else if is_excluded(*scope, path) {
-            (State::NotLoaded, Some("claudeMdExcludes로 제외".into()))
+            (State::NotLoaded, Some(excluded_detail()))
         } else {
             (State::Active, None)
         };
@@ -403,20 +426,41 @@ fn instructions(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
     let agents_md = project.join("AGENTS.md");
     if agents_md.is_file() {
         let (state, detail) = match mode {
-            "managed-only" => (State::NotLoaded, "관리 정책 CLAUDE.md만 읽도록 설정됨"),
-            "claude-md" => (State::NotLoaded, "설정(instructionFiles)으로 제외"),
-            "claude-md-and-agents-md" => (State::Active, "설정에 따라 CLAUDE.md와 함께 읽힘"),
+            "managed-only" => (State::NotLoaded, managed_only_detail()),
+            "claude-md" => (
+                State::NotLoaded,
+                crate::tr!(
+                    "설정(instructionFiles)으로 제외",
+                    "Excluded by settings (instructionFiles)"
+                ),
+            ),
+            "claude-md-and-agents-md" => (
+                State::Active,
+                crate::tr!(
+                    "설정에 따라 CLAUDE.md와 함께 읽힘",
+                    "Read along with CLAUDE.md, per settings"
+                ),
+            ),
             _ if has_claude_md => (
                 State::NotLoaded,
-                "CLAUDE.md가 있어서 읽히지 않음 (CLAUDE.md에 @AGENTS.md로 가져오면 함께 읽힘)",
+                crate::tr!(
+                    "CLAUDE.md가 있어서 읽히지 않음 (CLAUDE.md에 @AGENTS.md로 가져오면 함께 읽힘)",
+                    "Not read because CLAUDE.md exists (add @AGENTS.md to CLAUDE.md to read both)"
+                ),
             ),
-            _ => (State::Active, "CLAUDE.md가 없어서 대신 읽힘"),
+            _ => (
+                State::Active,
+                crate::tr!(
+                    "CLAUDE.md가 없어서 대신 읽힘",
+                    "Read instead, since there's no CLAUDE.md"
+                ),
+            ),
         };
         items.push(instruction_item(
             Scope::Project,
             &agents_md,
             state,
-            Some(detail.into()),
+            Some(detail),
         ));
     }
 }
@@ -428,13 +472,14 @@ fn instruction_item(scope: Scope, path: &Path, state: State, detail: Option<Stri
         .lines()
         .filter(|l| l.trim_start().starts_with('@'))
         .count();
-    let mut facts = vec![format!("{lines}줄")];
+    let mut facts = vec![crate::tr!("{lines}줄", "{lines} lines")];
     if imports > 0 {
-        facts.push(format!("@가져오기 {imports}개"));
+        facts.push(crate::tr!("@가져오기 {imports}개", "{imports} @imports"));
     }
     if lines > LONG_INSTRUCTIONS_LINES {
-        facts.push(format!(
-            "{LONG_INSTRUCTIONS_LINES}줄 초과, 나눠서 rules로 옮기는 걸 권장"
+        facts.push(crate::tr!(
+            "{LONG_INSTRUCTIONS_LINES}줄 초과, 나눠서 rules로 옮기는 걸 권장",
+            "Over {LONG_INSTRUCTIONS_LINES} lines; consider splitting it into rules"
         ));
     }
     if let Some(d) = detail {
@@ -464,19 +509,16 @@ fn rules(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             let text = read_text(&path).unwrap_or_default();
             let paths = frontmatter::parse(&text).and_then(|f| f.get("paths").cloned());
             let (state, detail) = if managed_only {
-                (
-                    State::NotLoaded,
-                    Some("관리 정책 CLAUDE.md만 읽도록 설정됨".into()),
-                )
+                (State::NotLoaded, Some(managed_only_detail()))
             } else if excluded
                 .as_ref()
                 .is_some_and(|g| g.is_match(slashed(&path)))
             {
-                (State::NotLoaded, Some("claudeMdExcludes로 제외".into()))
+                (State::NotLoaded, Some(excluded_detail()))
             } else {
                 match paths {
                     Some(p) if !p.is_empty() => (State::Conditional, Some(format!("paths: {p}"))),
-                    _ => (State::Active, Some("항상 읽힘".into())),
+                    _ => (State::Active, Some(crate::tr!("항상 읽힘", "Always read"))),
                 }
             };
             items.push(Item {
@@ -495,7 +537,23 @@ fn rules(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
 // ---------------------------------------------------------------------------
 // Skills, commands, agents
 
-const PLUGIN_ONLY_DETAIL: &str = "관리 정책: 플러그인으로 배포된 것만 허용";
+fn plugin_only_detail() -> String {
+    crate::tr!(
+        "관리 정책: 플러그인으로 배포된 것만 허용",
+        "Managed policy: only items deployed by plugins are allowed"
+    )
+}
+
+fn managed_only_detail() -> String {
+    crate::tr!(
+        "관리 정책 CLAUDE.md만 읽도록 설정됨",
+        "Set to read only the managed-policy CLAUDE.md"
+    )
+}
+
+fn excluded_detail() -> String {
+    crate::tr!("claudeMdExcludes로 제외", "Excluded by claudeMdExcludes")
+}
 
 fn skills_and_commands(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
     let env = ctx.env;
@@ -523,23 +581,33 @@ fn skills_and_commands(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             let name = fm.get("name").cloned().unwrap_or(dir_name);
 
             let (state, detail) = if plugin_only && scope != Scope::Managed {
-                (State::Off, Some(PLUGIN_ONLY_DETAIL.into()))
+                (State::Off, Some(plugin_only_detail()))
             } else if let Some(winner) = taken.get(&name) {
                 (
                     State::Shadowed,
-                    Some(format!("같은 이름의 {} skill이 우선", scope_label(*winner))),
+                    Some(crate::tr!(
+                        "같은 이름의 {} skill이 우선",
+                        "Overridden by the {} skill with the same name",
+                        scope_label(*winner)
+                    )),
                 )
             } else if let Some((state, why)) = settings.skill_state(&name) {
                 (state, Some(why))
             } else if is_true(fm.get("disable-model-invocation")) {
                 (
                     State::Limited,
-                    Some("Claude가 스스로 쓰지 않음 (/명령으로만 실행)".into()),
+                    Some(crate::tr!(
+                        "Claude가 스스로 쓰지 않음 (/명령으로만 실행)",
+                        "Claude won't use it on its own (runs only as a / command)"
+                    )),
                 )
             } else if fm.get("user-invocable").is_some_and(|v| is_false(v)) {
                 (
                     State::Limited,
-                    Some("/ 메뉴에 안 보임 (Claude만 사용)".into()),
+                    Some(crate::tr!(
+                        "/ 메뉴에 안 보임 (Claude만 사용)",
+                        "Hidden from the / menu (only Claude uses it)"
+                    )),
                 )
             } else {
                 (State::Active, None)
@@ -572,7 +640,10 @@ fn skills_and_commands(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             path: skill_md.display().to_string(),
             description: fm.get("description").cloned(),
             state: State::Limited,
-            detail: Some("claude.ai에서 동기화됨 · 로그인한 세션에서만 사용".into()),
+            detail: Some(crate::tr!(
+                "claude.ai에서 동기화됨 · 로그인한 세션에서만 사용",
+                "Synced from claude.ai · only available in signed-in sessions"
+            )),
         });
     }
 
@@ -589,9 +660,15 @@ fn skills_and_commands(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             let fm = frontmatter::parse(&text).unwrap_or_default();
             let name = relative_name(&root, &path).replace('/', ":");
             let (state, detail) = if plugin_only {
-                (State::Off, Some(PLUGIN_ONLY_DETAIL.into()))
+                (State::Off, Some(plugin_only_detail()))
             } else if taken.contains_key(&name) {
-                (State::Shadowed, Some("같은 이름의 skill이 우선".into()))
+                (
+                    State::Shadowed,
+                    Some(crate::tr!(
+                        "같은 이름의 skill이 우선",
+                        "Overridden by a skill with the same name"
+                    )),
+                )
             } else {
                 (State::Active, None)
             };
@@ -629,11 +706,18 @@ fn agents(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             let fm = frontmatter::parse(&text).unwrap_or_default();
             let name = fm.get("name").filter(|n| !n.is_empty()).cloned();
             let invalid = match &name {
-                None => Some("frontmatter에 name이 없어 인식되지 않음"),
-                Some(n) if n.contains(':') => Some("name에 콜론(:)이 있어 인식되지 않음"),
-                Some(n) if n.chars().count() > MAX_AGENT_NAME => {
-                    Some("name이 256자를 넘어 인식되지 않음")
-                }
+                None => Some(crate::tr!(
+                    "frontmatter에 name이 없어 인식되지 않음",
+                    "Not recognized: no name in the frontmatter"
+                )),
+                Some(n) if n.contains(':') => Some(crate::tr!(
+                    "name에 콜론(:)이 있어 인식되지 않음",
+                    "Not recognized: the name contains a colon (:)"
+                )),
+                Some(n) if n.chars().count() > MAX_AGENT_NAME => Some(crate::tr!(
+                    "name이 256자를 넘어 인식되지 않음",
+                    "Not recognized: the name is longer than 256 characters"
+                )),
                 Some(_) => None,
             };
             if let Some(why) = invalid {
@@ -644,18 +728,22 @@ fn agents(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
                     path: path.display().to_string(),
                     description: None,
                     state: State::NotLoaded,
-                    detail: Some(why.into()),
+                    detail: Some(why),
                 });
                 continue;
             }
             let name = name.unwrap_or_default();
 
             let (state, detail) = if plugin_only && scope != Scope::Managed {
-                (State::Off, Some(PLUGIN_ONLY_DETAIL.into()))
+                (State::Off, Some(plugin_only_detail()))
             } else if let Some(winner) = taken.get(&name) {
                 (
                     State::Shadowed,
-                    Some(format!("같은 이름의 {} agent가 우선", scope_label(*winner))),
+                    Some(crate::tr!(
+                        "같은 이름의 {} agent가 우선",
+                        "Overridden by the {} agent with the same name",
+                        scope_label(*winner)
+                    )),
                 )
             } else if settings.agent_denied(&name) {
                 (State::Off, Some(format!("permissions.deny: Agent({name})")))
@@ -716,30 +804,45 @@ fn mcp(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             path: project_mcp.display().to_string(),
             description: None,
             state: State::Off,
-            detail: Some(format!("JSON 오류: {e}")),
+            detail: Some(crate::tr!("JSON 오류: {e}", "JSON error: {e}")),
         });
     }
     for (name, path) in mcp_servers(&project_mcp) {
         let (state, detail) = if exclusive {
             (
                 State::NotLoaded,
-                "관리 정책 managed-mcp.json이 MCP를 독점 관리",
+                crate::tr!(
+                    "관리 정책 managed-mcp.json이 MCP를 독점 관리",
+                    "The managed-policy managed-mcp.json controls all MCP servers"
+                ),
             )
         } else if settings.plugin_only.contains("mcp") {
-            (State::Off, PLUGIN_ONLY_DETAIL)
+            (State::Off, plugin_only_detail())
         } else if settings.mcp_disabled.contains(&name) {
-            (State::Off, "disabledMcpjsonServers에 있음")
+            (
+                State::Off,
+                crate::tr!(
+                    "disabledMcpjsonServers에 있음",
+                    "Listed in disabledMcpjsonServers"
+                ),
+            )
         } else if settings.mcp_approve_all || settings.mcp_approved.contains(&name) {
-            (State::Active, "승인됨")
+            (State::Active, crate::tr!("승인됨", "Approved"))
         } else if settings.mcp_approve_all_by_project
             || settings.mcp_approved_by_project.contains(&name)
         {
             (
                 State::Limited,
-                "커밋된 설정에서 승인 · 폴더를 신뢰한 뒤에 적용",
+                crate::tr!(
+                    "커밋된 설정에서 승인 · 폴더를 신뢰한 뒤에 적용",
+                    "Approved in committed settings · applies once you trust the folder"
+                ),
             )
         } else {
-            (State::Limited, "처음 실행할 때 승인 필요")
+            (
+                State::Limited,
+                crate::tr!("처음 실행할 때 승인 필요", "Needs approval on first run"),
+            )
         };
         items.push(Item {
             kind: Kind::Mcp,
@@ -748,7 +851,7 @@ fn mcp(ctx: &Ctx, settings: &Settings, items: &mut Vec<Item>) {
             path,
             description: None,
             state,
-            detail: Some(detail.into()),
+            detail: Some(detail),
         });
     }
 }
@@ -896,13 +999,13 @@ fn first_heading(text: &str) -> Option<String> {
         .map(|h| h.trim().to_string())
 }
 
-fn scope_label(scope: Scope) -> &'static str {
+fn scope_label(scope: Scope) -> String {
     match scope {
-        Scope::Managed => "관리 정책",
-        Scope::User => "개인(~/.claude)",
-        Scope::Parent => "상위 폴더",
-        Scope::Project => "프로젝트",
-        Scope::Local => "로컬",
+        Scope::Managed => crate::tr!("관리 정책", "managed policy"),
+        Scope::User => crate::tr!("개인(~/.claude)", "personal (~/.claude)"),
+        Scope::Parent => crate::tr!("상위 폴더", "parent folder"),
+        Scope::Project => crate::tr!("프로젝트", "project"),
+        Scope::Local => crate::tr!("로컬", "local"),
     }
 }
 
