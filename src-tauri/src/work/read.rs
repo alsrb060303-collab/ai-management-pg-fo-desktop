@@ -207,8 +207,15 @@ pub fn parse_status(raw: &[u8]) -> (Head, Vec<Change>, u32) {
 fn tracked(path: &str, orig: Option<String>, xy: &str) -> Change {
     let mut chars = xy.chars();
     let (x, y) = (chars.next().unwrap_or('.'), chars.next().unwrap_or('.'));
-    // The staged side names the change unless only the worktree changed.
-    let kind = match if x != '.' { x } else { y } {
+    // A file deleted from the worktree is gone whatever was staged; otherwise
+    // the staged side names the change unless only the worktree changed.
+    let kind = match if y == 'D' {
+        y
+    } else if x != '.' {
+        x
+    } else {
+        y
+    } {
         'A' => ChangeKind::Added,
         'D' => ChangeKind::Deleted,
         'R' => ChangeKind::Renamed,
@@ -228,7 +235,7 @@ fn tracked(path: &str, orig: Option<String>, xy: &str) -> Change {
 /// Field separator for `for-each-ref` output.
 const SEP: &str = "\x1f";
 
-const BRANCH_FORMAT: &str = "--format=%(refname)\x1f%(upstream:short)\x1f%(upstream:track,nobracket)\x1f%(objectname:short)\x1f%(committerdate:unix)\x1f%(contents:subject)\x1f%(worktreepath)";
+const BRANCH_FORMAT: &str = "--format=%(refname)\x1f%(upstream:short)\x1f%(upstream:track,nobracket)\x1f%(objectname:short)\x1f%(committerdate:unix)\x1f%(worktreepath)\x1f%(contents:subject)";
 
 fn parse_branches(out: &str, current: Option<&str>) -> Vec<Branch> {
     let mut branches: Vec<Branch> = out
@@ -255,8 +262,9 @@ fn parse_branches(out: &str, current: Option<&str>) -> Vec<Branch> {
                 gone: track == "gone",
                 commit: f.get(3).unwrap_or(&"").to_string(),
                 time: f.get(4).and_then(|t| t.parse().ok()).unwrap_or(0),
-                subject: f.get(5).unwrap_or(&"").to_string(),
-                worktree: f.get(6).filter(|w| !w.is_empty()).map(|w| w.to_string()),
+                worktree: f.get(5).filter(|w| !w.is_empty()).map(|w| w.to_string()),
+                // Free text last: a separator inside it cannot shift other fields.
+                subject: f[6.min(f.len())..].join(SEP),
             })
         })
         .collect();
@@ -362,7 +370,15 @@ pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
     let branches = parse_branches(&refs, head.branch.as_deref());
 
     let root_str = root.to_string_lossy().into_owned();
-    let raw = git::run_raw(root, &["worktree", "list", "--porcelain", "-z"])?;
+    // `-z` needs git 2.36; older ones get newline-separated output, which
+    // only differs for paths containing newlines.
+    let raw = git::run_raw(root, &["worktree", "list", "--porcelain", "-z"]).or_else(|_| {
+        git::run_raw(root, &["worktree", "list", "--porcelain"]).map(|out| {
+            out.into_iter()
+                .map(|b| if b == b'\n' { 0 } else { b })
+                .collect()
+        })
+    })?;
     // The first entry is always the main worktree.
     let first = fields(&raw)
         .into_iter()
@@ -402,6 +418,7 @@ mod tests {
 1 A. N... 000000 100644 100644 000 bbb new file.txt\0\
 2 R. N... 100644 100644 100644 aaa bbb R100 b.rs\0old b.rs\0\
 u UU N... 100644 100644 100644 100644 a b c conflict.rs\0\
+1 MD N... 100644 100644 000000 aaa bbb gone.rs\0\
 ? notes/\0";
         let (head, changes, count) = parse_status(raw);
         assert_eq!(
@@ -414,7 +431,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.rs\0\
                 behind: 1,
             }
         );
-        assert_eq!(count, 5);
+        assert_eq!(count, 6);
         let summary: Vec<_> = changes
             .iter()
             .map(|c| {
@@ -434,6 +451,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.rs\0\
                 ("new file.txt", None, &ChangeKind::Added, true, false),
                 ("b.rs", Some("old b.rs"), &ChangeKind::Renamed, true, false),
                 ("conflict.rs", None, &ChangeKind::Conflicted, false, true),
+                ("gone.rs", None, &ChangeKind::Deleted, true, true),
                 ("notes/", None, &ChangeKind::Untracked, false, true),
             ]
         );

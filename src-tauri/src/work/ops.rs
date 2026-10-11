@@ -182,12 +182,31 @@ pub fn remove_worktree(root: &Path, path: &str, force: bool) -> git::Result<()> 
         return Err("잠긴 worktree예요. `git worktree unlock`으로 푼 뒤 지워 주세요".into());
     }
     if wt.prunable {
-        return git::run(root, &["worktree", "prune"]).map(drop);
+        return forget_missing(root, &wt.path);
     }
     if !force {
-        let raw = git::run_raw(Path::new(&wt.path), &["status", "--porcelain=v2", "-z"])?;
+        let dir = Path::new(&wt.path);
+        let raw = git::run_raw(dir, &["status", "--porcelain=v2", "-z"])?;
         if read::parse_status(&raw).2 > 0 {
             return Err("커밋하지 않은 변경이 있는 worktree예요".into());
+        }
+        // A detached HEAD's commits live only in its reflog, which goes too.
+        if wt.branch.is_none() {
+            let args = [
+                "rev-list",
+                "--count",
+                "HEAD",
+                "--not",
+                "--branches",
+                "--remotes",
+                "--tags",
+            ];
+            let lost: u32 = git::run(dir, &args)?.trim().parse().unwrap_or(0);
+            if lost > 0 {
+                return Err(format!(
+                    "어느 브랜치에도 없는 커밋이 {lost}개 있는 worktree예요"
+                ));
+            }
         }
     }
     let mut args = vec!["worktree", "remove"];
@@ -196,6 +215,32 @@ pub fn remove_worktree(root: &Path, path: &str, force: bool) -> git::Result<()> 
     }
     args.push(&wt.path);
     git::run(root, &args).map(drop)
+}
+
+/// Drops the record of one worktree whose folder is gone (`git worktree
+/// prune` would drop every missing one, e.g. all on an unplugged drive).
+fn forget_missing(root: &Path, path: &str) -> git::Result<()> {
+    let common = git::run(
+        root,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?;
+    let admin = Path::new(&common).join("worktrees");
+    let key = read::path_key(path);
+    let entries =
+        std::fs::read_dir(&admin).map_err(|e| format!("worktree 기록을 읽을 수 없어요: {e}"))?;
+    for entry in entries.flatten() {
+        // `gitdir` holds `<worktree>/.git`.
+        let Ok(gitdir) = std::fs::read_to_string(entry.path().join("gitdir")) else {
+            continue;
+        };
+        let gitdir = gitdir.trim();
+        let folder = gitdir.strip_suffix(".git").unwrap_or(gitdir);
+        if read::path_key(folder) == key {
+            return std::fs::remove_dir_all(entry.path())
+                .map_err(|e| format!("worktree 기록을 지울 수 없어요: {e}"));
+        }
+    }
+    Err("worktree 기록을 찾지 못했어요".into())
 }
 
 pub fn prune_worktrees(root: &Path) -> git::Result<()> {
@@ -208,7 +253,9 @@ fn clean_diff(raw: &[u8]) -> Diff {
     let mut out = String::new();
     let mut binary = false;
     let mut truncated = false;
-    for line in text.lines() {
+    // Split on `\n` only, so a CRLF change still shows its `\r`.
+    let text = text.strip_suffix('\n').unwrap_or(&text);
+    for line in text.split('\n') {
         if line.starts_with("diff --git ") || line.starts_with("index ") {
             continue;
         }
@@ -237,33 +284,65 @@ pub fn diff(
     orig_path: Option<&str>,
     untracked: bool,
 ) -> git::Result<Diff> {
-    if Path::new(path).is_absolute() || path.split(['/', '\\']).any(|p| p == "..") {
+    use std::path::Component;
+    let normal = !path.is_empty()
+        && Path::new(path)
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)));
+    if !normal {
         return Err("잘못된 경로예요".into());
     }
     if untracked {
         let file = root.join(path);
-        if file.is_dir() {
+        let meta =
+            std::fs::symlink_metadata(&file).map_err(|e| format!("파일을 읽을 수 없어요: {e}"))?;
+        if meta.file_type().is_symlink() {
+            let target = std::fs::read_link(&file)
+                .map(|t| t.display().to_string())
+                .unwrap_or_default();
+            return Ok(Diff {
+                text: format!("심볼릭 링크예요 → {target}\n"),
+                ..Diff::default()
+            });
+        }
+        if meta.is_dir() {
             return Ok(Diff {
                 text: "새 폴더예요. 안의 파일은 목록에 따로 나오지 않아요.\n".into(),
                 ..Diff::default()
             });
         }
-        let bytes = std::fs::read(&file).map_err(|e| format!("파일을 읽을 수 없어요: {e}"))?;
+        // Only what can be shown; a huge file is never read whole.
+        let mut bytes = Vec::new();
+        std::fs::File::open(&file)
+            .and_then(|f| {
+                std::io::Read::read_to_end(
+                    &mut std::io::Read::take(f, MAX_DIFF as u64 + 1),
+                    &mut bytes,
+                )
+            })
+            .map_err(|e| format!("파일을 읽을 수 없어요: {e}"))?;
         if bytes.iter().take(8000).any(|&b| b == 0) {
             return Ok(Diff {
                 binary: true,
                 ..Diff::default()
             });
         }
-        let text = String::from_utf8_lossy(&bytes);
-        let lines = text.lines().count();
-        let mut body = format!("--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{lines} @@\n");
-        for line in text.lines() {
+        let cut = bytes.len() > MAX_DIFF;
+        let text = String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_DIFF)]);
+        let text = text.strip_suffix('\n').unwrap_or(&text);
+        let lines: Vec<&str> = text.split('\n').collect();
+        let mut body = format!(
+            "--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{} @@\n",
+            lines.len()
+        );
+        for line in lines {
             body.push('+');
             body.push_str(line);
             body.push('\n');
         }
-        return Ok(clean_diff(body.as_bytes()));
+        let mut diff = clean_diff(body.as_bytes());
+        diff.truncated |= cut;
+        return Ok(diff);
     }
     let has_head = git::run(root, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok();
     let base = if has_head { "HEAD" } else { EMPTY_TREE };
@@ -341,7 +420,10 @@ mod tests {
         let (_tmp, root) = repo();
         assert!(add_worktree(&root, "../x", None).is_err());
         let path = add_worktree(&root, "task", None).unwrap();
-        assert!(path.ends_with(".claude/worktrees/task"), "{path}");
+        assert!(
+            read::path_key(&path).ends_with(".claude/worktrees/task"),
+            "{path}"
+        );
 
         let ov = read::overview(&root, true).unwrap();
         let wt = ov.worktrees.iter().find(|w| w.managed).unwrap();
@@ -366,6 +448,44 @@ mod tests {
     }
 
     #[test]
+    fn detached_commits_and_other_missing_worktrees_are_kept() {
+        let (tmp, root) = repo();
+        let base = std::fs::canonicalize(tmp.path()).unwrap();
+        let detached = base.join("detached");
+        let (gone_a, gone_b) = (base.join("gone-a"), base.join("gone-b"));
+        for (dir, args) in [
+            (&detached, vec!["--detach"]),
+            (&gone_a, vec!["-b", "a"]),
+            (&gone_b, vec!["-b", "b"]),
+        ] {
+            let mut cmd = vec!["worktree", "add", "-q"];
+            cmd.extend(args);
+            cmd.push(dir.to_str().unwrap());
+            git(&root, &cmd);
+        }
+        git(
+            &detached,
+            &["commit", "-q", "--allow-empty", "-m", "only here"],
+        );
+        let d = detached.to_str().unwrap();
+        let err = remove_worktree(&root, d, false).unwrap_err();
+        assert!(err.contains("1개"), "{err}");
+        remove_worktree(&root, d, true).unwrap();
+
+        std::fs::remove_dir_all(&gone_a).unwrap();
+        std::fs::remove_dir_all(&gone_b).unwrap();
+        remove_worktree(&root, gone_a.to_str().unwrap(), false).unwrap();
+        let left: Vec<_> = read::overview(&root, false)
+            .unwrap()
+            .worktrees
+            .into_iter()
+            .filter(|w| w.prunable)
+            .map(|w| w.branch)
+            .collect();
+        assert_eq!(left, [Some("b".to_string())]);
+    }
+
+    #[test]
     fn diffs_cover_tracked_untracked_and_unsafe_paths() {
         let (_tmp, root) = repo();
         std::fs::write(root.join("a.txt"), "one\n2\n").unwrap();
@@ -381,9 +501,23 @@ mod tests {
         assert!(diff(&root, "bin.dat", None, true).unwrap().binary);
         assert!(diff(&root, "../etc/passwd", None, true).is_err());
         assert!(diff(&root, "/etc/passwd", None, true).is_err());
+        assert!(diff(&root, "./a.txt", None, true).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/etc/hostname", root.join("link")).unwrap();
+            let d = diff(&root, "link", None, true).unwrap();
+            assert!(d.text.starts_with("심볼릭 링크"), "{}", d.text);
+        }
+        std::fs::write(root.join("crlf.txt"), "x\r\n").unwrap();
+        assert!(
+            diff(&root, "crlf.txt", None, true)
+                .unwrap()
+                .text
+                .contains("+x\r\n")
+        );
 
         let ov = read::overview(&root, false).unwrap();
-        assert_eq!(ov.change_count, 3);
+        assert_eq!(ov.change_count, if cfg!(unix) { 5 } else { 4 });
         assert_eq!(ov.head.branch.as_deref(), Some("main"));
     }
 

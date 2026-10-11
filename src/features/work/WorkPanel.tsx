@@ -449,7 +449,8 @@ function NewBranch({ onDone }: { onDone: () => void }) {
   const { overview, busy, run } = useWorkStore();
   const [name, setName] = useState("");
   const [switchTo, setSwitchTo] = useState(true);
-  const current = overview?.head.branch ?? null;
+  // An unborn branch has no ref to start from yet.
+  const current = overview?.branches.find((b) => b.name === overview.head.branch)?.name ?? null;
   const [base, setBase] = useState<string>(current ?? "");
   return (
     <form
@@ -536,21 +537,29 @@ function Worktrees({ compact }: { compact: boolean }) {
 
   const remove = async (wt: Worktree) => {
     const name = folderName(wt.path);
-    if (wt.changes === 0) {
+    // A detached HEAD may hold commits no branch has; the backend checks.
+    if (wt.changes === 0 && wt.branch) {
       if (
         await confirm(
-          `'${name}' worktree 폴더를 삭제할까요? 브랜치 ${wt.branch ?? ""}는 그대로 남아요.`,
+          `'${name}' worktree 폴더를 삭제할까요? 브랜치 ${wt.branch}는 그대로 남아요.`,
           "worktree 삭제",
         )
       )
         await run("work_remove_worktree", { path: wt.path, force: false });
       return;
     }
-    const what = wt.changes
-      ? `커밋하지 않은 변경이 ${wt.changes}개 있어요`
-      : "커밋하지 않은 변경이 있을 수 있어요";
+    const what = [
+      wt.changes
+        ? `커밋하지 않은 변경 ${wt.changes}개`
+        : wt.changes === null
+          ? "커밋하지 않은 변경"
+          : "",
+      wt.branch ? "" : "어느 브랜치에도 없는 커밋",
+    ]
+      .filter(Boolean)
+      .join(", ");
     const first = await confirm(
-      `'${name}'에 ${what}. 삭제하면 이 변경을 잃어요.\n그래도 삭제할까요?`,
+      `'${name}'에 ${what}이(가) 있을 수 있어요. 삭제하면 잃어요.\n그래도 삭제할까요?`,
       "변경이 남은 worktree",
       true,
     );
@@ -659,7 +668,7 @@ function Worktrees({ compact }: { compact: boolean }) {
 function NewWorktree({ onDone }: { onDone: () => void }) {
   const { overview, busy, run } = useWorkStore();
   const [name, setName] = useState("");
-  const current = overview?.head.branch ?? "";
+  const current = overview?.branches.find((b) => b.name === overview.head.branch)?.name ?? "";
   const [base, setBase] = useState(current);
   const valid = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/.test(name);
   return (

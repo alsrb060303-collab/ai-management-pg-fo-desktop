@@ -98,6 +98,8 @@ interface WorkState {
 export const useWorkStore = create<WorkState>((set, get) => {
   let seq = 0;
   let diffSeq = 0;
+  /** Refreshes running; a poll never supersedes (and so drops) one. */
+  let inFlight = 0;
 
   const loadDiff = async () => {
     const { project, selected } = get();
@@ -138,19 +140,21 @@ export const useWorkStore = create<WorkState>((set, get) => {
 
     refresh: async (full = false) => {
       const { project } = get();
-      if (!project || !isTauri()) return;
+      if (!project || !isTauri() || (!full && inFlight > 0)) return;
       const id = ++seq;
+      inFlight++;
       try {
         const next = await invoke<Overview | null>("work_overview", {
           project,
           countWorktrees: full,
-        });
+        }).finally(() => inFlight--);
         if (id !== seq || get().project !== project) return;
         // A poll does not count other worktrees; keep the last counts.
         if (next && !full) {
           const old = get().overview?.worktrees ?? [];
           for (const wt of next.worktrees) {
-            wt.changes ??= old.find((o) => o.path === wt.path)?.changes ?? null;
+            const prev = old.find((o) => o.path === wt.path && o.commit === wt.commit);
+            wt.changes ??= prev?.changes ?? null;
           }
         }
         const selected = get().selected;
