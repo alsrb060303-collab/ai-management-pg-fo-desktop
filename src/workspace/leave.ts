@@ -1,4 +1,5 @@
 import { useComposerStore } from "../store/composer";
+import { useMemoStore } from "../store/memo";
 import { switchView } from "../store/view";
 
 /**
@@ -7,7 +8,7 @@ import { switchView } from "../store/view";
  */
 export async function saveBeforeLeaving() {
   (document.activeElement as HTMLElement | null)?.blur();
-  await useComposerStore.getState().flushSave();
+  await Promise.all([useComposerStore.getState().flushSave(), useMemoStore.getState().flushNote()]);
 }
 
 export async function switchToSidebar() {
