@@ -162,7 +162,7 @@ export const OutputNodeView = memo(function OutputNodeView({
                 data.scope === scope ? "bg-surface-raised text-text shadow-card" : "text-text-muted"
               }`}
             >
-              {scope === "team" ? t("composer.node.team") : t("composer.personal")}
+              {scope === "team" ? t("composer.node.team") : t("composer.node.personal")}
             </button>
           ))}
         </fieldset>

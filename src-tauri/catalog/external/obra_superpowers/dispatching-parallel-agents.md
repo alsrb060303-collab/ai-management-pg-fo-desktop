@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: 병렬 subagent로 나눠 맡기기
+title_en: Split work across parallel subagents
 summary: 서로 독립적인 작업 여러 개를 subagent에게 동시에 맡기는 방법.
+summary_en: How to hand several independent tasks to subagents at the same time.
 category: 작업 방식
+category_en: Workflow
 name: dispatching-parallel-agents
 description: "Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies"
 license: MIT

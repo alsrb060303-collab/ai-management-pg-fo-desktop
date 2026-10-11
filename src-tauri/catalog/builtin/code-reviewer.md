@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: 코드 리뷰어
+title_en: Code reviewer
 summary: 읽기 전용 도구만 쓰는 리뷰 전담 subagent. 변경 후 검토를 맡겨요.
+summary_en: A review-only subagent with read-only tools. Hand it changes to check.
 category: 리뷰
+category_en: Review
 name: code-reviewer
 description: Reviews recent code changes for bugs, security issues, and missing tests. Use after making non-trivial changes.
 tools: Read, Grep, Glob, Bash

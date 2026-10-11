@@ -54,7 +54,7 @@ export const ko = {
   "shell.dock.window": "창",
   "shell.dock.right": "{app} 오른쪽에 붙음",
   "shell.dock.left": "{app} 왼쪽에 붙음",
-  "shell.dock.inside": "{app} 겹쳐서에 붙음",
+  "shell.dock.inside": "{app} 위에 겹쳐서 붙음",
   "shell.dock.waiting": "{app} 대기 중",
   "shell.dock.edge": "화면 가장자리",
   "shell.dock.floating": "도킹 꺼짐",
@@ -66,7 +66,7 @@ export const en: Messages<typeof ko> = {
   "shell.nav.library": "Library",
   "shell.nav.config": "Settings map",
   "shell.nav.work": "Work",
-  "shell.nav.memo": "Memos",
+  "shell.nav.memo": "Notes",
   "shell.nav.settings": "Settings",
   "shell.nav.expand": "Expand menu",
   "shell.nav.collapse": "Collapse menu",
@@ -96,7 +96,7 @@ export const en: Messages<typeof ko> = {
 
   "shell.tab.docs": "Docs",
   "shell.tab.work": "Work",
-  "shell.tab.memo": "Memos",
+  "shell.tab.memo": "Notes",
 
   "shell.title.toMain": "Switch to main window",
   "shell.title.undock": "Undock from terminal",

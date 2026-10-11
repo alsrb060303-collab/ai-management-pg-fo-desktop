@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: 프론트엔드 개발자
+title_en: Frontend developer
 summary: React 컴포넌트·반응형 레이아웃·상태 관리를 맡는 subagent.
+summary_en: A subagent for React components, responsive layouts, and state management.
 category: React
+category_en: React
 name: frontend-developer
 description: "Build React components, implement responsive layouts, and handle client-side state management. Masters React 19, Next.js 15, and modern frontend architecture. Optimizes performance and ensures accessibility. Use PROACTIVELY when creating UI components or fixing frontend issues."
 license: MIT

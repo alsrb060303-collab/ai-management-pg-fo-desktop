@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: Rust 전문가
+title_en: Rust expert
 summary: 비동기·타입 시스템·시스템 프로그래밍을 맡는 Rust subagent.
+summary_en: A Rust subagent for async, the type system, and systems programming.
 category: Rust
+category_en: Rust
 name: rust-pro
 description: "Master Rust 1.75+ with modern async patterns, advanced type system features, and production-ready systems programming. Expert in the latest Rust ecosystem including Tokio, axum, and cutting-edge crates. Use PROACTIVELY for Rust development, performance optimization, or systems programming."
 license: MIT

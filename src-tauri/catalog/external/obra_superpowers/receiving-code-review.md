@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: 코드 리뷰 받아들이기
+title_en: Take code review well
 summary: 리뷰 의견을 무조건 따르지 않고 검증한 뒤 반영하게 해요.
+summary_en: Verifies review feedback before acting on it instead of following it blindly.
 category: 리뷰
+category_en: Review
 name: receiving-code-review
 description: "Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation"
 license: MIT

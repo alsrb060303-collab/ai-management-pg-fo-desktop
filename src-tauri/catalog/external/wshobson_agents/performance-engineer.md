@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: 성능 엔지니어
+title_en: Performance engineer
 summary: 관측·프로파일링으로 병목을 찾아 최적화하는 subagent.
+summary_en: A subagent that finds and fixes bottlenecks through observability and profiling.
 category: 성능
+category_en: Performance
 name: performance-engineer
 description: "Expert performance engineer specializing in modern observability, application optimization, and scalable system performance. Masters OpenTelemetry, distributed tracing, load testing, multi-tier caching, Core Web Vitals, and performance monitoring. Handles end-to-end optimization, real user monitoring, and scalability patterns. Use PROACTIVELY for performance optimization, observability, or scalability challenges."
 license: MIT

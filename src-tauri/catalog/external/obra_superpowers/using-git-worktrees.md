@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: git worktree로 작업 분리
+title_en: Isolate work with git worktrees
 summary: 새 기능 작업을 별도 worktree에서 시작하게 해요.
+summary_en: Starts new feature work in a separate worktree.
 category: Git
+category_en: Git
 name: using-git-worktrees
 description: "Use when starting feature work that needs isolation from current workspace or before executing implementation plans - ensures an isolated workspace exists via native tools or git worktree fallback"
 license: MIT

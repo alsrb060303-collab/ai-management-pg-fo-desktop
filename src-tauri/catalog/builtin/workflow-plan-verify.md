@@ -1,8 +1,11 @@
 ---
 kind: instruction
 title: 계획 → 구현 → 검증
+title_en: Plan, build, verify
 summary: 바로 고치지 말고 먼저 살펴보고, 끝나면 직접 확인하게 해요.
+summary_en: Look before changing anything, and check the result yourself when done.
 category: 작업 방식
+category_en: Workflow
 ---
 ## Workflow
 

@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: 브랜치 마무리
+title_en: Finish a branch
 summary: 구현·테스트가 끝난 뒤 merge, PR, 정리 중 무엇을 할지 정리해 줘요.
+summary_en: Once the work and tests are done, helps decide between merging, a PR, or cleaning up.
 category: Git
+category_en: Git
 name: finishing-a-development-branch
 description: "Use when implementation is complete, all tests pass, and you need to decide how to integrate the work"
 license: MIT

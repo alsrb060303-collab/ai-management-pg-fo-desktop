@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: Go 전문가
+title_en: Go expert
 summary: 동시성·성능·마이크로서비스를 다루는 Go subagent.
+summary_en: A Go subagent for concurrency, performance, and microservices.
 category: Go
+category_en: Go
 name: golang-pro
 description: "Master Go 1.21+ with modern patterns, advanced concurrency, performance optimization, and production-ready microservices. Expert in the latest Go ecosystem including generics, workspaces, and cutting-edge frameworks. Use PROACTIVELY for Go development, architecture design, or performance optimization."
 license: MIT

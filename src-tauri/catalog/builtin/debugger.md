@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: 디버거
+title_en: Debugger
 summary: 에러·실패한 테스트의 원인을 재현하고 좁혀 가는 subagent.
+summary_en: A subagent that reproduces errors and failing tests and narrows down the cause.
 category: 디버깅
+category_en: Debugging
 name: debugger
 description: Investigates errors, failing tests, and unexpected behavior to find the root cause. Use when something fails and the cause is not obvious.
 tools: Read, Grep, Glob, Bash, Edit

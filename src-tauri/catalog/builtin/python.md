@@ -1,8 +1,11 @@
 ---
 kind: rule
 title: Python 규칙
+title_en: Python rules
 summary: 타입 힌트, 표준 도구(ruff·pytest), 명확한 예외 처리. .py 파일에만 적용돼요.
+summary_en: Type hints, standard tools (ruff, pytest), clear exception handling. Applies to .py files only.
 category: Python
+category_en: Python
 paths:
   - "**/*.py"
 ---

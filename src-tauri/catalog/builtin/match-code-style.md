@@ -1,8 +1,11 @@
 ---
 kind: instruction
 title: 기존 코드 스타일 따르기
+title_en: Match the existing code style
 summary: 새 코드를 주변 코드의 이름 규칙·구조·주석 밀도에 맞추게 해요.
+summary_en: Makes new code follow the naming, structure, and comment density of the code around it.
 category: 코드 품질
+category_en: Code quality
 ---
 ## Code style
 

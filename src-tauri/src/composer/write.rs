@@ -76,13 +76,18 @@ pub fn hash(text: &str) -> String {
 fn read(path: &Path) -> ops::Result<Option<String>> {
     match fs::read(path) {
         Ok(bytes) => String::from_utf8(bytes).map(Some).map_err(|_| {
-            format!(
+            crate::tr!(
                 "UTF-8 텍스트가 아니라 건드리지 않았어요: {}",
+                "Left untouched because it isn't UTF-8 text: {}",
                 path.display()
             )
         }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("읽지 못했어요: {} ({e})", path.display())),
+        Err(e) => Err(crate::tr!(
+            "읽지 못했어요: {} ({e})",
+            "Couldn't read {} ({e})",
+            path.display()
+        )),
     }
 }
 
@@ -97,12 +102,18 @@ fn section_range(text: &str) -> Result<Option<(usize, usize)>, String> {
         let trimmed = line.trim_start_matches('\u{feff}').trim();
         if trimmed.starts_with(BEGIN_PREFIX) {
             if begin.is_some() {
-                return Err("관리 구역 시작 표시가 두 번 있어요".into());
+                return Err(crate::tr!(
+                    "관리 구역 시작 표시가 두 번 있어요",
+                    "The managed section's begin marker appears twice"
+                ));
             }
             begin = Some(offset);
         } else if trimmed == END {
             if begin.is_none() || end.is_some() {
-                return Err("관리 구역 표시 순서가 맞지 않아요".into());
+                return Err(crate::tr!(
+                    "관리 구역 표시 순서가 맞지 않아요",
+                    "The managed section's markers are out of order"
+                ));
             }
             end = Some(offset + line.len());
         }
@@ -111,7 +122,10 @@ fn section_range(text: &str) -> Result<Option<(usize, usize)>, String> {
     match (begin, end) {
         (None, None) => Ok(None),
         (Some(b), Some(e)) => Ok(Some((b, e))),
-        _ => Err("관리 구역 끝 표시가 없어요".into()),
+        _ => Err(crate::tr!(
+            "관리 구역 끝 표시가 없어요",
+            "The managed section's end marker is missing"
+        )),
     }
 }
 
@@ -196,7 +210,10 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
     };
     if file.personal && existing.is_some() && ops::is_tracked(&full) {
         return item(
-            Status::Blocked("git에 올라간 파일이라 '나만'으로 쓸 수 없어요".into()),
+            Status::Blocked(crate::tr!(
+                "git에 올라간 파일이라 '나만'으로 쓸 수 없어요",
+                "This file is tracked by git, so it can't be written as 'Just me'"
+            )),
             existing,
             String::new(),
             None,
@@ -208,8 +225,9 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
         let mut notes = Vec::new();
         let imports = bare_imports(root, &content);
         if !imports.is_empty() {
-            notes.push(format!(
+            notes.push(crate::tr!(
                 "@{}는 Claude Code가 그 파일을 매번 불러와요. 의도한 게 아니면 백틱으로 감싸 주세요",
+                "Claude Code loads @{} in every session. If that's not intended, wrap it in backticks",
                 imports.join(", @")
             ));
         }
@@ -220,7 +238,10 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
         let Some(text) = existing else {
             if keeps_agents_md(root) {
                 new = format!("@AGENTS.md\n\n{new}");
-                notes.push("AGENTS.md가 계속 읽히도록 맨 위에 @AGENTS.md를 넣어요".into());
+                notes.push(crate::tr!(
+                    "AGENTS.md가 계속 읽히도록 맨 위에 @AGENTS.md를 넣어요",
+                    "Adds @AGENTS.md at the top so AGENTS.md keeps being read"
+                ));
             }
             return item(Status::New, None, new, join_notes(notes));
         };

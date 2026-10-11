@@ -1,8 +1,11 @@
 ---
 kind: instruction
 title: 보안 기본
+title_en: Security basics
 summary: 비밀 값을 코드·로그에 남기지 않고, 외부 입력을 검증하게 해요.
+summary_en: Keeps secrets out of code and logs, and validates outside input.
 category: 보안
+category_en: Security
 ---
 ## Security
 

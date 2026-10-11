@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: 커밋 메시지 작성
+title_en: Write commit messages
 summary: 스테이징된 변경을 읽고 규칙에 맞는 커밋 메시지를 써 주는 skill.
+summary_en: A skill that reads the staged changes and writes a commit message that follows the conventions.
 category: Git
+category_en: Git
 name: commit-message
 description: Write a clear git commit message for the currently staged changes. Use when the user asks to commit or to draft a commit message.
 ---

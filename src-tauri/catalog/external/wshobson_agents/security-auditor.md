@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: 보안 감사
+title_en: Security auditor
 summary: 취약점 점검·위협 모델링 관점으로 코드를 검토하는 subagent.
+summary_en: A subagent that reviews code for vulnerabilities and with threat modeling.
 category: 보안
+category_en: Security
 name: security-auditor
 description: "Expert security auditor specializing in DevSecOps, comprehensive cybersecurity, and compliance frameworks. Masters vulnerability assessment, threat modeling, secure authentication (OAuth2/OIDC), OWASP standards, cloud security, and security automation. Handles DevSecOps integration, compliance (GDPR/HIPAA/SOC2), and incident response. Use PROACTIVELY for security audits, DevSecOps, or compliance implementation."
 license: MIT

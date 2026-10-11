@@ -1,8 +1,11 @@
 ---
 kind: rule
 title: React 규칙
+title_en: React rules
 summary: 함수 컴포넌트와 훅 규칙, 상태 최소화. .tsx/.jsx 파일에만 적용돼요.
+summary_en: Function components, the rules of hooks, minimal state. Applies to .tsx/.jsx files only.
 category: React
+category_en: React
 paths:
   - "**/*.tsx"
   - "**/*.jsx"

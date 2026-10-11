@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: 프론트엔드 디자인
+title_en: Frontend design
 summary: 뻔한 AI 느낌이 아닌, 의도가 분명한 UI를 디자인하도록 돕는 skill.
+summary_en: A skill for designing intentional UI that does not look like generic AI output.
 category: 디자인
+category_en: Design
 name: frontend-design
 description: "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults."
 license: Apache-2.0

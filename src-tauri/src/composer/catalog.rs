@@ -98,6 +98,16 @@ pub struct Block {
     pub frontmatter: Option<String>,
 }
 
+impl Block {
+    /// The title in the UI language (the Korean one when there is no English).
+    pub fn display_title(&self) -> &str {
+        match &self.en {
+            Some(en) if crate::i18n::english() => &en.title,
+            _ => &self.title,
+        }
+    }
+}
+
 /// Byte offset where the body starts (after the closing `---`), or `None`
 /// without frontmatter. Expects LF line endings and no BOM.
 fn body_start(text: &str) -> Option<usize> {
@@ -261,7 +271,18 @@ pub fn external(cache: Option<&Path>) -> Vec<Block> {
                 .and_then(|dir| std::fs::read_to_string(cache_path(dir, source, stem)).ok())
                 .and_then(|t| parse_external(source, stem, &t))
                 .filter(|c| same_upstream(c, &bundled));
-            Some(cached.unwrap_or(bundled))
+            // Titles, summaries and categories are the app's own text: always
+            // the bundled ones, also for copies cached by an older version.
+            Some(match cached {
+                Some(cached) => Block {
+                    title: bundled.title,
+                    summary: bundled.summary,
+                    category: bundled.category,
+                    en: bundled.en,
+                    ..cached
+                },
+                None => bundled,
+            })
         })
         .collect()
 }
@@ -326,6 +347,36 @@ pub fn all(library_items: &[LibraryItem], cache: Option<&Path>) -> Vec<Block> {
 mod tests {
     use super::*;
 
+    /// English title, summary and category, with the same English category
+    /// for every use of a Korean one.
+    fn assert_has_english(block: &Block) {
+        let en = block
+            .en
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} needs title_en", block.id));
+        assert!(
+            !en.title.is_empty() && !en.summary.is_empty() && !en.category.is_empty(),
+            "{} needs title_en, summary_en and category_en",
+            block.id
+        );
+    }
+
+    #[test]
+    fn categories_translate_consistently() {
+        let mut seen: BTreeMap<String, String> = BTreeMap::new();
+        for block in builtin().into_iter().chain(external(None)) {
+            let en = block
+                .en
+                .as_ref()
+                .map(|e| e.category.clone())
+                .unwrap_or_default();
+            let first = seen
+                .entry(block.category.clone())
+                .or_insert_with(|| en.clone());
+            assert_eq!(*first, en, "{}: category {}", block.id, block.category);
+        }
+    }
+
     #[test]
     fn every_builtin_block_parses() {
         let blocks = builtin();
@@ -340,6 +391,7 @@ mod tests {
                 "{}",
                 block.id
             );
+            assert_has_english(block);
             assert!(
                 !block.body.is_empty() && !block.body.starts_with("---"),
                 "{}",
@@ -395,6 +447,7 @@ mod tests {
                 block.id
             );
             assert!(block.description.is_some(), "{}", block.id);
+            assert_has_english(block);
             assert!(!block.body.starts_with("---"), "{}", block.id);
             assert!(
                 crate::library::check_id(&block.name).is_ok(),

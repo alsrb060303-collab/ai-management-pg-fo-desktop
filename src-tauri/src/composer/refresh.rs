@@ -54,12 +54,12 @@ fn get(agent: &Agent, url: &str, accept: &str) -> Result<String, String> {
         .get(url)
         .header("Accept", accept)
         .call()
-        .map_err(|e| format!("받아오지 못했어요 ({e})"))?
+        .map_err(|e| crate::tr!("받아오지 못했어요 ({e})", "Couldn't download ({e})"))?
         .body_mut()
         .with_config()
         .limit(2 * 1024 * 1024)
         .read_to_string()
-        .map_err(|e| format!("읽지 못했어요 ({e})"))
+        .map_err(|e| crate::tr!("읽지 못했어요 ({e})", "Couldn't read the response ({e})"))
 }
 
 /// The repository's HEAD commit from git's smart-HTTP ref advertisement (what
@@ -67,7 +67,12 @@ fn get(agent: &Agent, url: &str, accept: &str) -> Result<String, String> {
 fn latest_commit(agent: &Agent, repo: &str) -> Result<String, String> {
     let url = format!("https://github.com/{repo}.git/info/refs?service=git-upload-pack");
     let refs = get(agent, &url, "*/*")?;
-    head_commit(&refs).ok_or_else(|| "최신 커밋을 알 수 없어요".into())
+    head_commit(&refs).ok_or_else(|| {
+        crate::tr!(
+            "최신 커밋을 알 수 없어요",
+            "Couldn't find the latest commit"
+        )
+    })
 }
 
 /// Finds `<sha> HEAD` in a pkt-line ref advertisement.
@@ -113,9 +118,20 @@ pub(super) fn cached_text(
         catalog::BlockKind::Agent => "agent",
     };
     let mut out = format!(
-        "---\nkind: {kind}\ntitle: {}\nsummary: {}\ncategory: {}\nname: {}\ndescription: \"{description}\"\n",
-        block.title, block.summary, block.category, block.name
+        "---\nkind: {kind}\ntitle: {}\nsummary: {}\ncategory: {}\n",
+        block.title, block.summary, block.category
     );
+    // Our own English display text, like the Korean, is kept from the bundle.
+    if let Some(en) = &block.en {
+        out.push_str(&format!(
+            "title_en: {}\nsummary_en: {}\ncategory_en: {}\n",
+            en.title, en.summary, en.category
+        ));
+    }
+    out.push_str(&format!(
+        "name: {}\ndescription: \"{description}\"\n",
+        block.name
+    ));
     if let Some(tools) = fm.get("tools").or(block.tools.as_ref()) {
         out.push_str(&format!("tools: {tools}\n"));
     }
@@ -156,7 +172,7 @@ pub fn refresh(cache: &Path) -> RefreshResult {
     let mut licenses: HashMap<(String, String), Result<(), String>> = HashMap::new();
 
     for item in items {
-        let title = item.block.title.clone();
+        let title = item.block.display_title().to_string();
         let Some(origin) = item.block.origin.clone() else {
             continue;
         };
@@ -191,8 +207,9 @@ pub fn refresh(cache: &Path) -> RefreshResult {
                     if license_matches(&origin.license, &text) {
                         Ok(())
                     } else {
-                        Err(format!(
+                        Err(crate::tr!(
                             "라이선스가 {}이(가) 아닌 것 같아서 건너뛰었어요",
+                            "Skipped: the license no longer looks like {}",
                             origin.license
                         ))
                     }
@@ -211,22 +228,34 @@ pub fn refresh(cache: &Path) -> RefreshResult {
         let upstream = match get(&agent, &url, "text/plain") {
             Ok(text) => text,
             Err(e) => {
-                result
-                    .failed
-                    .push((title, format!("{e}. 원본 파일이 옮겨졌을 수 있어요")));
+                result.failed.push((
+                    title,
+                    crate::tr!(
+                        "{e}. 원본 파일이 옮겨졌을 수 있어요",
+                        "{e}. The original file may have moved"
+                    ),
+                ));
                 continue;
             }
         };
         let Some(text) = cached_text(&item.block, &item.license_path, &upstream, &commit) else {
-            result
-                .failed
-                .push((title, "원본 형식을 읽지 못했어요".into()));
+            result.failed.push((
+                title,
+                crate::tr!(
+                    "원본 형식을 읽지 못했어요",
+                    "Couldn't parse the original file"
+                ),
+            ));
             continue;
         };
         let Some(fresh) = catalog::parse_external(item.source, item.stem, &text) else {
-            result
-                .failed
-                .push((title, "원본 형식을 읽지 못했어요".into()));
+            result.failed.push((
+                title,
+                crate::tr!(
+                    "원본 형식을 읽지 못했어요",
+                    "Couldn't parse the original file"
+                ),
+            ));
             continue;
         };
         let changed =
@@ -286,6 +315,8 @@ mod tests {
         );
         assert_eq!(fresh.name, block.name);
         assert_eq!(fresh.title, block.title);
+        assert!(block.en.is_some());
+        assert_eq!(fresh.en, block.en);
         let (a, b) = (fresh.origin.unwrap(), block.origin.unwrap());
         assert_eq!(a.commit, commit);
         assert_eq!((a.repo, a.path, a.license), (b.repo, b.path, b.license));
@@ -309,6 +340,18 @@ mod tests {
         std::fs::write(&path, &fresh).unwrap();
         let found = catalog::external(Some(tmp.path()));
         assert_eq!(found.iter().find(|b| b.id == block.id).unwrap().body, "New");
+
+        // A copy cached before the English fields existed still gets them.
+        let mut old = String::new();
+        for line in fresh.lines().filter(|l| !l.contains("_en: ")) {
+            old.push_str(line);
+            old.push('\n');
+        }
+        std::fs::write(&path, &old).unwrap();
+        let found = catalog::external(Some(tmp.path()));
+        let cached = found.iter().find(|b| b.id == block.id).unwrap();
+        assert_eq!(cached.body, "New");
+        assert_eq!(cached.en, block.en);
 
         // A cache file pointing elsewhere is ignored.
         let origin = block.origin.as_ref().unwrap();

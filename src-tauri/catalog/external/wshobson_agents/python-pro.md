@@ -1,8 +1,11 @@
 ---
 kind: agent
 title: Python 전문가
+title_en: Python expert
 summary: 최신 Python(3.12+)의 비동기·성능·운영 수준 코드를 맡는 subagent.
+summary_en: A subagent for modern Python (3.12+): async, performance, and production-ready code.
 category: Python
+category_en: Python
 name: python-pro
 description: "Master Python 3.12+ with modern features, async programming, performance optimization, and production-ready practices. Expert in the latest Python ecosystem including uv, ruff, pydantic, and FastAPI. Use PROACTIVELY for Python development, optimization, or advanced Python patterns."
 license: MIT

@@ -161,7 +161,10 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                 warn(
                     &mut out,
                     node_id,
-                    format!("블록을 찾을 수 없어요: {block_id}"),
+                    crate::tr!(
+                        "블록을 찾을 수 없어요: {block_id}",
+                        "Block not found: {block_id}"
+                    ),
                 );
                 continue;
             };
@@ -169,7 +172,11 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                 warn(
                     &mut out,
                     node_id,
-                    format!("'{}'은(는) 여기에 연결할 수 없어요", block.title),
+                    crate::tr!(
+                        "'{}'은(는) 여기에 연결할 수 없어요",
+                        "'{}' can't be connected here",
+                        block.display_title()
+                    ),
                 );
                 continue;
             }
@@ -177,7 +184,11 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                 warn(
                     &mut out,
                     node_id,
-                    format!("'{}' 블록이 두 번 연결됐어요", block.title),
+                    crate::tr!(
+                        "'{}' 블록이 두 번 연결됐어요",
+                        "The '{}' block is connected twice",
+                        block.display_title()
+                    ),
                 );
                 continue;
             }
@@ -187,9 +198,10 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                 warn(
                     &mut out,
                     node_id,
-                    format!(
+                    crate::tr!(
                         "'{}' 본문의 @경로는 Claude Code가 파일 불러오기로 읽어요. 의도한 게 아니면 `@...`처럼 백틱으로 감싸 주세요",
-                        block.title
+                        "Claude Code reads @paths in the '{}' text as file imports. If that's not intended, wrap them in backticks like `@...`",
+                        block.display_title()
                     ),
                 );
             }
@@ -222,8 +234,9 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     warn(
                         &mut out,
                         &output.id,
-                        format!(
-                            "{lines}줄이에요. CLAUDE.md는 {CLAUDE_MD_LINE_BUDGET}줄 이하일 때 더 잘 지켜져요. 일부를 규칙이나 skill로 옮겨 보세요"
+                        crate::tr!(
+                            "{lines}줄이에요. CLAUDE.md는 {CLAUDE_MD_LINE_BUDGET}줄 이하일 때 더 잘 지켜져요. 일부를 규칙이나 skill로 옮겨 보세요",
+                            "{lines} lines. CLAUDE.md is followed better at {CLAUDE_MD_LINE_BUDGET} lines or fewer. Try moving some of it into rules or skills"
                         ),
                     );
                 }
@@ -249,7 +262,11 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                         warn(
                             &mut out,
                             node_id,
-                            format!("파일 이름으로 쓸 수 없어요: {}", block.name),
+                            crate::tr!(
+                                "파일 이름으로 쓸 수 없어요: {}",
+                                "Can't be used as a file name: {}",
+                                block.name
+                            ),
                         );
                         continue;
                     }
@@ -271,9 +288,11 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                         warn(
                             &mut out,
                             node_id,
-                            format!(
+                            crate::tr!(
                                 "'{}'의 부속 파일 {}개는 복사되지 않아요. 통째로 넣으려면 라이브러리의 '적용'을 쓰세요",
-                                block.title, block.extra_files
+                                "The {1} extra file(s) of '{0}' aren't copied. To add the whole skill, use 'Apply' in the library",
+                                block.display_title(),
+                                block.extra_files
                             ),
                         );
                     }
@@ -295,8 +314,9 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             if paths.insert(file.path.clone()) {
                 out.files.push(file);
             } else {
-                let message = format!(
+                let message = crate::tr!(
                     "{}을(를) 두 출력이 같이 쓰려고 해요. 하나만 남겨 주세요",
+                    "Two outputs both write {}. Keep only one",
                     file.path
                 );
                 warn(&mut out, &output.id, message);

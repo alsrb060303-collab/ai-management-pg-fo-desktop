@@ -1,8 +1,11 @@
 ---
 kind: skill
 title: 완료 전에 검증
+title_en: Verify before calling it done
 summary: 끝났다고 말하기 전에 검증 명령을 실제로 실행하고 결과를 확인하게 해요.
+summary_en: Runs the verification commands and checks the output before saying the work is done.
 category: 작업 방식
+category_en: Workflow
 name: verification-before-completion
 description: "Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always"
 license: MIT
