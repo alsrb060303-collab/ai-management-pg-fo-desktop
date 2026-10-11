@@ -22,6 +22,7 @@ import {
   useWorkStore,
   type Worktree,
 } from "../../store/work";
+import { GitSetupGuide } from "./GitSetupGuide";
 
 /** How often the state is re-read while the panel is visible. */
 const POLL_MS = 4000;
@@ -38,7 +39,8 @@ const confirm = (message: string, title: string, danger = false) =>
 export function WorkPanel({ compact = false }: { compact?: boolean }) {
   const project = useProjectStore((s) => s.current);
   const choose = useProjectStore((s) => s.choose);
-  const { overview, notGit, loading, error, load, refresh, dismissError } = useWorkStore();
+  const { overview, notGit, gitMissing, loading, error, load, refresh, dismissError } =
+    useWorkStore();
 
   useEffect(() => {
     void load(project);
@@ -85,14 +87,30 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
       )}
       {loading && !overview && !notGit && <p className="text-xs text-text-muted">불러오는 중…</p>}
       {notGit && (
-        <p className="text-sm text-text-muted">
-          git 저장소가 아니에요. 터미널에서 <code className="font-mono">git init</code> 하면
-          브랜치와 worktree를 다룰 수 있어요.
-        </p>
+        <GitSetupGuide
+          key={project}
+          stage="none"
+          project={project}
+          branch="main"
+          hasRemote={false}
+          gitMissing={gitMissing}
+          compact={compact}
+        />
       )}
       {overview && (
         <>
           <HeadBar compact={compact} />
+          {(!overview.head.commit || !overview.hasRemote) && (
+            <GitSetupGuide
+              key={`${project}:${overview.head.commit ? "noRemote" : "noCommit"}`}
+              stage={overview.head.commit ? "noRemote" : "noCommit"}
+              project={project}
+              branch={overview.head.branch ?? "main"}
+              hasRemote={overview.hasRemote}
+              gitMissing={false}
+              compact={compact}
+            />
+          )}
           <Changes compact={compact} />
           <Branches compact={compact} />
           <Worktrees compact={compact} />

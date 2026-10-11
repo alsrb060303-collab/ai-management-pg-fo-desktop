@@ -64,6 +64,7 @@ pub fn run() {
             work::work_add_worktree,
             work::work_remove_worktree,
             work::work_prune_worktrees,
+            work::work_git_version,
             shell::view_mode,
             shell::view_switch,
         ])

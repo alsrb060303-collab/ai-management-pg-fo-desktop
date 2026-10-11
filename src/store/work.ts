@@ -61,6 +61,7 @@ export interface Overview {
   operation: string | null;
   changes: Change[];
   changeCount: number;
+  hasRemote: boolean;
   branches: Branch[];
   worktrees: Worktree[];
 }
@@ -76,6 +77,8 @@ interface WorkState {
   overview: Overview | null;
   /** The project is not a git repository. */
   notGit: boolean;
+  /** git could not be run at all (checked when the project is not a repository). */
+  gitMissing: boolean;
   loading: boolean;
   /** An operation is running; buttons are disabled meanwhile. */
   busy: boolean;
@@ -122,6 +125,7 @@ export const useWorkStore = create<WorkState>((set, get) => {
     project: null,
     overview: null,
     notGit: false,
+    gitMissing: false,
     loading: false,
     busy: false,
     error: null,
@@ -159,6 +163,11 @@ export const useWorkStore = create<WorkState>((set, get) => {
         }
         const selected = get().selected;
         const still = selected && next?.changes.find((c) => c.path === selected.path);
+        if (next === null && !get().notGit) {
+          void invoke<string | null>("work_git_version", { project }).then((version) => {
+            if (get().project === project) set({ gitMissing: version === null });
+          });
+        }
         set({
           overview: next,
           notGit: next === null,

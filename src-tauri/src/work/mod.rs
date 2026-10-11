@@ -106,3 +106,17 @@ pub async fn work_remove_worktree(
 pub async fn work_prune_worktrees(project: String) -> Result<(), String> {
     blocking(project, ops::prune_worktrees).await
 }
+
+/// The installed git's version (`git version 2.47.0.windows.1`), or `None`
+/// when git cannot be run, so the setup guide can start with installing it.
+#[tauri::command]
+pub async fn work_git_version(project: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = Path::new(&project);
+        let dir = if dir.is_dir() { dir } else { Path::new(".") };
+        crate::git::run(dir, &["--version"]).ok()
+    })
+    .await
+    .ok()
+    .flatten()
+}

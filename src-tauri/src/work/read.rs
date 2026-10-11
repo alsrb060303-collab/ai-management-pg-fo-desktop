@@ -103,6 +103,8 @@ pub struct Overview {
     pub changes: Vec<Change>,
     /// Changed files in total (more than `changes` when capped).
     pub change_count: u32,
+    /// Any remote is configured (the setup guide offers to add one).
+    pub has_remote: bool,
     pub branches: Vec<Branch>,
     pub worktrees: Vec<Worktree>,
 }
@@ -369,6 +371,8 @@ pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
     let refs = git::run(root, &["for-each-ref", BRANCH_FORMAT, "refs/heads"])?;
     let branches = parse_branches(&refs, head.branch.as_deref());
 
+    let has_remote = git::run(root, &["remote"]).is_ok_and(|out| !out.trim().is_empty());
+
     let root_str = root.to_string_lossy().into_owned();
     // `-z` needs git 2.36; older ones get newline-separated output, which
     // only differs for paths containing newlines.
@@ -402,6 +406,7 @@ pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
         operation,
         changes,
         change_count,
+        has_remote,
         branches,
         worktrees,
     })
