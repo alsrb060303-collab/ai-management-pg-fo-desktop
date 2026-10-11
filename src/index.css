@@ -141,9 +141,12 @@ body {
   scrollbar-color: var(--c-border-strong) transparent;
 }
 
-:focus-visible {
-  outline: 2px solid var(--c-accent);
-  outline-offset: 1px;
+/* In the base layer so utilities such as `outline-none` can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+  }
 }
 
 /* React Flow, restyled with the app tokens. The extra specificity beats its
