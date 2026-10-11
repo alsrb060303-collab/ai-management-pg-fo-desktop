@@ -63,11 +63,31 @@ function resolve(pref: LocalePref): Locale {
   return pref === "system" ? systemLocale() : pref;
 }
 
-function apply(locale: Locale) {
+const appliedListeners = new Set<() => void>();
+
+/**
+ * Runs `listener` after a language change has reached the backend, so text
+ * the backend made (errors, settings-map notes, compile warnings) can be
+ * fetched again in the new language. Returns an unsubscribe function.
+ */
+export function onLocaleApplied(listener: () => void): () => void {
+  appliedListeners.add(listener);
+  return () => appliedListeners.delete(listener);
+}
+
+/** Sets the language in the document and the backend; resolves when both have it. */
+async function apply(locale: Locale, notify: boolean): Promise<void> {
   document.documentElement.lang = locale;
   // Backend messages (errors, settings-map notes, tray menu) follow too.
-  if (isTauri()) void invoke("set_locale", { locale }).catch(() => {});
+  if (isTauri()) await invoke("set_locale", { locale }).catch(() => {});
+  if (notify) for (const listener of appliedListeners) listener();
 }
+
+/**
+ * Resolves once the backend has the startup language; the app renders after
+ * it so the first backend calls already answer in that language.
+ */
+export let localeReady: Promise<void> = Promise.resolve();
 
 interface LocaleState {
   pref: LocalePref;
@@ -78,7 +98,7 @@ interface LocaleState {
 export const useLocaleStore = create<LocaleState>((set) => {
   const pref = readPref();
   const locale = resolve(pref);
-  apply(locale);
+  localeReady = apply(locale, false);
   return {
     pref,
     locale,
@@ -89,8 +109,8 @@ export const useLocaleStore = create<LocaleState>((set) => {
         // Still applies for this session.
       }
       const locale = resolve(next);
-      apply(locale);
       set({ pref: next, locale });
+      void apply(locale, true);
     },
   };
 });
@@ -99,8 +119,8 @@ window.addEventListener("storage", (event) => {
   if (event.key !== KEY) return;
   const pref = readPref();
   const locale = resolve(pref);
-  apply(locale);
   useLocaleStore.setState({ pref, locale });
+  void apply(locale, true);
 });
 
 function format(template: string, params?: Params): string {

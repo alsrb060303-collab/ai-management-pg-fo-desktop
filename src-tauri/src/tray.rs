@@ -106,6 +106,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         dock: dock_item.clone(),
         quit: quit.clone(),
     });
+    // The frontend may have set the language while the menu was being built.
+    relabel(app);
 
     // Keep the check mark in sync when docking is toggled from the sidebar.
     let handle = app.clone();

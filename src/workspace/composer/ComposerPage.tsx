@@ -92,8 +92,9 @@ function Canvas() {
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onNodeDragStart={checkpoint}
-        onBeforeDelete={async () => {
-          checkpoint();
+        onBeforeDelete={async ({ nodes, edges }) => {
+          // React Flow asks on every Delete key press, even with nothing selected.
+          if (nodes.length > 0 || edges.length > 0) checkpoint();
           return true;
         }}
         colorMode={theme}

@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { onLocaleApplied } from "../i18n";
 import { useProjectStore } from "./project";
 
 // Mirrors src-tauri/src/work.
@@ -226,4 +227,10 @@ export const useWorkStore = create<WorkState>((set, get) => {
       return ok;
     },
   };
+});
+
+// Errors and diffs come from the backend: drop the old-language error and reload.
+onLocaleApplied(() => {
+  useWorkStore.setState({ error: null });
+  void useWorkStore.getState().refresh(true);
 });

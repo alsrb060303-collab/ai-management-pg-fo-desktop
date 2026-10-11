@@ -11,7 +11,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import { create } from "zustand";
-import { t, useLocaleStore } from "../i18n";
+import { onLocaleApplied, t, useLocaleStore } from "../i18n";
 import type { Mode } from "./library";
 
 // Mirrors src-tauri/src/composer.
@@ -270,6 +270,8 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     scheduleCompile();
   };
 
+  // Compile warnings come from the backend: redo them in the new language.
+  onLocaleApplied(() => scheduleCompile());
   return {
     catalog: [],
     blocks: new Map(),

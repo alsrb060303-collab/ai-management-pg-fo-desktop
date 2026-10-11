@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
+import { onLocaleApplied } from "../i18n";
 
 // Mirrors src-tauri/src/github.
 export interface Account {
@@ -188,4 +189,10 @@ export const useGitHubStore = create<GitHubState>((set, get) => {
       }
     },
   };
+});
+
+// GitHub errors come from the backend: drop the old-language error and reload.
+onLocaleApplied(() => {
+  useGitHubStore.setState({ error: null, loginError: null });
+  void useGitHubStore.getState().load(useGitHubStore.getState().project);
 });

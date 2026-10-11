@@ -88,13 +88,21 @@ export function Palette() {
       dragging = true;
       setGhost({ block, x: ev.clientX, y: ev.clientY });
     };
-    const up = (ev: PointerEvent) => {
+    const row = e.currentTarget;
+    const stop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
       setGhost(null);
-      // A click without dragging adds the block near the canvas center.
+    };
+    const up = (ev: PointerEvent) => {
+      stop();
+      // A click on the row without dragging adds the block near the canvas center.
       if (!dragging) {
-        addBlock(block.id, place.nearCenter());
+        if (ev.target instanceof Node && row.contains(ev.target)) {
+          addBlock(block.id, place.nearCenter());
+        }
         return;
       }
       const position = place.atPoint(ev.clientX, ev.clientY);
@@ -102,6 +110,9 @@ export function Palette() {
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    // A cancelled press (touch gesture, window switch) never gets its pointerup.
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
   };
 
   const addOutputNode = (target: Target) => addOutput(target, place.nearCenter());

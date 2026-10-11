@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
-import { t } from "../i18n";
+import { onLocaleApplied, t } from "../i18n";
 
 // Mirrors `ConfigMap` in src-tauri/src/claude_config/mod.rs.
 export type ConfigKind =
@@ -149,3 +149,6 @@ function saveRecent(recent: string[]) {
     // Storage can be unavailable; the list just won't persist.
   }
 }
+
+// Settings-map notes and errors come from the backend: rescan in the new language.
+onLocaleApplied(() => void useProjectStore.getState().refresh());

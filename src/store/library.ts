@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
-import { t } from "../i18n";
+import { onLocaleApplied, t } from "../i18n";
 import { useProjectStore } from "./project";
 
 // Mirrors src-tauri/src/library/mod.rs.
@@ -148,3 +148,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
       ),
   };
 });
+
+// Library errors come from the backend: reload in the new language.
+onLocaleApplied(() => void useLibraryStore.getState().load());

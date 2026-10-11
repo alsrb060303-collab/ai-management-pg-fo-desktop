@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { t } from "../i18n";
+import { onLocaleApplied, t } from "../i18n";
 
 // Mirrors src-tauri/src/memo.
 export interface Todo {
@@ -89,6 +89,12 @@ export const useMemoStore = create<MemoState>((set, get) => {
   let noteTarget: Key | null = null;
   /** The note-save error on screen, so a later successful save can clear just that one. */
   let noteError: string | null = null;
+  // An error shown in the old language is dropped; the next save or load
+  // reports it again in the new one.
+  onLocaleApplied(() => {
+    noteError = null;
+    set({ error: null });
+  });
 
   const keyOf = (s: Pick<MemoState, "context" | "picked">): Key | null => {
     const branch = shownBranch(s);

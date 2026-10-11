@@ -7,7 +7,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
-import "./i18n";
+import { localeReady } from "./i18n";
 import { initTheme } from "./store/theme";
 
 // One bundle, two windows: the window label picks the UI, and each UI is
@@ -32,10 +32,14 @@ for (const type of ["dragover", "drop"] as const) {
   });
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <Suspense fallback={null}>
-      <Root />
-    </Suspense>
-  </React.StrictMode>,
-);
+// Render once the backend knows the language (or after a short wait), so the
+// first scans and errors come back in it.
+void Promise.race([localeReady, new Promise((r) => setTimeout(r, 1000))]).then(() => {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <Suspense fallback={null}>
+        <Root />
+      </Suspense>
+    </React.StrictMode>,
+  );
+});
