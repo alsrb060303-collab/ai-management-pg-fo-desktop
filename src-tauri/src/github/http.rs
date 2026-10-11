@@ -75,13 +75,18 @@ fn read(
     Ok((status, body))
 }
 
-/// A form POST to github.com (device flow endpoints), JSON back.
+/// A POST to github.com (device flow endpoints): JSON both ways, which
+/// GitHub requires of requests that carry a body.
 pub fn post_form(agent: &Agent, url: &str, form: &[(&str, &str)]) -> Result<Value> {
+    let payload: serde_json::Map<String, Value> = form
+        .iter()
+        .map(|(k, v)| (k.to_string(), Value::String(v.to_string())))
+        .collect();
     let (status, body) = read(
         agent
             .post(url)
             .header("Accept", "application/json")
-            .send_form(form.iter().copied()),
+            .send_json(Value::Object(payload)),
     )?;
     if status >= 400 {
         return Err(status_error(status, &body));

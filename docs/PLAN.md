@@ -124,7 +124,9 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - 되돌리기 어려운 조작은 확인창. 병합 안 된 브랜치 삭제·변경이 남은 worktree 삭제는 기본으로 막고, 경고를 두 번 확인해야 강제로 지운다. 기본·열린 worktree는 지울 수 없다.
 
 ### 3.6 GitHub
-- GitHub App(선택한 레포만 접근) + Device Flow. 토큰은 8시간, refresh token은 6개월(사용할 때마다 교체).
+- ~~GitHub App(선택한 레포만 접근) + Device Flow~~ → **Phase 9 결정 (2026-10-11): OAuth App + Device Flow**, scope `repo`. 레포마다 App을 설치할 필요가 없는 대신 모든 비공개 레포에 접근할 수 있는 권한이다. OAuth App 토큰은 만료되지 않는다(사용자가 GitHub 설정에서 취소 가능).
+- Client ID는 공개 값이라 코드에 넣는다(`src-tauri/src/github/mod.rs`의 `CLIENT_ID`, 개발 중에는 환경 변수 `AIM_GITHUB_CLIENT_ID`). Client secret은 쓰지 않는다.
+- 9a 범위: 작업 탭 안 GitHub 섹션. 현재 브랜치 PR·CI 상태, 열린 PR·이슈 목록, 현재 브랜치로 PR 만들기. 리뷰·머지·댓글은 GitHub 웹으로 연결한다. GitHub 요청은 60초마다(화면이 보일 때)·창 포커스·브랜치 변경 때만.
 - 토큰은 OS 자격 증명 저장소(`keyring` 4.x)에 보관한다. Tauri Stronghold 플러그인은 v3에서 제거 예정이라 쓰지 않는다.
 - API 한도: 사용자당 시간당 5,000회(사용자의 다른 앱과 공유).
 
@@ -173,7 +175,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 7. Git 작업 관리** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` G): 브랜치·worktree·상태·diff·조작
 - [x] **Phase 8a. 브랜치 메모/TODO (로컬)**: 저장소·브랜치별 메모와 할 일, 브랜치 따라가기, 두 창 동기화
 - [ ] **Phase 8b. 메모 동기화** (유료 고객 Firebase)
-- [ ] **Phase 9. GitHub 연동**: 로그인, PR·이슈
+- [~] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크

@@ -248,8 +248,16 @@ pub mod tests {
         .unwrap();
         assert_eq!(outcome, Outcome::Token("gho_x".into()));
         let seen = seen.lock().unwrap();
-        assert!(seen[0].contains("/login/device/code") && seen[0].contains("scope=repo"));
-        assert!(seen[1].contains("grant_type=urn"));
+        let body = |i: usize| -> serde_json::Value {
+            let at = seen[i].find('{').unwrap();
+            serde_json::from_str(&seen[i][at..]).unwrap()
+        };
+        assert!(seen[0].contains("/login/device/code"));
+        assert_eq!(body(0)["scope"], "repo");
+        assert_eq!(
+            body(1)["grant_type"],
+            "urn:ietf:params:oauth:grant-type:device_code"
+        );
         assert_eq!(seen.len(), 4);
     }
 
