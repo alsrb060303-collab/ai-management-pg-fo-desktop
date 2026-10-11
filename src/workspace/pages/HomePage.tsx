@@ -6,6 +6,7 @@ import {
   Map as MapIcon,
   PanelRightOpen,
 } from "lucide-react";
+import { Logo } from "../../components/Logo";
 import { useProjectStore } from "../../store/project";
 import { useWorkspaceStore } from "../../store/workspace";
 import { switchToSidebar } from "../leave";
@@ -50,9 +51,7 @@ export function HomePage() {
   return (
     <div className="mx-auto flex min-h-full max-w-2xl flex-col justify-center px-8 py-16">
       <div className="mb-2 flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-linear-to-br from-brand-from to-brand-to text-white shadow-card">
-          <Blocks size={22} />
-        </span>
+        <Logo size={40} className="shrink-0 drop-shadow-sm" />
         <h1 className="font-serif text-[32px] leading-tight font-medium tracking-tight">
           {greeting(new Date().getHours())}
         </h1>

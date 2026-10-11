@@ -13,6 +13,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { IconButton } from "../components/ui";
 import { useComposerStore } from "../store/composer";
 import { type Page, useWorkspaceStore } from "../store/workspace";
@@ -44,9 +45,10 @@ export function NavSidebar() {
           <button
             type="button"
             onClick={() => go("home")}
-            className="truncate rounded-md px-1.5 font-serif text-[17px] font-semibold tracking-tight"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 font-serif text-[17px] font-semibold tracking-tight"
           >
-            AI Management
+            <Logo size={20} />
+            <span className="truncate">AI Management</span>
           </button>
         )}
         <IconButton

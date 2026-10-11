@@ -1,4 +1,5 @@
 import { AppWindow, EyeOff, Magnet, Pin } from "lucide-react";
+import { Logo } from "../components/Logo";
 import { useDockStore } from "../store/dock";
 import { switchView } from "../store/view";
 
@@ -17,7 +18,11 @@ export function TitleBar() {
       data-tauri-drag-region
       className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-raised pl-3"
     >
-      <span data-tauri-drag-region className="text-xs font-semibold tracking-wide text-text-muted">
+      <span
+        data-tauri-drag-region
+        className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-text-muted"
+      >
+        <Logo size={15} className="pointer-events-none" />
         AI Management
       </span>
       <div className="flex h-full">
