@@ -52,10 +52,11 @@ interface MemoState {
   load: (project: string | null) => Promise<void>;
   /** Re-reads the checked-out branch; switches when following it. */
   poll: () => Promise<void>;
-  pick: (branch: string | null) => void;
+  pick: (branch: string | null) => Promise<void>;
   setNote: (text: string) => void;
   flushNote: () => Promise<void>;
-  addTodo: (text: string) => Promise<void>;
+  /** Resolves `false` when the TODO was not saved. */
+  addTodo: (text: string) => Promise<boolean>;
   toggleTodo: (id: string) => Promise<void>;
   editTodo: (id: string, text: string) => Promise<void>;
   deleteTodo: (id: string) => Promise<void>;
@@ -71,42 +72,100 @@ export function shownBranch(s: Pick<MemoState, "context" | "picked">): string | 
 
 const NOTE_SAVE_MS = 500;
 
+interface Key {
+  repoKey: string;
+  branch: string;
+}
+
+const sameKey = (a: Key | null, b: Key | null) =>
+  a?.repoKey === b?.repoKey && a?.branch === b?.branch;
+
 export const useMemoStore = create<MemoState>((set, get) => {
   let contextSeq = 0;
   let branchSeq = 0;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   /** Where the pending note edit belongs, captured when it was typed. */
-  let noteTarget: { repoKey: string; branch: string } | null = null;
+  let noteTarget: Key | null = null;
 
-  const key = () => {
-    const s = get();
+  const keyOf = (s: Pick<MemoState, "context" | "picked">): Key | null => {
     const branch = shownBranch(s);
     return s.context && branch !== null ? { repoKey: s.context.repoKey, branch } : null;
   };
+  const key = () => keyOf(get());
 
   const fail = (e: unknown) => set({ error: String(e) });
+
+  /**
+   * Takes the unsaved note edit off the panel. Synchronous, so a caller that
+   * also switches branches in the same tick cannot lose or misfile a keystroke.
+   */
+  const takeNote = () => {
+    clearTimeout(noteTimer);
+    const target = noteTarget;
+    noteTarget = null;
+    if (!get().noteDirty || !target) return null;
+    set({ noteDirty: false });
+    return { target, text: get().note };
+  };
+
+  const saveNote = async (pending: { target: Key; text: string } | null) => {
+    if (!pending || !isTauri()) return;
+    try {
+      await invoke("memo_set_note", { ...pending.target, text: pending.text });
+      if (get().error?.startsWith("메모를 저장하지 못했어요")) set({ error: null });
+    } catch (e) {
+      // Still showing that note and nothing newer typed: keep it unsaved, so
+      // the next edit, blur or switch tries again.
+      if (noteTarget === null && sameKey(key(), pending.target)) {
+        noteTarget = pending.target;
+        set({ noteDirty: true });
+      }
+      set({ error: `메모를 저장하지 못했어요: ${e}` });
+    }
+  };
 
   const loadBranch = async () => {
     const k = key();
     if (!k || !isTauri()) return;
     const seq = ++branchSeq;
     try {
-      const memo = await invoke<BranchMemo>("memo_get", k);
+      const memo = await invoke<BranchMemo>("memo_get", { ...k });
       if (seq !== branchSeq) return;
-      // Keep what the user is typing; the save will catch up.
-      set((s) => ({ todos: memo.todos, ...(s.noteDirty ? {} : { note: memo.note }) }));
+      // Keep what the user is typing into this branch; the save will catch up.
+      const typing = get().noteDirty && sameKey(noteTarget, k);
+      set({ todos: memo.todos, ...(typing ? {} : { note: memo.note }) });
     } catch (e) {
       if (seq === branchSeq) fail(e);
     }
   };
 
+  /** Changes what the panel shows, saving the note of what it showed. */
+  const switchTo = async (changes: Partial<MemoState>) => {
+    const pending = takeNote();
+    set({ ...changes, note: "", todos: [] });
+    await Promise.all([saveNote(pending), loadBranch()]);
+  };
+
+  /** The project's context, or `null` when a newer request or project won. */
+  const fetchContext = async (project: string) => {
+    const seq = ++contextSeq;
+    const context = await invoke<MemoContext>("memo_context", { project });
+    return seq === contextSeq && get().project === project ? context : null;
+  };
+
+  /** Every context update goes through here: a new one can move the shown branch. */
+  const applyContext = async (context: MemoContext) => {
+    const s = get();
+    if (sameKey(keyOf(s), keyOf({ context, picked: s.picked }))) set({ context });
+    else await switchTo({ context });
+  };
+
   const refreshCounts = async () => {
     const { project } = get();
     if (!project || !isTauri()) return;
-    const seq = ++contextSeq;
     try {
-      const context = await invoke<MemoContext>("memo_context", { project });
-      if (seq === contextSeq && get().project === project) set({ context });
+      const context = await fetchContext(project);
+      if (context) await applyContext(context);
     } catch {
       // Counts are cosmetic; the next load reports real errors.
     }
@@ -114,16 +173,19 @@ export const useMemoStore = create<MemoState>((set, get) => {
 
   /** Runs a change, then reloads (also undoing an optimistic update on error). */
   const mutate = async (command: string, args: Record<string, unknown>) => {
+    let ok = true;
     try {
       await invoke(command, args);
     } catch (e) {
+      ok = false;
       fail(e);
     }
     await Promise.all([loadBranch(), refreshCounts()]);
+    return ok;
   };
 
   if (isTauri()) {
-    void listen<{ repoKey: string; branch: string }>("memo-changed", (event) => {
+    void listen<Key>("memo-changed", (event) => {
       const k = key();
       if (k && event.payload.repoKey === k.repoKey) {
         if (event.payload.branch === k.branch) void loadBranch();
@@ -143,46 +205,38 @@ export const useMemoStore = create<MemoState>((set, get) => {
     error: null,
 
     load: async (project) => {
-      await get().flushNote();
       if (project !== get().project) {
-        set({ project, context: null, picked: null, note: "", todos: [], error: null });
+        await switchTo({ project, context: null, picked: null, error: null });
+      } else {
+        await saveNote(takeNote());
       }
       if (!project || !isTauri()) return;
-      const seq = ++contextSeq;
       set({ loading: true, error: null });
       try {
-        const context = await invoke<MemoContext>("memo_context", { project });
-        if (seq !== contextSeq || get().project !== project) return;
-        set({ context, loading: false });
-        await loadBranch();
+        const context = await fetchContext(project);
+        if (get().project === project) set({ loading: false });
+        if (context) await applyContext(context);
       } catch (e) {
-        if (seq === contextSeq) set({ loading: false, error: String(e) });
+        if (get().project === project) set({ loading: false, error: String(e) });
       }
     },
 
     poll: async () => {
-      const { project, context, picked } = get();
+      const { project, context } = get();
       if (!project || !context || !isTauri()) return;
       try {
-        const next = await invoke<MemoContext>("memo_context", { project });
-        if (get().project !== project) return;
-        const switched = picked === null && next.current !== context.current;
-        if (switched) await get().flushNote();
-        set({ context: next, ...(switched ? { note: "", todos: [] } : {}) });
-        if (switched) await loadBranch();
+        const next = await fetchContext(project);
+        if (next) await applyContext(next);
       } catch {
-        // Polling is best effort.
+        // Polling is best effort; keep showing what we have.
       }
     },
 
-    pick: (branch) => {
-      void get()
-        .flushNote()
-        .then(() => {
-          const current = get().context?.current;
-          set({ picked: branch === current ? null : branch, note: "", todos: [] });
-          return loadBranch();
-        });
+    pick: async (branch) => {
+      const current = get().context?.current;
+      const picked = branch === current ? null : branch;
+      if (picked === get().picked) return;
+      await switchTo({ picked });
     },
 
     setNote: (text) => {
@@ -193,26 +247,13 @@ export const useMemoStore = create<MemoState>((set, get) => {
       noteTimer = setTimeout(() => void get().flushNote(), NOTE_SAVE_MS);
     },
 
-    flushNote: async () => {
-      clearTimeout(noteTimer);
-      const target = noteTarget;
-      noteTarget = null;
-      if (!get().noteDirty || !target || !isTauri()) return;
-      const text = get().note;
-      set({ noteDirty: false });
-      try {
-        await invoke("memo_set_note", { ...target, text });
-      } catch (e) {
-        fail(e);
-      }
-    },
+    flushNote: () => saveNote(takeNote()),
 
     addTodo: async (text) => {
       const k = key();
-      if (!k || !text.trim()) return;
-      await mutate("memo_add_todo", { ...k, text });
+      if (!k || !text.trim()) return false;
+      return mutate("memo_add_todo", { ...k, text });
     },
-
     toggleTodo: async (id) => {
       const todo = get().todos.find((t) => t.id === id);
       if (!todo) return;
@@ -245,7 +286,7 @@ export const useMemoStore = create<MemoState>((set, get) => {
       const k = key();
       if (!k) return;
       set({ todos: get().todos.filter((t) => !t.done) });
-      await mutate("memo_clear_done", k);
+      await mutate("memo_clear_done", { ...k });
     },
   };
 });

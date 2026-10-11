@@ -12,9 +12,13 @@ use crate::git;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoInfo {
     pub key: String,
+    /// Key the repository had before it got its remote (the shared git dir),
+    /// so memos written then can be carried over. `None` outside git.
+    pub path_key: Option<String>,
     pub name: String,
     pub is_git: bool,
-    /// Checked-out branch; `None` outside git or on a detached HEAD.
+    /// Checked-out branch (also while it is being rebased); `None` outside
+    /// git or on a detached HEAD.
     pub branch: Option<String>,
     /// Short commit of a detached HEAD.
     pub detached_at: Option<String>,
@@ -62,6 +66,34 @@ fn remote_url(root: &Path) -> Option<String> {
         .filter(|u| !u.is_empty())
 }
 
+/// Whether `dir` or a parent has a `.git` entry. Decides between "not a
+/// repository" and a real git failure without parsing (localized) messages.
+fn inside_git(dir: &Path) -> bool {
+    dir.ancestors().any(|d| d.join(".git").exists())
+}
+
+fn strip_heads(name: &str) -> Option<String> {
+    name.trim()
+        .strip_prefix("refs/heads/")
+        .filter(|b| !b.is_empty())
+        .map(str::to_string)
+}
+
+/// The branch an interactive or `am`-style rebase is rewriting.
+fn rebasing_branch(root: &Path) -> Option<String> {
+    ["rebase-merge/head-name", "rebase-apply/head-name"]
+        .iter()
+        .find_map(|file| {
+            let path = PathBuf::from(git::run(root, &["rev-parse", "--git-path", file]).ok()?);
+            let path = if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            };
+            strip_heads(&std::fs::read_to_string(path).ok()?)
+        })
+}
+
 pub fn inspect(project: &Path) -> git::Result<RepoInfo> {
     let dir: PathBuf =
         std::fs::canonicalize(project).map_err(|e| format!("프로젝트 폴더를 열 수 없어요: {e}"))?;
@@ -69,18 +101,35 @@ pub fn inspect(project: &Path) -> git::Result<RepoInfo> {
         return Err("프로젝트 폴더가 아니에요".into());
     }
 
-    let Ok(root) = git::run(&dir, &["rev-parse", "--show-toplevel"]) else {
-        // Not a git repository (or git is missing): one memo for the folder.
-        return Ok(RepoInfo {
-            key: format!("path:{}", dir.display()),
-            name: folder_name(&dir),
-            is_git: false,
-            branch: None,
-            detached_at: None,
-            branches: Vec::new(),
-        });
+    let root = match git::run(&dir, &["rev-parse", "--show-toplevel"]) {
+        Ok(root) => PathBuf::from(root),
+        // A real repository git cannot read (unsafe ownership, git missing):
+        // say so instead of silently filing memos under the folder.
+        Err(e) if inside_git(&dir) => return Err(format!("git 저장소를 읽지 못했어요: {e}")),
+        Err(_) => {
+            // Not a git repository: one memo for the folder.
+            return Ok(RepoInfo {
+                key: format!("path:{}", dir.display()),
+                path_key: None,
+                name: folder_name(&dir),
+                is_git: false,
+                branch: None,
+                detached_at: None,
+                branches: Vec::new(),
+            });
+        }
     };
-    let root = PathBuf::from(root);
+
+    // Worktrees share the common git dir, so they share memos.
+    let common = git::run(
+        &root,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .map(PathBuf::from)
+    .unwrap_or_else(|_| root.join(".git"));
+    let base = std::fs::canonicalize(&common).unwrap_or(common);
+    let main = base.parent().map(Path::to_path_buf).unwrap_or(base.clone());
+    let path_key = format!("path:{}", main.display());
 
     let (key, name) = match remote_url(&root) {
         Some(url) => {
@@ -88,40 +137,37 @@ pub fn inspect(project: &Path) -> git::Result<RepoInfo> {
             let name = key.rsplit('/').next().unwrap_or(&key).to_string();
             (key, name)
         }
-        None => {
-            // Worktrees share the common git dir, so they share memos.
-            let common = git::run(
-                &root,
-                &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-            )
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| root.join(".git"));
-            let base = std::fs::canonicalize(&common).unwrap_or(common);
-            let main = base.parent().map(Path::to_path_buf).unwrap_or(base.clone());
-            (format!("path:{}", main.display()), folder_name(&main))
-        }
+        None => (path_key.clone(), folder_name(&main)),
     };
 
-    let branch = git::run(&root, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok();
+    // Full ref names: `--short` turns a branch into `heads/x` when a tag `x`
+    // exists too.
+    let branch = git::run(&root, &["symbolic-ref", "--quiet", "HEAD"])
+        .ok()
+        .and_then(|r| strip_heads(&r))
+        .or_else(|| rebasing_branch(&root));
     let detached_at = if branch.is_none() {
         git::run(&root, &["rev-parse", "--short", "HEAD"]).ok()
     } else {
         None
     };
-    let branches = git::run(
+    let mut branches: Vec<String> = git::run(
         &root,
-        &["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+        &["for-each-ref", "--format=%(refname)", "refs/heads"],
     )
-    .map(|out| {
-        out.lines()
-            .map(str::to_string)
-            .filter(|b| !b.is_empty())
-            .collect()
-    })
+    .map(|out| out.lines().filter_map(strip_heads).collect())
     .unwrap_or_default();
+    // A new repository's branch has no ref until the first commit.
+    if let Some(b) = &branch
+        && !branches.contains(b)
+    {
+        branches.push(b.clone());
+        branches.sort();
+    }
 
     Ok(RepoInfo {
         key,
+        path_key: Some(path_key),
         name,
         is_git: true,
         branch,
@@ -177,6 +223,7 @@ mod tests {
         assert_eq!(info.branch.as_deref(), Some("main"));
         assert_eq!(info.branches, ["feature/x", "main"]);
         assert!(info.key.starts_with("path:"), "{}", info.key);
+        assert_eq!(info.path_key.as_ref(), Some(&info.key));
 
         // A worktree without a remote shares the key; a remote takes over.
         let wt = tmp.path().join("wt");
@@ -194,12 +241,47 @@ mod tests {
         );
         let info = inspect(&repo).unwrap();
         assert_eq!(info.key, "github.com/me/proj");
+        assert_eq!(info.path_key, wt_info.path_key);
         assert_eq!(info.name, "proj");
 
         git(&repo, &["checkout", "-q", "--detach"]);
         let info = inspect(&repo).unwrap();
         assert_eq!(info.branch, None);
         assert!(info.detached_at.is_some());
+    }
+
+    #[test]
+    fn branch_names_survive_tags_rebases_and_unborn_heads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        git(repo, &["init", "-q", "-b", "main"]);
+        let info = inspect(repo).unwrap();
+        assert_eq!(info.branch.as_deref(), Some("main"));
+        assert_eq!(info.branches, ["main"]);
+
+        git(repo, &["commit", "-q", "--allow-empty", "-m", "a"]);
+        git(repo, &["checkout", "-q", "-b", "v1"]);
+        git(repo, &["tag", "v1"]);
+        let info = inspect(repo).unwrap();
+        assert_eq!(info.branch.as_deref(), Some("v1"));
+        assert_eq!(info.branches, ["main", "v1"]);
+
+        // Stop a rebase of v1 halfway: HEAD is detached, the branch is known.
+        git(repo, &["commit", "-q", "--allow-empty", "-m", "b"]);
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+            .args(["rebase", "-q", "-i", "--keep-empty", "main"])
+            .env("GIT_SEQUENCE_EDITOR", "sed -i -e 's/^pick/edit/'")
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok);
+        let info = inspect(repo).unwrap();
+        assert_eq!(info.branch.as_deref(), Some("v1"));
+        assert_eq!(info.detached_at, None);
     }
 
     #[test]

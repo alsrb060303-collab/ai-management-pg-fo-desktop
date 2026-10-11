@@ -62,8 +62,8 @@ pub struct MemoContext {
     pub repo_key: String,
     pub repo_name: String,
     pub is_git: bool,
-    /// Branch the memo follows by default: the checked-out one, or "" outside
-    /// git and on a detached HEAD.
+    /// Branch the memo follows by default: the checked-out one (also while
+    /// rebasing it), or "" outside git and on a detached HEAD.
     pub current: String,
     pub detached_at: Option<String>,
     pub branches: Vec<BranchInfo>,
@@ -78,6 +78,9 @@ struct Changed {
 
 fn context(store: &Store, project: &Path) -> store::Result<MemoContext> {
     let info = repo::inspect(project)?;
+    if let Some(path_key) = &info.path_key {
+        store.follow_repo(path_key, &info.key)?;
+    }
     let current = info.branch.clone().unwrap_or_default();
     let counts = store.counts(&info.key)?;
 

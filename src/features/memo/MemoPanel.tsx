@@ -99,7 +99,7 @@ function BranchBar({ compact }: { compact: boolean }) {
           <select
             aria-label="브랜치"
             value={branch}
-            onChange={(e) => pick(e.target.value)}
+            onChange={(e) => void pick(e.target.value)}
             className={`min-w-0 flex-1 truncate rounded-lg border border-border bg-surface-raised px-2 ${
               compact ? "py-1 text-xs" : "py-1.5 text-sm"
             }`}
@@ -109,11 +109,15 @@ function BranchBar({ compact }: { compact: boolean }) {
                 {branchLabel(b, context.isGit, context.detachedAt)}
               </option>
             ))}
+            {/* A picked branch that was deleted and has no memos left. */}
+            {!context.branches.some((b) => b.name === branch) && (
+              <option value={branch}>{`${branch} (삭제됨)`}</option>
+            )}
           </select>
           {picked !== null && (
             <button
               type="button"
-              onClick={() => pick(null)}
+              onClick={() => void pick(null)}
               title="체크아웃한 브랜치를 따라가요"
               className="shrink-0 rounded-md px-1.5 py-1 text-xs text-accent hover:bg-hover"
             >
@@ -171,7 +175,10 @@ function TodoList({ compact }: { compact: boolean }) {
     const text = draft.trim();
     if (!text) return;
     setDraft("");
-    void addTodo(text);
+    void addTodo(text).then((ok) => {
+      // Give the text back unless something new was typed meanwhile.
+      if (!ok) setDraft((d) => d || text);
+    });
   };
 
   /** Reorders among open items; done items keep their slots in the full order. */
