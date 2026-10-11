@@ -195,12 +195,8 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             resolved.push((node_id, block, body.to_string()));
         }
 
+        // An empty output shows its own hint on the canvas.
         if resolved.is_empty() {
-            warn(
-                &mut out,
-                &output.id,
-                "연결된 블록이 없어서 쓸 파일이 없어요".into(),
-            );
             continue;
         }
 

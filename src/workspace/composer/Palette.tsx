@@ -61,6 +61,8 @@ export function Palette() {
   // Pointer-based drag (HTML5 drag and drop is unreliable in WebKitGTK).
   const startDrag = (block: Block, e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // No text selection or focus changes while dragging.
+    e.preventDefault();
     const start = { x: e.clientX, y: e.clientY };
     let dragging = false;
     const move = (ev: PointerEvent) => {
@@ -94,14 +96,14 @@ export function Palette() {
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-subtle"
           />
         </label>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex gap-1">
           {FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
               aria-pressed={filter === f.value}
               onClick={() => setFilter(f.value)}
-              className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${
+              className={`rounded-full px-2 py-0.5 text-xs whitespace-nowrap transition-colors ${
                 filter === f.value
                   ? "bg-primary text-primary-fg"
                   : "bg-sunken text-text-muted hover:text-text"

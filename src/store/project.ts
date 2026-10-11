@@ -32,7 +32,11 @@ export interface ConfigMap {
   notes: string[];
 }
 
+// Both windows share localStorage; it is the source of truth for the recent
+// list and the selected project, since the main window is recreated on every
+// switch and the sidebar lives on in the background.
 const RECENT_KEY = "recentProjects";
+const CURRENT_KEY = "currentProject";
 const MAX_RECENT = 8;
 let requestId = 0;
 
@@ -62,6 +66,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   select: async (path) => {
     if (get().current !== path) set({ current: path, map: null, error: null });
+    saveCurrent(path);
     await get().refresh();
   },
 
@@ -74,7 +79,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const map = await invoke<ConfigMap>("claude_config_scan", { path });
       if (id !== requestId) return;
-      const recent = [path, ...get().recent.filter((p) => p !== path)].slice(0, MAX_RECENT);
+      const recent = [path, ...loadRecent().filter((p) => p !== path)].slice(0, MAX_RECENT);
       saveRecent(recent);
       set({ map, recent, loading: false });
     } catch (e) {
@@ -83,13 +88,41 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // Forget folders that are gone, but keep network paths that may be offline.
       const recent =
         error.startsWith("폴더를 찾을 수 없습니다") && !/^[\\/]{2}/.test(path)
-          ? get().recent.filter((p) => p !== path)
-          : get().recent;
+          ? loadRecent().filter((p) => p !== path)
+          : loadRecent();
       saveRecent(recent);
       set({ map: null, loading: false, error, recent });
     }
   },
 }));
+
+function saveCurrent(path: string) {
+  try {
+    localStorage.setItem(CURRENT_KEY, path);
+  } catch {
+    // Only a convenience.
+  }
+}
+
+function loadCurrent(): string | null {
+  try {
+    return localStorage.getItem(CURRENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Opens the project selected last (in either window). */
+export function restoreProject() {
+  const saved = loadCurrent();
+  if (saved && saved !== useProjectStore.getState().current) {
+    void useProjectStore.getState().select(saved);
+  }
+}
+
+window.addEventListener("storage", (event) => {
+  if (event.key === RECENT_KEY) useProjectStore.setState({ recent: loadRecent() });
+});
 
 function loadRecent(): string[] {
   try {

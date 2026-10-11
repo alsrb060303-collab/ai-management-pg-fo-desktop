@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::sync::mpsc;
 
 use tauri::{AppHandle, Manager};
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
 };
@@ -26,17 +26,18 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     CHILDID_SELF, DispatchMessageW, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_DESTROY,
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
     EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE,
     GetAncestor, GetClassNameW, GetForegroundWindow, GetMessageW, GetWindowLongPtrW, GetWindowRect,
     GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic, IsWindow, IsWindowVisible,
-    KillTimer, MSG, OBJID_WINDOW, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, SW_HIDE,
-    SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, ShowWindowAsync, TranslateMessage,
-    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_TIMER, WM_USER, WS_EX_APPWINDOW,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    KillTimer, MSG, OBJID_WINDOW, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, STYLESTRUCT,
+    SW_HIDE, SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, ShowWindowAsync,
+    TranslateMessage, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_STYLECHANGING,
+    WM_TIMER, WM_USER, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 use windows::core::{BOOL, PWSTR};
 
@@ -62,6 +63,26 @@ impl TrackerHandle {
     }
 }
 
+/// Subclass procedure that keeps the sidebar a tool window. tao rewrites the
+/// whole extended style whenever it shows or hides the window, which would put
+/// the sidebar back in the taskbar and Alt+Tab.
+unsafe extern "system" fn keep_tool_window(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    _data: usize,
+) -> LRESULT {
+    if msg == WM_STYLECHANGING && wparam.0 as i32 == GWL_EXSTYLE.0 {
+        // SAFETY: for WM_STYLECHANGING, lparam points to the STYLESTRUCT being applied.
+        let style = unsafe { &mut *(lparam.0 as *mut STYLESTRUCT) };
+        style.styleNew = (style.styleNew | WS_EX_TOOLWINDOW.0) & !WS_EX_APPWINDOW.0;
+    }
+    unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
+}
+
+/// Must run on the thread that owns the sidebar window (the main thread).
 pub fn start(app: AppHandle, sidebar: HWND) -> std::io::Result<TrackerHandle> {
     // Keep the sidebar out of the taskbar and Alt+Tab for good. `skipTaskbar`
     // alone is lost whenever the window is hidden and shown again. The style is
@@ -69,6 +90,7 @@ pub fn start(app: AppHandle, sidebar: HWND) -> std::io::Result<TrackerHandle> {
     unsafe {
         let ex_style = GetWindowLongPtrW(sidebar, GWL_EXSTYLE);
         let _ = ShowWindow(sidebar, SW_HIDE);
+        let _ = SetWindowSubclass(sidebar, Some(keep_tool_window), 1, 0);
         SetWindowLongPtrW(
             sidebar,
             GWL_EXSTYLE,

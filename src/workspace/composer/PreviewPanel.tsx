@@ -159,7 +159,7 @@ function CodeView({ text }: { text: string }) {
               <td className="pr-3 pl-2 text-right align-top text-text-subtle select-none">
                 {i + 1}
               </td>
-              <td className="pr-3 whitespace-pre-wrap break-all">{line || " "}</td>
+              <td className="pr-3 break-words whitespace-pre-wrap">{line || " "}</td>
             </tr>
           ))}
         </tbody>

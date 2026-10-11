@@ -23,6 +23,14 @@ const Root =
 
 initTheme();
 
+// Dropping a file or folder on the window would make the webview navigate to
+// it and unload the app. Nothing here accepts file drops yet.
+for (const type of ["dragover", "drop"] as const) {
+  document.addEventListener(type, (event) => {
+    if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
+  });
+}
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <Suspense fallback={null}>

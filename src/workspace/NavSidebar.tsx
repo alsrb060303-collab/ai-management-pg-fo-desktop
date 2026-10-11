@@ -2,6 +2,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import {
   Blocks,
   GitBranch,
+  House,
   Library,
   type LucideIcon,
   Map as MapIcon,
@@ -18,6 +19,7 @@ import { switchView } from "../store/view";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 
 const NAV: { page: Page; label: string; icon: LucideIcon; soon?: boolean }[] = [
+  { page: "home", label: "홈", icon: House },
   { page: "composer", label: "문서 작성기", icon: Blocks },
   { page: "library", label: "라이브러리", icon: Library },
   { page: "config", label: "설정 지도", icon: MapIcon },

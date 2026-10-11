@@ -51,7 +51,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| {
             let dock = app.state::<Dock>();
             match event.id().as_ref() {
-                "toggle" => shell::toggle(app),
+                "toggle" => shell::toggle(app, false),
                 "main" => shell::show_main(app),
                 "sidebar" => shell::show_sidebar(app),
                 "dock" => dock.set_enabled(app, !dock.settings().enabled),
@@ -90,7 +90,7 @@ pub fn register_shortcut(app: &AppHandle) {
         .global_shortcut()
         .on_shortcut(TOGGLE_SHORTCUT, |app, _shortcut, event| {
             if event.state() == ShortcutState::Pressed {
-                shell::toggle(app);
+                shell::toggle(app, true);
             }
         });
     if let Err(err) = result {

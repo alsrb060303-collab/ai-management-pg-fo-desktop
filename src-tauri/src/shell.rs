@@ -26,6 +26,10 @@ pub enum ViewMode {
 pub struct Shell {
     mode: Mutex<ViewMode>,
     file: Option<PathBuf>,
+    /// Held while the main window is being built, so two requests in quick
+    /// succession (double launch, repeated shortcut) cannot build two windows
+    /// with the same label.
+    creating: Mutex<()>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -49,6 +53,7 @@ impl Shell {
         app.manage(Shell {
             mode: Mutex::new(saved.mode),
             file,
+            creating: Mutex::new(()),
         });
     }
 
@@ -120,14 +125,18 @@ pub fn reveal(app: &AppHandle) {
     }
 }
 
-/// The global shortcut: hides the current window if it is in front, else shows it.
-pub fn toggle(app: &AppHandle) {
+/// Hides the current window if it is up, else shows it.
+///
+/// `need_focus`: the global shortcut only hides a main window that is in
+/// front. The tray menu takes focus away before it runs, so it hides any
+/// main window that is on screen.
+pub fn toggle(app: &AppHandle, need_focus: bool) {
     match app.state::<Shell>().mode() {
         ViewMode::Main => match app.get_webview_window(MAIN_LABEL) {
             Some(window)
                 if window.is_visible().unwrap_or(false)
                     && !window.is_minimized().unwrap_or(false)
-                    && window.is_focused().unwrap_or(false) =>
+                    && (!need_focus || window.is_focused().unwrap_or(false)) =>
             {
                 let _ = window.minimize();
             }
@@ -137,8 +146,19 @@ pub fn toggle(app: &AppHandle) {
     }
 }
 
+/// Runs on an async-runtime worker, never on the main thread, so blocking on
+/// the lock cannot stall the event loop.
 fn create_main(app: &AppHandle) -> tauri::Result<()> {
-    if app.get_webview_window(MAIN_LABEL).is_some() {
+    let shell = app.state::<Shell>();
+    let _creating = shell.creating.lock().unwrap_or_else(|e| e.into_inner());
+    // The user may have switched to the sidebar while this request waited.
+    if shell.mode() != ViewMode::Main {
+        return Ok(());
+    }
+    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
         return Ok(());
     }
     let config = app
@@ -149,7 +169,13 @@ fn create_main(app: &AppHandle) -> tauri::Result<()> {
         .find(|w| w.label == MAIN_LABEL)
         .ok_or(tauri::Error::WindowNotFound)?;
     let window = WebviewWindowBuilder::from_config(app, config)?.build()?;
-    let _ = window.set_focus();
+    // Building takes a while; a switch to the sidebar in the meantime found no
+    // window to close.
+    if shell.mode() == ViewMode::Main {
+        let _ = window.set_focus();
+    } else {
+        let _ = window.close();
+    }
     Ok(())
 }
 

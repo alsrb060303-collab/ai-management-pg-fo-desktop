@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
+import { restoreProject } from "../store/project";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { NavSidebar } from "./NavSidebar";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
@@ -39,9 +40,10 @@ const PAGES: Record<Page, () => React.ReactNode> = {
 export default function MainApp() {
   const page = useWorkspaceStore((s) => s.page);
 
-  // Recent documents in the navigation.
+  // Recent documents in the navigation, and the project selected last.
   useEffect(() => {
     void useComposerStore.getState().loadDocs();
+    restoreProject();
   }, []);
 
   // Settings show and change the sidebar's docking state.

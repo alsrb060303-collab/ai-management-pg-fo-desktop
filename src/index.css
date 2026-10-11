@@ -20,8 +20,9 @@
   --c-border: rgb(40 36 28 / 0.13);
   --c-border-strong: rgb(40 36 28 / 0.26);
   --c-text: #1d1b17;
-  --c-text-muted: #6b6860;
-  --c-text-subtle: #8f8c83;
+  --c-text-muted: #5e5b54;
+  /* Still >= 4.5:1 on every light surface, for small labels. */
+  --c-text-subtle: #6d6a62;
   --c-accent: #c4643c;
   --c-accent-hover: #ad5531;
   --c-accent-soft: rgb(196 100 60 / 0.12);
@@ -53,7 +54,7 @@
   --c-border-strong: rgb(240 236 226 / 0.24);
   --c-text: #f3f1ea;
   --c-text-muted: #b3b0a6;
-  --c-text-subtle: #8c8981;
+  --c-text-subtle: #9a978e;
   --c-accent: #d9825d;
   --c-accent-hover: #e39472;
   --c-accent-soft: rgb(217 130 93 / 0.16);
@@ -166,6 +167,21 @@ html[data-theme] .react-flow {
   --xy-attribution-background-color: transparent;
   --xy-selection-background-color: var(--c-accent-soft);
   --xy-selection-border: 1px dashed var(--c-accent);
+  /* Nodes draw their own card, border and selection state. */
+  --xy-node-border: 0;
+  --xy-node-background-color: transparent;
+  --xy-node-color: inherit;
+  --xy-node-boxshadow-hover: none;
+  --xy-node-boxshadow-selected: none;
+}
+
+/* Our "output" node type also gets React Flow's built-in output-node box. */
+html[data-theme] .react-flow__node-output {
+  padding: 0;
+  width: auto;
+  border-radius: 0;
+  font-size: inherit;
+  text-align: inherit;
 }
 
 .react-flow__attribution a {
