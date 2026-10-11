@@ -63,6 +63,14 @@ fn walk(root: &Path) -> Result<Vec<Entry>> {
     Ok(out)
 }
 
+/// Number of files in a tree (following symlinks like `walk`).
+pub fn file_count(root: &Path) -> Result<usize> {
+    Ok(walk(root)?
+        .iter()
+        .filter(|e| matches!(e, Entry::File(..)))
+        .count())
+}
+
 /// SHA-256 over a file, or over a directory tree (names, empty folders and
 /// contents, in a stable order). `Ok(None)` only when nothing is there; a path
 /// that exists but cannot be fully read is an error.

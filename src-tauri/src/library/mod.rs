@@ -6,7 +6,7 @@
 //! app data folder, so a copy the user edited is never removed or overwritten
 //! without asking.
 
-mod ops;
+pub(crate) mod ops;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -164,6 +164,12 @@ impl Library {
         Ok(())
     }
 
+    /// The current library folder's items, for the composer's block catalog.
+    pub(crate) fn items(&self) -> Vec<LibraryItem> {
+        let dir = self.dir(&self.lock());
+        list(&dir)
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -211,7 +217,7 @@ fn project_path(project: &Path, kind: ItemKind, id: &str) -> PathBuf {
 
 /// Rejects ids that could escape the target folder, need escaping in gitignore
 /// patterns, or are invalid file names on Windows.
-fn check_id(id: &str) -> ops::Result<()> {
+pub(crate) fn check_id(id: &str) -> ops::Result<()> {
     const RESERVED: [&str; 22] = [
         "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
         "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",

@@ -24,10 +24,10 @@
       {
         "label": "main",
         "title": "AI Management",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 880,
-        "minHeight": 560,
+        "width": 1400,
+        "height": 880,
+        "minWidth": 1000,
+        "minHeight": 620,
         "center": true,
         "create": false,
         "dragDropEnabled": false

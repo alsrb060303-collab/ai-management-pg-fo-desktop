@@ -1,17 +1,24 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { NavSidebar } from "./NavSidebar";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
-import { ComposerPage } from "./pages/ComposerPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
+// The graph editor is the heaviest page; load it on first use.
+const ComposerPage = lazy(() => import("./composer/ComposerPage"));
+
 const PAGES: Record<Page, () => React.ReactNode> = {
   home: () => <HomePage />,
-  composer: () => <ComposerPage />,
+  composer: () => (
+    <Suspense fallback={null}>
+      <ComposerPage />
+    </Suspense>
+  ),
   library: () => <LibraryPage />,
   config: () => <ConfigPage />,
   work: () => (
@@ -32,6 +39,11 @@ const PAGES: Record<Page, () => React.ReactNode> = {
 export default function MainApp() {
   const page = useWorkspaceStore((s) => s.page);
 
+  // Recent documents in the navigation.
+  useEffect(() => {
+    void useComposerStore.getState().loadDocs();
+  }, []);
+
   // Settings show and change the sidebar's docking state.
   useEffect(() => {
     const unsubscribe = subscribeDockStatus();
@@ -43,7 +55,11 @@ export default function MainApp() {
   return (
     <div className="flex h-full">
       <NavSidebar />
-      <main className="min-w-0 flex-1 overflow-y-auto">{PAGES[page]()}</main>
+      <main
+        className={`min-w-0 flex-1 ${page === "composer" ? "overflow-hidden" : "overflow-y-auto"}`}
+      >
+        {PAGES[page]()}
+      </main>
     </div>
   );
 }

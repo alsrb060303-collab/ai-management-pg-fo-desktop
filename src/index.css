@@ -35,6 +35,10 @@
   --c-danger: #a3322b;
   --c-danger-soft: rgb(163 50 43 / 0.1);
   --c-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.04);
+  --c-kind-instruction: #c4643c;
+  --c-kind-rule: #2f6fb8;
+  --c-kind-skill: #3b8547;
+  --c-kind-agent: #8357c2;
 }
 
 [data-theme="dark"] {
@@ -63,6 +67,10 @@
   --c-danger: #ef8d86;
   --c-danger-soft: rgb(239 141 134 / 0.12);
   --c-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 16px rgb(0 0 0 / 0.2);
+  --c-kind-instruction: #d9825d;
+  --c-kind-rule: #6fa3e0;
+  --c-kind-skill: #74b77f;
+  --c-kind-agent: #b08ce6;
 }
 
 @theme inline {
@@ -97,6 +105,10 @@
   --color-danger: var(--c-danger);
   --color-danger-soft: var(--c-danger-soft);
   --shadow-card: var(--c-shadow);
+  --color-kind-instruction: var(--c-kind-instruction);
+  --color-kind-rule: var(--c-kind-rule);
+  --color-kind-skill: var(--c-kind-skill);
+  --color-kind-agent: var(--c-kind-agent);
 }
 
 html,
@@ -131,4 +143,48 @@ body {
 :focus-visible {
   outline: 2px solid var(--c-accent);
   outline-offset: 1px;
+}
+
+/* React Flow, restyled with the app tokens. The extra specificity beats its
+   own stylesheet (incl. `.react-flow.dark`), which loads later. */
+html[data-theme] .react-flow {
+  --xy-background-color: var(--c-bg);
+  --xy-background-pattern-color: var(--c-border-strong);
+  --xy-edge-stroke: var(--c-border-strong);
+  --xy-edge-stroke-selected: var(--c-accent);
+  --xy-connectionline-stroke: var(--c-accent);
+  --xy-handle-background-color: var(--c-raised);
+  --xy-handle-border-color: var(--c-border-strong);
+  --xy-minimap-background-color: var(--c-raised);
+  --xy-minimap-mask-background-color: rgb(0 0 0 / 0.06);
+  --xy-controls-button-background-color: var(--c-raised);
+  --xy-controls-button-background-color-hover: var(--c-hover);
+  --xy-controls-button-color: var(--c-text-muted);
+  --xy-controls-button-color-hover: var(--c-text);
+  --xy-controls-button-border-color: var(--c-border);
+  --xy-controls-box-shadow: var(--c-shadow);
+  --xy-attribution-background-color: transparent;
+  --xy-selection-background-color: var(--c-accent-soft);
+  --xy-selection-border: 1px dashed var(--c-accent);
+}
+
+.react-flow__attribution a {
+  color: var(--c-text-subtle);
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
 }

@@ -1,3 +1,4 @@
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   Blocks,
   GitBranch,
@@ -9,8 +10,10 @@ import {
   PanelRightOpen,
   Plus,
   Settings,
+  Trash2,
 } from "lucide-react";
 import { IconButton } from "../components/ui";
+import { useComposerStore } from "../store/composer";
 import { switchView } from "../store/view";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 
@@ -24,6 +27,9 @@ const NAV: { page: Page; label: string; icon: LucideIcon; soon?: boolean }[] = [
 
 export function NavSidebar() {
   const { page, collapsed, go, toggleCollapsed } = useWorkspaceStore();
+  const docs = useComposerStore((s) => s.docs);
+  const openId = useComposerStore((s) => s.doc?.id);
+  const { newDoc, openDoc, deleteDoc } = useComposerStore.getState();
 
   return (
     <aside
@@ -56,7 +62,10 @@ export function NavSidebar() {
           label="새 문서"
           collapsed={collapsed}
           accent
-          onClick={() => go("composer")}
+          onClick={() => {
+            newDoc();
+            go("composer");
+          }}
         />
       </div>
 
@@ -78,7 +87,51 @@ export function NavSidebar() {
         {!collapsed && (
           <>
             <h3 className="px-2 pb-1 text-xs font-medium text-text-subtle">최근 문서</h3>
-            <p className="px-2 text-xs text-text-subtle">아직 만든 문서가 없어요.</p>
+            {docs.length === 0 ? (
+              <p className="px-2 text-xs text-text-subtle">아직 만든 문서가 없어요.</p>
+            ) : (
+              <ul className="space-y-px">
+                {docs.slice(0, 20).map((d) => {
+                  const active = page === "composer" && d.id === openId;
+                  return (
+                    <li key={d.id} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void openDoc(d.id);
+                          go("composer");
+                        }}
+                        className={`w-full truncate rounded-lg py-1.5 pr-8 pl-2 text-left text-[13px] transition-colors ${
+                          active
+                            ? "bg-active text-text"
+                            : "text-text-muted hover:bg-hover hover:text-text"
+                        }`}
+                      >
+                        {d.name}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${d.name} 삭제`}
+                        title="삭제"
+                        onClick={async () => {
+                          const ok = await ask(
+                            `'${d.name}' 문서를 삭제할까요? 프로젝트에 쓴 파일은 그대로 남아요.`,
+                            {
+                              title: "문서 삭제",
+                              kind: "warning",
+                            },
+                          ).catch(() => false);
+                          if (ok) void deleteDoc(d.id);
+                        }}
+                        className="absolute top-1/2 right-1 -translate-y-1/2 rounded-md p-1 text-text-subtle opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-danger focus-visible:opacity-100"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </>
         )}
       </div>

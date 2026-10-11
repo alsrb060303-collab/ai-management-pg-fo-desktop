@@ -1,4 +1,5 @@
 mod claude_config;
+mod composer;
 mod dock;
 mod library;
 mod shell;
@@ -34,6 +35,14 @@ pub fn run() {
             library::library_import,
             library::library_forget,
             library::config_set_enabled,
+            composer::composer_catalog,
+            composer::composer_docs,
+            composer::composer_doc_load,
+            composer::composer_doc_save,
+            composer::composer_doc_delete,
+            composer::composer_compile,
+            composer::composer_plan,
+            composer::composer_write,
             shell::view_mode,
             shell::view_switch,
         ])
@@ -42,6 +51,7 @@ pub fn run() {
             Dock::manage(handle);
             shell::Shell::manage(handle);
             library::Library::manage(handle)?;
+            composer::Composer::manage(handle)?;
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);
