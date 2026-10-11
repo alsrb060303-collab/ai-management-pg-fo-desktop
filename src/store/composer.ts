@@ -23,7 +23,7 @@ export interface Block {
   title: string;
   summary: string;
   category: string;
-  source: "builtin" | "library";
+  source: "builtin" | "library" | "external";
   name: string;
   description: string | null;
   paths: string[];
@@ -31,7 +31,18 @@ export interface Block {
   model: string | null;
   body: string;
   extraFiles: number;
+  /** Third-party blocks: where they come from (kept in written files). */
+  origin: {
+    repo: string;
+    commit: string;
+    path: string;
+    license: string;
+    copyright: string;
+  } | null;
 }
+
+export const originUrl = (o: NonNullable<Block["origin"]>) =>
+  `https://github.com/${o.repo}/blob/${o.commit}/${o.path}`;
 
 export interface OutFile {
   path: string;
@@ -96,6 +107,8 @@ interface ComposerState {
 
   init: () => Promise<void>;
   loadCatalog: () => Promise<void>;
+  /** Updates the bundled third-party blocks from upstream; returns a summary. */
+  refreshExternal: () => Promise<string>;
   loadDocs: () => Promise<void>;
   newDoc: () => void;
   openDoc: (id: string) => Promise<void>;
@@ -259,6 +272,19 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       } catch (e) {
         set({ error: String(e) });
       }
+    },
+
+    refreshExternal: async () => {
+      if (!isTauri()) return "";
+      const r = await invoke<{ updated: string[]; unchanged: number; failed: [string, string][] }>(
+        "composer_refresh_external",
+      );
+      await get().loadCatalog();
+      const parts = [
+        r.updated.length > 0 ? `${r.updated.length}개 업데이트` : "새 버전 없음",
+        r.failed.length > 0 ? `${r.failed.length}개 실패 (${r.failed[0][1]})` : "",
+      ];
+      return parts.filter(Boolean).join(" · ");
     },
 
     loadDocs: async () => {

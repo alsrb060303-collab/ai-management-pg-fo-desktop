@@ -36,6 +36,7 @@ pub fn run() {
             library::library_forget,
             library::config_set_enabled,
             composer::composer_catalog,
+            composer::composer_refresh_external,
             composer::composer_docs,
             composer::composer_doc_load,
             composer::composer_doc_save,

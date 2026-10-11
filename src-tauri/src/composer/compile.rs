@@ -205,7 +205,15 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             Target::ClaudeMd => {
                 let content = resolved
                     .iter()
-                    .map(|(_, _, body)| body.as_str())
+                    .map(|(_, block, body)| match &block.origin {
+                        Some(o) => format!(
+                            "<!-- Source: {} ({}, {}) -->\n{body}",
+                            o.url(),
+                            o.license,
+                            o.copyright
+                        ),
+                        None => body.clone(),
+                    })
                     .collect::<Vec<_>>()
                     .join("\n\n");
                 let lines = content.lines().count();
@@ -247,7 +255,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     let (path, content) = match target {
                         Target::Rules => (
                             format!(".claude/rules/{}.md", block.name),
-                            rule_file(&block.paths, body),
+                            rule_file(block, body),
                         ),
                         Target::Skills => (
                             format!(".claude/skills/{}/SKILL.md", block.name),
@@ -306,30 +314,54 @@ fn quoted(s: &str) -> String {
     format!("\"{escaped}\"")
 }
 
-fn rule_file(paths: &[String], body: &str) -> String {
-    if paths.is_empty() {
+fn rule_file(block: &Block, body: &str) -> String {
+    let credit = credit_comment(block);
+    if block.paths.is_empty() && credit.is_empty() {
         return format!("{body}\n");
     }
-    let list: String = paths
-        .iter()
-        .map(|p| format!("  - {}\n", quoted(p)))
-        .collect();
-    format!("---\npaths:\n{list}---\n\n{body}\n")
+    let mut fm = format!("---\n{credit}");
+    if !block.paths.is_empty() {
+        fm.push_str("paths:\n");
+        for p in &block.paths {
+            fm.push_str(&format!("  - {}\n", quoted(p)));
+        }
+    }
+    format!("{fm}---\n\n{body}\n")
 }
 
 fn skill_file(block: &Block, body: &str) -> String {
     let description = block.description.as_deref().unwrap_or(&block.summary);
-    format!(
-        "---\nname: {}\ndescription: {}\n---\n\n{body}\n",
+    let mut fm = format!(
+        "---\nname: {}\ndescription: {}\n",
         block.name,
         quoted(description)
-    )
+    );
+    // `license` and `metadata` are portable Agent Skills fields.
+    if let Some(origin) = &block.origin {
+        fm.push_str(&format!(
+            "license: {}\nmetadata:\n  source: {}\n  copyright: {}\n",
+            origin.license,
+            quoted(&origin.url()),
+            quoted(&origin.copyright)
+        ));
+    }
+    format!("{fm}---\n\n{body}\n")
+}
+
+/// A YAML comment line crediting a third-party block, for frontmatter.
+fn credit_comment(block: &Block) -> String {
+    block
+        .origin
+        .as_ref()
+        .map(|o| format!("# Source: {} ({}, {})\n", o.url(), o.license, o.copyright))
+        .unwrap_or_default()
 }
 
 fn agent_file(block: &Block, body: &str) -> String {
     let description = block.description.as_deref().unwrap_or(&block.summary);
     let mut fm = format!(
-        "---\nname: {}\ndescription: {}\n",
+        "---\n{}name: {}\ndescription: {}\n",
+        credit_comment(block),
         block.name,
         quoted(description)
     );
@@ -394,6 +426,7 @@ mod tests {
             model: None,
             body: body.into(),
             extra_files: 0,
+            origin: None,
         }
     }
 
@@ -516,6 +549,35 @@ mod tests {
         assert!(messages.iter().any(|m| m.contains("@경로")));
         assert!(messages.iter().any(|m| m.contains("두 출력이")));
         assert_eq!(out.files.len(), 1);
+    }
+
+    #[test]
+    fn third_party_blocks_carry_their_source_and_license() {
+        use super::super::catalog::Origin;
+        let origin = Origin {
+            repo: "o/r".into(),
+            commit: "a".repeat(40),
+            path: "skills/x/SKILL.md".into(),
+            license: "MIT".into(),
+            copyright: "Copyright (c) 2025 X".into(),
+        };
+        let mut skill = block("external:x", BlockKind::Skill, "Steps");
+        skill.origin = Some(origin.clone());
+        let mut agent = block("external:y", BlockKind::Agent, "You help.");
+        agent.origin = Some(origin);
+        let url = format!(
+            "https://github.com/o/r/blob/{}/skills/x/SKILL.md",
+            "a".repeat(40)
+        );
+        assert_eq!(
+            skill_file(&skill, "Steps"),
+            format!(
+                "---\nname: x\ndescription: \"Does: things\"\nlicense: MIT\nmetadata:\n  source: \"{url}\"\n  copyright: \"Copyright (c) 2025 X\"\n---\n\nSteps\n"
+            )
+        );
+        assert!(agent_file(&agent, "You help.").starts_with(&format!(
+            "---\n# Source: {url} (MIT, Copyright (c) 2025 X)\nname: y\n"
+        )));
     }
 
     #[test]

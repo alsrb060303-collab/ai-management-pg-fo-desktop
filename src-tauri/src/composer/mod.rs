@@ -7,6 +7,7 @@
 
 pub mod catalog;
 pub mod compile;
+pub mod refresh;
 pub mod write;
 
 use std::fs;
@@ -40,6 +41,11 @@ impl Composer {
 
     fn docs_dir(&self) -> PathBuf {
         self.data_dir.join("compositions")
+    }
+
+    /// Third-party blocks fetched by "최신 받아오기".
+    fn cache_dir(&self) -> PathBuf {
+        self.data_dir.join("catalog-cache")
     }
 
     fn doc_path(&self, id: &str) -> ops::Result<PathBuf> {
@@ -106,7 +112,8 @@ fn list_docs(dir: &Path) -> Vec<DocMeta> {
 }
 
 fn catalog_for(app: &AppHandle) -> Vec<Block> {
-    catalog::all(&app.state::<Library>().items())
+    let cache = app.state::<Composer>().cache_dir();
+    catalog::all(&app.state::<Library>().items(), Some(&cache))
 }
 
 fn parse_doc(doc: Value) -> ops::Result<Doc> {
@@ -136,6 +143,14 @@ async fn blocking<T: Send + 'static>(
 #[tauri::command]
 pub async fn composer_catalog(app: AppHandle) -> Result<Vec<Block>, String> {
     blocking(app, |app| Ok(catalog_for(app))).await
+}
+
+#[tauri::command]
+pub async fn composer_refresh_external(app: AppHandle) -> Result<refresh::RefreshResult, String> {
+    blocking(app, |app| {
+        Ok(refresh::refresh(&app.state::<Composer>().cache_dir()))
+    })
+    .await
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 import { useReactFlow } from "@xyflow/react";
-import { Plus, Search } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type Block, type BlockKind, type Target, useComposerStore } from "../../store/composer";
@@ -42,6 +42,20 @@ export function Palette() {
   const catalog = useComposerStore((s) => s.catalog);
   const addBlock = useComposerStore((s) => s.addBlock);
   const addOutput = useComposerStore((s) => s.addOutput);
+  const refreshExternal = useComposerStore((s) => s.refreshExternal);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const refresh = async () => {
+    setRefreshing(true);
+    setRefreshNote(null);
+    try {
+      setRefreshNote(await refreshExternal());
+    } catch (e) {
+      setRefreshNote(String(e));
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BlockKind | "all">("all");
   const [ghost, setGhost] = useState<{ block: Block; x: number; y: number } | null>(null);
@@ -96,7 +110,7 @@ export function Palette() {
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-subtle"
           />
         </label>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -112,6 +126,23 @@ export function Palette() {
               {f.label}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5 px-1 text-[11px] text-text-subtle">
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            title="외부 블록(MIT·Apache)을 원본 저장소의 최신 버전으로 받아와요"
+            className="flex items-center gap-1 rounded-md py-0.5 hover:text-text disabled:opacity-60"
+          >
+            {refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            최신 받아오기
+          </button>
+          {refreshNote && (
+            <span className="truncate" title={refreshNote}>
+              · {refreshNote}
+            </span>
+          )}
         </div>
       </div>
 
@@ -151,6 +182,14 @@ export function Palette() {
                           {block.source === "library" && (
                             <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-subtle">
                               내 라이브러리
+                            </span>
+                          )}
+                          {block.origin && (
+                            <span
+                              className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-subtle"
+                              title={`${block.origin.repo} · ${block.origin.license}`}
+                            >
+                              {block.origin.repo.split("/")[0]}
                             </span>
                           )}
                         </div>

@@ -1,7 +1,14 @@
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "../../components/ui";
-import { type BlockNode, CLAUDE_MD_LINE_BUDGET, useComposerStore } from "../../store/composer";
+import {
+  type BlockNode,
+  CLAUDE_MD_LINE_BUDGET,
+  originUrl,
+  useComposerStore,
+} from "../../store/composer";
 import { KIND_LABEL, kindColor } from "./kinds";
 
 type Tab = "preview" | "block";
@@ -196,6 +203,21 @@ function BlockEditor({ node }: { node: BlockNode }) {
         </div>
         <div className="mt-0.5 font-medium">{block.title}</div>
         <div className="mt-0.5 text-xs text-text-muted">{block.summary}</div>
+        {block.origin && (
+          <button
+            type="button"
+            onClick={() => {
+              if (block.origin && isTauri()) void openUrl(originUrl(block.origin));
+            }}
+            className="mt-1.5 flex max-w-full items-center gap-1 text-left text-[11px] text-text-muted hover:text-text"
+            title={originUrl(block.origin)}
+          >
+            <ExternalLink size={11} className="shrink-0" />
+            <span className="truncate">
+              {block.origin.repo} · {block.origin.license} · {block.origin.copyright}
+            </span>
+          </button>
+        )}
         {block.paths.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
             {block.paths.map((p) => (
