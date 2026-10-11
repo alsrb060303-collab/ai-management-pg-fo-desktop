@@ -209,23 +209,26 @@ pub async fn github_login_start(app: AppHandle) -> Result<DeviceCode, String> {
             );
             let event = match outcome {
                 Ok(Outcome::Cancelled) => return,
-                Ok(Outcome::Token(token)) => match {
+                Ok(Outcome::Token(token)) => {
                     // A cancel or newer sign-in since the poll returned wins.
-                    let _guard = gh.write.lock().unwrap_or_else(|e| e.into_inner());
-                    if gh.login.load(Ordering::SeqCst) != generation {
-                        return;
+                    let saved = {
+                        let _guard = gh.write.lock().unwrap_or_else(|e| e.into_inner());
+                        if gh.login.load(Ordering::SeqCst) != generation {
+                            return;
+                        }
+                        gh.set_token(Some(token))
+                    };
+                    match saved {
+                        Ok(()) => AuthEvent {
+                            signed_in: true,
+                            message: None,
+                        },
+                        Err(e) => AuthEvent {
+                            signed_in: false,
+                            message: Some(e),
+                        },
                     }
-                    gh.set_token(Some(token))
-                } {
-                    Ok(()) => AuthEvent {
-                        signed_in: true,
-                        message: None,
-                    },
-                    Err(e) => AuthEvent {
-                        signed_in: false,
-                        message: Some(e),
-                    },
-                },
+                }
                 Ok(Outcome::Denied) => AuthEvent {
                     signed_in: false,
                     message: Some("GitHub에서 로그인을 거절했어요".into()),
