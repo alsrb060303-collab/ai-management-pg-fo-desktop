@@ -193,7 +193,9 @@ function NavButton({
     >
       <span
         className={`flex shrink-0 items-center justify-center ${
-          accent ? "size-6 -ml-0.5 rounded-full bg-accent text-accent-fg" : "size-5"
+          accent
+            ? "size-6 -ml-0.5 rounded-full bg-linear-to-br from-brand-from via-brand-via to-brand-to text-white"
+            : "size-5"
         }`}
       >
         <Icon size={accent ? 15 : 17} strokeWidth={accent ? 2.5 : 2} />

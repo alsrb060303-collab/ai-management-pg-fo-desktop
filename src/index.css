@@ -97,6 +97,10 @@
   --color-accent-hover: var(--c-accent-hover);
   --color-accent-soft: var(--c-accent-soft);
   --color-accent-fg: var(--c-accent-fg);
+  /* The logo's gradient (src-tauri/icons/source/logo.svg); same in both themes. */
+  --color-brand-from: #f2915f;
+  --color-brand-via: #c85d9a;
+  --color-brand-to: #6d4fe8;
   --color-primary: var(--c-primary);
   --color-primary-hover: var(--c-primary-hover);
   --color-primary-fg: var(--c-primary-fg);

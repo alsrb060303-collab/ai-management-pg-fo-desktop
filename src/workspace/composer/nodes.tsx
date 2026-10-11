@@ -1,5 +1,5 @@
-import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { GripVertical, PencilLine } from "lucide-react";
+import { Handle, type NodeProps, Position, useReactFlow } from "@xyflow/react";
+import { GripVertical, PencilLine, Trash2, X } from "lucide-react";
 import { memo, useRef, useState } from "react";
 import {
   ACCEPTS,
@@ -11,7 +11,33 @@ import {
 } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS, targetTitle } from "./kinds";
 
-export const BlockNodeView = memo(function BlockNodeView({ data, selected }: NodeProps<BlockNode>) {
+/**
+ * Removes the node through React Flow, so undo, edge clean-up and the output
+ * order go the same way as the Delete key.
+ */
+function DeleteNodeButton({ id, label }: { id: string; label: string }) {
+  const { deleteElements } = useReactFlow();
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={`${label} (Delete)`}
+      onClick={(e) => {
+        e.stopPropagation();
+        void deleteElements({ nodes: [{ id }] });
+      }}
+      className="nodrag rounded-md p-1 text-text-subtle opacity-0 transition-opacity group-hover:opacity-100 hover:bg-hover hover:text-danger focus-visible:opacity-100"
+    >
+      <Trash2 size={13} />
+    </button>
+  );
+}
+
+export const BlockNodeView = memo(function BlockNodeView({
+  id,
+  data,
+  selected,
+}: NodeProps<BlockNode>) {
   const block = useComposerStore((s) => s.blocks.get(data.blockId));
   const kind = block?.kind ?? "instruction";
   const Icon = KIND_ICON[kind];
@@ -19,7 +45,7 @@ export const BlockNodeView = memo(function BlockNodeView({ data, selected }: Nod
 
   return (
     <div
-      className={`w-60 rounded-xl border bg-surface-raised shadow-card transition-colors ${
+      className={`group w-60 rounded-xl border bg-surface-raised shadow-card transition-colors ${
         selected ? "border-accent ring-2 ring-accent-soft" : "border-border"
       }`}
     >
@@ -29,12 +55,17 @@ export const BlockNodeView = memo(function BlockNodeView({ data, selected }: Nod
           <Icon size={12} />
           {KIND_LABEL[kind]}
           {block?.category && <span className="text-text-subtle">· {block.category}</span>}
-          {data.body !== undefined && (
-            <span className="ml-auto flex items-center gap-0.5 text-text-subtle">
-              <PencilLine size={11} />
-              수정함
+          <span className="ml-auto flex items-center gap-1">
+            {data.body !== undefined && (
+              <span className="flex items-center gap-0.5 text-text-subtle">
+                <PencilLine size={11} />
+                수정함
+              </span>
+            )}
+            <span className={selected ? "[&>button]:opacity-100" : ""}>
+              <DeleteNodeButton id={id} label="블록 삭제" />
             </span>
-          )}
+          </span>
         </div>
         <div className="mt-1 text-sm leading-snug font-medium">
           {block?.title ?? <span className="text-danger">없는 블록 ({data.blockId})</span>}
@@ -65,6 +96,7 @@ export const OutputNodeView = memo(function OutputNodeView({
   const fileCount = useComposerStore((s) => s.compiled?.files.filter((f) => f.node === id).length);
   const setScope = useComposerStore((s) => s.setScope);
   const reorder = useComposerStore((s) => s.reorder);
+  const { deleteElements } = useReactFlow();
 
   const personal = data.scope === "personal";
   const meta = TARGETS.find((t) => t.target === data.target) ?? TARGETS[0];
@@ -83,7 +115,7 @@ export const OutputNodeView = memo(function OutputNodeView({
 
   return (
     <div
-      className={`w-72 rounded-2xl border-2 bg-surface-raised shadow-card transition-colors ${
+      className={`group w-72 rounded-2xl border-2 bg-surface-raised shadow-card transition-colors ${
         selected ? "border-accent" : "border-border-strong"
       }`}
     >
@@ -123,6 +155,9 @@ export const OutputNodeView = memo(function OutputNodeView({
             </button>
           ))}
         </fieldset>
+        <span className={selected ? "[&>button]:opacity-100" : ""}>
+          <DeleteNodeButton id={id} label="출력 노드 삭제" />
+        </span>
       </div>
 
       {inputs.length === 0 ? (
@@ -135,6 +170,12 @@ export const OutputNodeView = memo(function OutputNodeView({
           titleOf={titleOf}
           reorderable={isClaudeMd}
           onReorder={(from, to) => reorder(id, from, to)}
+          onDisconnect={(source) => {
+            const edges = (doc?.edges ?? [])
+              .filter((e) => e.source === source && e.target === id)
+              .map((e) => ({ id: e.id }));
+            void deleteElements({ edges });
+          }}
         />
       )}
 
@@ -165,11 +206,13 @@ function OrderedInputs({
   titleOf,
   reorderable,
   onReorder,
+  onDisconnect,
 }: {
   ids: string[];
   titleOf: (id: string) => { title: string; kind?: keyof typeof KIND_LABEL };
   reorderable: boolean;
   onReorder: (from: number, to: number) => void;
+  onDisconnect: (nodeId: string) => void;
 }) {
   const listRef = useRef<HTMLOListElement>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
@@ -192,7 +235,7 @@ function OrderedInputs({
         return (
           <li
             key={nodeId}
-            className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs ${
+            className={`group/item flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs ${
               drag?.from === i ? "bg-accent-soft" : "bg-sunken"
             } ${target ? "ring-1 ring-accent" : ""}`}
           >
@@ -225,7 +268,16 @@ function OrderedInputs({
               className="size-1.5 shrink-0 rounded-full"
               style={{ background: kind ? kindColor(kind) : "var(--c-border-strong)" }}
             />
-            <span className="truncate">{title}</span>
+            <span className="min-w-0 flex-1 truncate">{title}</span>
+            <button
+              type="button"
+              aria-label={`${title} 연결 끊기`}
+              title="연결 끊기"
+              onClick={() => onDisconnect(nodeId)}
+              className="shrink-0 rounded p-0.5 text-text-subtle opacity-0 group-hover/item:opacity-100 hover:bg-hover hover:text-danger focus-visible:opacity-100"
+            >
+              <X size={12} />
+            </button>
           </li>
         );
       })}

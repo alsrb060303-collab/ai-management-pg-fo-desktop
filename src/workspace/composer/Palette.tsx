@@ -15,7 +15,7 @@ const FILTERS: { value: BlockKind | "all"; label: string }[] = [
 
 const KIND_ORDER: BlockKind[] = ["instruction", "rule", "skill", "agent"];
 
-/** Adds nodes where the user drops them, or near the canvas center on click. */
+/** Adds nodes where the user drops them, or left of center on click (outputs sit in the middle). */
 function usePlacement() {
   const flow = useReactFlow();
   const added = useRef(0);
@@ -31,7 +31,7 @@ function usePlacement() {
     const rect = canvasRect();
     const offset = (added.current++ % 6) * 24;
     const center = rect
-      ? { x: rect.left + rect.width * 0.35 + offset, y: rect.top + rect.height * 0.3 + offset }
+      ? { x: rect.left + rect.width * 0.08 + offset, y: rect.top + rect.height * 0.2 + offset }
       : { x: 200 + offset, y: 200 + offset };
     return flow.screenToFlowPosition(center);
   };
@@ -90,7 +90,11 @@ export function Palette() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       setGhost(null);
-      if (!dragging) return;
+      // A click without dragging adds the block near the canvas center.
+      if (!dragging) {
+        addBlock(block.id, place.nearCenter());
+        return;
+      }
       const position = place.atPoint(ev.clientX, ev.clientY);
       if (position) addBlock(block.id, { x: position.x - 120, y: position.y - 30 });
     };
@@ -171,7 +175,7 @@ export function Palette() {
                   <li key={block.id}>
                     <div
                       onPointerDown={(e) => startDrag(block, e)}
-                      title="캔버스로 끌어다 놓기"
+                      title="누르거나 캔버스로 끌어다 놓아 추가"
                       className="group flex cursor-grab touch-none items-start gap-2 rounded-lg border border-transparent px-2 py-1.5 hover:border-border hover:bg-surface-raised active:cursor-grabbing"
                     >
                       <span
