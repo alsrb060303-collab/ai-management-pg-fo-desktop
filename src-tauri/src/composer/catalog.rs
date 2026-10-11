@@ -80,15 +80,17 @@ pub struct Block {
     /// Files next to a library skill's SKILL.md, which the composer does not copy.
     pub extra_files: usize,
     pub origin: Option<Origin>,
+    /// Library items: the original frontmatter, written unchanged so fields
+    /// the composer does not model (allowed-tools, permissionMode, ...) and the
+    /// item's own `name` survive.
+    #[serde(skip)]
+    pub frontmatter: Option<String>,
 }
 
-/// Splits a Markdown file into its frontmatter fields and body.
-pub fn split(text: &str) -> (BTreeMap<String, String>, &str) {
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let Some(fields) = frontmatter::parse(text) else {
-        return (BTreeMap::new(), text);
-    };
-    // The body starts after the second `---` line.
+/// Byte offset where the body starts (after the closing `---`), or `None`
+/// without frontmatter. Expects LF line endings and no BOM.
+fn body_start(text: &str) -> Option<usize> {
+    frontmatter::parse(text)?;
     let mut offset = 0;
     let mut fences = 0;
     for line in text.split_inclusive('\n') {
@@ -96,23 +98,71 @@ pub fn split(text: &str) -> (BTreeMap<String, String>, &str) {
         if line.trim_end() == "---" {
             fences += 1;
             if fences == 2 {
-                break;
+                return Some(offset);
             }
         }
     }
-    (fields, text[offset..].trim_start_matches(['\r', '\n']))
+    None
 }
 
+/// LF line endings and no BOM, so text from a Windows checkout or editor
+/// compares and hashes the same as anywhere else.
+pub fn normalize(text: &str) -> String {
+    text.strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .replace("\r\n", "\n")
+}
+
+/// Splits a Markdown file into its frontmatter fields and body (LF endings).
+pub fn split(text: &str) -> (BTreeMap<String, String>, String) {
+    let text = normalize(text);
+    match body_start(&text) {
+        Some(start) => (
+            frontmatter::parse(&text).unwrap_or_default(),
+            text[start..].trim_start_matches('\n').to_string(),
+        ),
+        None => (BTreeMap::new(), text),
+    }
+}
+
+/// The frontmatter lines between the `---` fences, as written.
+fn raw_frontmatter(text: &str) -> Option<String> {
+    let text = normalize(text);
+    let start = body_start(&text)?;
+    let inner = text[..start].trim_end().strip_suffix("---")?;
+    let inner = inner.strip_prefix("---\n")?;
+    Some(inner.trim_end().to_string())
+}
+
+/// Splits a joined frontmatter list on ", " outside braces, so globs such as
+/// `src/**/*.{ts,tsx}` stay whole.
 fn list(value: Option<&String>) -> Vec<String> {
-    value
-        .map(|v| {
-            v.split(", ")
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .collect()
-        })
-        .unwrap_or_default()
+    let Some(value) = value else {
+        return Vec::new();
+    };
+    let mut items = Vec::new();
+    let mut depth = 0usize;
+    let mut current = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 && chars.peek() == Some(&' ') => {
+                chars.next();
+                items.push(std::mem::take(&mut current));
+                continue;
+            }
+            _ => {}
+        }
+        current.push(c);
+    }
+    items.push(current);
+    items
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 fn parse_builtin(stem: &str, text: &str) -> Option<Block> {
@@ -163,6 +213,7 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         body: body.trim_end().to_string(),
         extra_files: 0,
         origin: None,
+        frontmatter: None,
     })
 }
 
@@ -229,7 +280,8 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         summary: item.description.clone().unwrap_or_default(),
         category: "내 라이브러리".into(),
         source: Source::Library,
-        // The folder or file name, so the written copy matches the library's.
+        // The folder or file name: where the copy is written. Its frontmatter,
+        // including the item's own `name`, is kept as is.
         name: item.id.clone(),
         description: item.description.clone(),
         paths: Vec::new(),
@@ -238,6 +290,7 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         body: body.trim_end().to_string(),
         extra_files,
         origin: None,
+        frontmatter: raw_frontmatter(&text),
     })
 }
 
@@ -331,6 +384,26 @@ mod tests {
     }
 
     #[test]
+    fn lists_keep_brace_globs_whole() {
+        let value = "src/**/*.{ts,tsx}, lib/**, a/{b, c}/d".to_string();
+        assert_eq!(
+            list(Some(&value)),
+            ["src/**/*.{ts,tsx}", "lib/**", "a/{b, c}/d"]
+        );
+    }
+
+    #[test]
+    fn crlf_and_bom_are_normalized() {
+        let (fm, body) = split("\u{feff}---\r\nname: a\r\n---\r\n\r\nLine 1\r\nLine 2\r\n");
+        assert_eq!(fm["name"], "a");
+        assert_eq!(body, "Line 1\nLine 2\n");
+        assert_eq!(
+            raw_frontmatter("---\r\nname: a\r\nallowed-tools: Bash\r\n---\r\nBody").as_deref(),
+            Some("name: a\nallowed-tools: Bash")
+        );
+    }
+
+    #[test]
     fn split_returns_body_after_frontmatter() {
         let (fm, body) = split("---\nname: a\n---\n\n# Body\ntext\n");
         assert_eq!(fm["name"], "a");
@@ -364,5 +437,9 @@ mod tests {
         assert_eq!(block.id, "library:skill:deploy");
         assert_eq!(block.body, "Steps");
         assert_eq!(block.extra_files, 1);
+        assert_eq!(
+            block.frontmatter.as_deref(),
+            Some("name: deploy\ndescription: Ship it")
+        );
     }
 }

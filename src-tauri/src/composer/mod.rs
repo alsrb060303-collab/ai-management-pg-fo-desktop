@@ -230,6 +230,17 @@ pub struct WriteResult {
     pub written: Vec<String>,
     /// Paths not written: unconfirmed, blocked, or failed (with the reason).
     pub skipped: Vec<(String, String)>,
+    /// Written (or unchanged) paths whose git exclude could not be updated.
+    pub warnings: Vec<(String, String)>,
+}
+
+/// Permission to overwrite one file, valid only while it still has the
+/// content the user saw in the preview.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Confirmation {
+    pub path: String,
+    pub old_hash: Option<String>,
 }
 
 /// Recompiles and re-plans before writing, so a file changed since the
@@ -239,7 +250,7 @@ pub async fn composer_write(
     app: AppHandle,
     project: String,
     doc: Value,
-    confirmed: Vec<String>,
+    confirmed: Vec<Confirmation>,
 ) -> Result<WriteResult, String> {
     blocking(app, move |app| {
         let (root, key) = project_root(&project)?;
@@ -250,11 +261,14 @@ pub async fn composer_write(
 
         for file in &compiled.files {
             let item = write::plan_file(&root, &key, file, &records);
+            let approved = confirmed
+                .iter()
+                .any(|c| c.path == file.path && c.old_hash == item.old_hash);
             let skip = match &item.status {
-                write::Status::Unchanged => continue,
+                write::Status::Unchanged => None,
                 write::Status::Blocked(reason) => Some(reason.clone()),
-                s if s.needs_confirm() && !confirmed.contains(&file.path) => {
-                    Some("확인하지 않아서 건너뛰었어요".into())
+                s if s.needs_confirm() && !approved => {
+                    Some("확인하지 않았거나 확인한 뒤에 파일이 바뀌어서 건너뛰었어요".into())
                 }
                 _ => None,
             };
@@ -262,13 +276,22 @@ pub async fn composer_write(
                 result.skipped.push((file.path.clone(), reason));
                 continue;
             }
-            match write::write_file(&root, &key, file, &item) {
-                Ok(record) => {
-                    records.retain(|r| !(r.project == record.project && r.path == record.path));
-                    records.push(record);
-                    result.written.push(file.path.clone());
+            if item.status != write::Status::Unchanged {
+                match write::write_file(&root, &key, file, &item) {
+                    Ok(record) => {
+                        records.retain(|r| !(r.project == record.project && r.path == record.path));
+                        records.push(record);
+                        result.written.push(file.path.clone());
+                    }
+                    Err(reason) => {
+                        result.skipped.push((file.path.clone(), reason));
+                        continue;
+                    }
                 }
-                Err(reason) => result.skipped.push((file.path.clone(), reason)),
+            }
+            // Also for unchanged files: the scope may have flipped.
+            if let Err(reason) = write::sync_exclude(&root, file) {
+                result.warnings.push((file.path.clone(), reason));
             }
         }
 

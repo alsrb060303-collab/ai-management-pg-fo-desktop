@@ -75,8 +75,10 @@ export function Palette() {
   // Pointer-based drag (HTML5 drag and drop is unreliable in WebKitGTK).
   const startDrag = (block: Block, e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    // No text selection or focus changes while dragging.
+    // No text selection while dragging. Commit a focused draft (block editor,
+    // document name) first, since preventDefault keeps it from blurring.
     e.preventDefault();
+    (document.activeElement as HTMLElement | null)?.blur();
     const start = { x: e.clientX, y: e.clientY };
     let dragging = false;
     const move = (ev: PointerEvent) => {

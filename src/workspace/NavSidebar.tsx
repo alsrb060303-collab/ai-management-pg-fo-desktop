@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import { IconButton } from "../components/ui";
 import { useComposerStore } from "../store/composer";
-import { switchView } from "../store/view";
 import { type Page, useWorkspaceStore } from "../store/workspace";
+import { switchToSidebar } from "./leave";
 
 const NAV: { page: Page; label: string; icon: LucideIcon; soon?: boolean }[] = [
   { page: "home", label: "홈", icon: House },
@@ -143,7 +143,7 @@ export function NavSidebar() {
           icon={PanelRightOpen}
           label="사이드바로 전환"
           collapsed={collapsed}
-          onClick={() => void switchView("sidebar")}
+          onClick={() => void switchToSidebar()}
         />
         <NavButton
           icon={Settings}

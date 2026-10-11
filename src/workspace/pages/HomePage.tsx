@@ -7,8 +7,8 @@ import {
   PanelRightOpen,
 } from "lucide-react";
 import { useProjectStore } from "../../store/project";
-import { switchView } from "../../store/view";
 import { useWorkspaceStore } from "../../store/workspace";
+import { switchToSidebar } from "../leave";
 
 function greeting(hour: number): string {
   if (hour >= 5 && hour < 12) return "좋은 아침이에요";
@@ -43,7 +43,7 @@ export function HomePage() {
       icon: PanelRightOpen,
       title: "사이드바로 전환",
       description: "터미널 옆에 붙여서 작업하면서 봐요.",
-      onClick: () => void switchView("sidebar"),
+      onClick: () => void switchToSidebar(),
     },
   ];
 

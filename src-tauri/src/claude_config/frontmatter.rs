@@ -66,8 +66,8 @@ pub fn parse(text: &str) -> Option<BTreeMap<String, String>> {
                 .collect::<Vec<_>>()
                 .join(", ")
         } else if let Some(inner) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-            inner
-                .split(',')
+            split_flow_list(inner)
+                .into_iter()
                 .map(|s| unquote(s.trim()))
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
@@ -89,6 +89,29 @@ pub fn parse(text: &str) -> Option<BTreeMap<String, String>> {
         fields.insert(key, parsed);
     }
     Some(fields)
+}
+
+/// Splits a YAML flow list on commas outside quotes and braces, so a glob
+/// such as `"src/**/*.{ts,tsx}"` stays one item.
+fn split_flow_list(inner: &str) -> Vec<&str> {
+    let mut items = Vec::new();
+    let (mut start, mut depth, mut quote) = (0, 0usize, None);
+    for (i, c) in inner.char_indices() {
+        match (quote, c) {
+            (Some(q), _) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '{') => depth += 1,
+            (None, '}') => depth = depth.saturating_sub(1),
+            (None, ',') if depth == 0 => {
+                items.push(&inner[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    items.push(&inner[start..]);
+    items
 }
 
 /// Drops a trailing `# comment`. A quoted value ends at its closing quote; an
@@ -146,6 +169,14 @@ mod tests {
         assert_eq!(f["description"], "first line second line");
         assert_eq!(f["paths"], "src/**/*.ts, lib/**");
         assert_eq!(f["tools"], "Read, Grep");
+    }
+
+    #[test]
+    fn flow_lists_keep_quoted_and_brace_globs_whole() {
+        let f = parse("---\npaths: [\"src/**/*.{ts,tsx}\", 'a, b', lib/**]\n---\n").unwrap();
+        assert_eq!(f["paths"], "src/**/*.{ts,tsx}, a, b, lib/**");
+        let f = parse("---\npaths: [src/**/*.{ts,tsx}, lib/**]\n---\n").unwrap();
+        assert_eq!(f["paths"], "src/**/*.{ts,tsx}, lib/**");
     }
 
     #[test]

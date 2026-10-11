@@ -90,6 +90,10 @@ function Canvas() {
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onNodeDragStart={checkpoint}
+        onBeforeDelete={async () => {
+          checkpoint();
+          return true;
+        }}
         colorMode={theme}
         deleteKeyCode={["Backspace", "Delete"]}
         minZoom={0.3}

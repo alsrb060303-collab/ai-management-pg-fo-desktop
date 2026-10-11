@@ -110,9 +110,11 @@ interface ComposerState {
   /** Updates the bundled third-party blocks from upstream; returns a summary. */
   refreshExternal: () => Promise<string>;
   loadDocs: () => Promise<void>;
-  newDoc: () => void;
+  newDoc: () => Promise<void>;
   openDoc: (id: string) => Promise<void>;
   deleteDoc: (id: string) => Promise<void>;
+  /** Saves pending edits right away (before switching documents or windows). */
+  flushSave: () => Promise<void>;
   rename: (name: string) => void;
 
   onNodesChange: (changes: NodeChange<ComposerNode>[]) => void;
@@ -196,20 +198,32 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     }, 120);
   };
 
+  const save = async (doc: ComposerDoc) => {
+    if (!isTauri()) return;
+    try {
+      await invoke("composer_doc_save", { doc: persistable(doc) });
+      if (get().doc?.id === doc.id) set({ saveState: "saved" });
+      void get().loadDocs();
+    } catch (e) {
+      set({ saveState: "error", error: String(e) });
+    }
+  };
+
   const scheduleSave = () => {
     set({ saveState: "saving" });
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
+    saveTimer = setTimeout(() => {
+      saveTimer = undefined;
       const { doc } = get();
-      if (!doc || !isTauri()) return;
-      try {
-        await invoke("composer_doc_save", { doc: persistable(doc) });
-        set({ saveState: "saved" });
-        void get().loadDocs();
-      } catch (e) {
-        set({ saveState: "error", error: String(e) });
-      }
+      if (doc) void save(doc);
     }, 600);
+  };
+
+  /** Drops a pending save and compile, e.g. for a document being deleted. */
+  const cancelPending = () => {
+    clearTimeout(saveTimer);
+    clearTimeout(compileTimer);
+    saveTimer = undefined;
   };
 
   /**
@@ -296,13 +310,22 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       }
     },
 
-    newDoc: () => {
+    flushSave: async () => {
+      if (saveTimer === undefined) return;
+      cancelPending();
+      const { doc } = get();
+      if (doc) await save(doc);
+    },
+
+    newDoc: async () => {
+      await get().flushSave();
       open(blankDoc());
       scheduleSave();
     },
 
     openDoc: async (id) => {
-      if (!isTauri()) return;
+      if (!isTauri() || get().doc?.id === id) return;
+      await get().flushSave();
       try {
         const doc = await invoke<ComposerDoc>("composer_doc_load", { id });
         open({ ...blankDoc(), ...doc, id });
@@ -313,10 +336,19 @@ export const useComposerStore = create<ComposerState>((set, get) => {
 
     deleteDoc: async (id) => {
       if (!isTauri()) return;
+      const isOpen = get().doc?.id === id;
+      // A pending save would bring the deleted document back.
+      if (isOpen) cancelPending();
+      else await get().flushSave();
       try {
         await invoke("composer_doc_delete", { id });
-        if (get().doc?.id === id) set({ doc: null, compiled: null });
         await get().loadDocs();
+        if (isOpen) {
+          set({ doc: null, compiled: null, past: [], future: [] });
+          const next = get().docs[0];
+          if (next) await get().openDoc(next.id);
+          else await get().newDoc();
+        }
       } catch (e) {
         set({ error: String(e) });
       }
@@ -325,8 +357,8 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     rename: (name) => update((doc) => ({ ...doc, name }), false),
 
     onNodesChange: (changes) => {
-      // Removals are undoable; moves are recorded once at drag start.
-      const removes = changes.some((c) => c.type === "remove");
+      // History: deletions are recorded once in onBeforeDelete, moves at drag
+      // start, so one undo restores a node together with its edges.
       const meaningful = changes.some((c) => c.type !== "select" && c.type !== "dimensions");
       const moveOnly = changes.every(
         (c) => c.type !== "remove" && c.type !== "add" && c.type !== "replace",
@@ -351,7 +383,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
             edges: doc.edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
           };
         },
-        removes,
+        false,
         !moveOnly,
       );
     },
@@ -378,7 +410,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
             };
           }),
         };
-      }, removes);
+      }, false);
     },
 
     isValidConnection: (connection) => {

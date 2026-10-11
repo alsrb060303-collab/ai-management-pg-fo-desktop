@@ -17,11 +17,14 @@ interface PlanItem {
   personal: boolean;
   old: string | null;
   new: string;
+  oldHash: string | null;
+  note: string | null;
 }
 
 interface WriteResult {
   written: string[];
   skipped: [string, string][];
+  warnings: [string, string][];
 }
 
 const STATUS: Record<Status["kind"], { label: string; className: string }> = {
@@ -48,6 +51,9 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
     if (!current) return;
     setPlan(null);
     setError(null);
+    // Confirmations belong to the files shown for one project.
+    setConfirmed(new Set());
+    setOpen(null);
     try {
       setPlan(await invoke<PlanItem[]>("composer_plan", { project: current, doc }));
     } catch (e) {
@@ -78,10 +84,15 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
     setBusy(true);
     setError(null);
     try {
+      // Each confirmation is tied to the content shown, so a file that changed
+      // since the preview is not overwritten.
+      const confirmations = (plan ?? [])
+        .filter((p) => confirmed.has(p.path))
+        .map((p) => ({ path: p.path, oldHash: p.oldHash }));
       const res = await invoke<WriteResult>("composer_write", {
         project: current,
         doc,
-        confirmed: [...confirmed],
+        confirmed: confirmations,
       });
       setResult(res);
       void refresh();
@@ -156,6 +167,7 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
                         {status.label}
                       </span>
                     </div>
+                    {item.note && <p className="px-9 pb-2 text-xs text-info">{item.note}</p>}
                     {item.status.kind === "blocked" && (
                       <p className="px-9 pb-2 text-xs text-danger">{item.status.reason}</p>
                     )}
@@ -224,6 +236,15 @@ function Result({ result }: { result: WriteResult }) {
         <ul className="space-y-0.5 font-mono text-[12px] text-success">
           {result.written.map((p) => (
             <li key={p}>{p}</li>
+          ))}
+        </ul>
+      )}
+      {result.warnings.length > 0 && (
+        <ul className="space-y-0.5 text-xs text-warning">
+          {result.warnings.map(([p, why]) => (
+            <li key={p}>
+              <span className="font-mono">{p}</span>: git 제외 목록을 고치지 못했어요 ({why})
+            </li>
           ))}
         </ul>
       )}

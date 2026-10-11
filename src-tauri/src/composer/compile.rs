@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::catalog::{Block, BlockKind};
+use super::catalog::{Block, BlockKind, normalize};
 use crate::library::{Mode, check_id};
 
 /// CLAUDE.md guidance: longer files are followed less reliably.
@@ -181,7 +181,8 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                 );
                 continue;
             }
-            let body = node.data.body.as_deref().unwrap_or(&block.body).trim();
+            let edited = node.data.body.as_deref().map(normalize);
+            let body = edited.as_deref().unwrap_or(&block.body).trim();
             if has_import_like(body) {
                 warn(
                     &mut out,
@@ -330,6 +331,9 @@ fn rule_file(block: &Block, body: &str) -> String {
 }
 
 fn skill_file(block: &Block, body: &str) -> String {
+    if let Some(raw) = &block.frontmatter {
+        return format!("---\n{raw}\n---\n\n{body}\n");
+    }
     let description = block.description.as_deref().unwrap_or(&block.summary);
     let mut fm = format!(
         "---\nname: {}\ndescription: {}\n",
@@ -358,6 +362,9 @@ fn credit_comment(block: &Block) -> String {
 }
 
 fn agent_file(block: &Block, body: &str) -> String {
+    if let Some(raw) = &block.frontmatter {
+        return format!("---\n{raw}\n---\n\n{body}\n");
+    }
     let description = block.description.as_deref().unwrap_or(&block.summary);
     let mut fm = format!(
         "---\n{}name: {}\ndescription: {}\n",
@@ -374,17 +381,25 @@ fn agent_file(block: &Block, body: &str) -> String {
     format!("{fm}---\n\n{body}\n")
 }
 
-/// Whether text has an `@path`-like token outside code, which CLAUDE.md
-/// treats as an import.
-fn has_import_like(text: &str) -> bool {
-    let mut fenced = false;
+/// `@token`s outside code (fenced blocks with ``` or ~~~, and inline code
+/// spans), which CLAUDE.md treats as imports. E-mail addresses are skipped.
+pub fn import_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut fence: Option<&str> = None;
     for line in text.lines() {
-        if line.trim_start().starts_with("```") {
-            fenced = !fenced;
-            continue;
-        }
-        if fenced {
-            continue;
+        let trimmed = line.trim_start();
+        let marker = ["```", "~~~"].into_iter().find(|m| trimmed.starts_with(m));
+        match (fence, marker) {
+            (None, Some(m)) => {
+                fence = Some(m);
+                continue;
+            }
+            (Some(open), Some(m)) if open == m => {
+                fence = None;
+                continue;
+            }
+            (Some(_), _) => continue,
+            (None, None) => {}
         }
         // Drop inline code spans.
         let mut plain = String::new();
@@ -395,15 +410,22 @@ fn has_import_like(text: &str) -> bool {
             }
         }
         for word in plain.split_whitespace() {
-            if let Some(rest) = word.strip_prefix('@')
-                && rest.contains(['/', '.'])
-                && !rest.contains('@')
-            {
-                return true;
+            if let Some(rest) = word.strip_prefix('@') {
+                let rest = rest.trim_end_matches(['.', ',', ';', ':', ')', '!', '?']);
+                if !rest.is_empty() && !rest.contains('@') {
+                    tokens.push(rest.to_string());
+                }
             }
         }
     }
-    false
+    tokens
+}
+
+/// Whether text has an `@path`-like token (with `/` or `.`) outside code.
+/// Bare `@word`s are only flagged at write time, when the project shows
+/// whether such a file exists.
+fn has_import_like(text: &str) -> bool {
+    import_tokens(text).iter().any(|t| t.contains(['/', '.']))
 }
 
 #[cfg(test)]
@@ -427,6 +449,7 @@ mod tests {
             body: body.into(),
             extra_files: 0,
             origin: None,
+            frontmatter: None,
         }
     }
 
@@ -581,7 +604,36 @@ mod tests {
     }
 
     #[test]
+    fn library_blocks_keep_their_own_frontmatter() {
+        let mut agent = block("library:agent:reviewer", BlockKind::Agent, "Review.");
+        agent.frontmatter =
+            Some("name: code-reviewer\ndescription: x\npermissionMode: plan".into());
+        assert_eq!(
+            agent_file(&agent, "Review."),
+            "---\nname: code-reviewer\ndescription: x\npermissionMode: plan\n---\n\nReview.\n"
+        );
+    }
+
+    #[test]
+    fn edited_bodies_are_normalized_to_lf() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "x", "type": "block", "data": {"blockId": "builtin:a", "body": "One\r\nTwo\r\n"}},
+                {"id": "o", "type": "output", "data": {"target": "claudeMd"}}
+            ],
+            "edges": [{"source": "x", "target": "o"}]
+        }"#);
+        assert_eq!(compile(&d, &catalog()).files[0].content, "One\nTwo");
+    }
+
+    #[test]
     fn import_detection_skips_code_and_emails() {
+        assert!(has_import_like("~~~\n@docs/x.md\n~~~\nSee @a/b.md"));
+        assert!(!has_import_like("~~~\n@docs/x.md\n~~~"));
+        assert_eq!(
+            import_tokens("Terms in @LICENSE. Ask @someone, mail a@b.c"),
+            ["LICENSE", "someone"]
+        );
         assert!(has_import_like("Read @README.md first"));
         assert!(has_import_like("@~/.claude/notes.md"));
         assert!(!has_import_like("Use `@scope/pkg` here"));

@@ -1,8 +1,11 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense, useEffect } from "react";
 import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
 import { restoreProject } from "../store/project";
 import { type Page, useWorkspaceStore } from "../store/workspace";
+import { saveBeforeLeaving } from "./leave";
 import { NavSidebar } from "./NavSidebar";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
 import { ConfigPage } from "./pages/ConfigPage";
@@ -44,6 +47,16 @@ export default function MainApp() {
   useEffect(() => {
     void useComposerStore.getState().loadDocs();
     restoreProject();
+  }, []);
+
+  // The window is destroyed on close (also when switching to the sidebar from
+  // the tray or shortcut); save the open document first.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = getCurrentWindow().onCloseRequested(() => saveBeforeLeaving());
+    return () => {
+      void unlisten.then((stop) => stop());
+    };
   }, []);
 
   // Settings show and change the sidebar's docking state.
