@@ -123,7 +123,9 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - API 한도: 사용자당 시간당 5,000회(사용자의 다른 앱과 공유).
 
 ### 3.7 메모 & 동기화
-- 로컬 SQLite가 원본. 프로젝트는 정규화한 git remote URL로 식별(없으면 경로).
+- 로컬 SQLite가 원본(`<앱 데이터>/memo.db`). 프로젝트는 정규화한 git remote URL로 식별(없으면 공통 git 폴더, git 밖이면 폴더 경로). 같은 저장소의 clone·worktree는 메모를 공유한다.
+- 브랜치마다 메모 1개 + 할 일 목록. 터미널에서 브랜치를 바꾸면 4초 안에 따라 바뀐다(창이 보일 때만 확인). 삭제된 브랜치의 메모도 남아 있다.
+- 동기화 대비: 모든 행에 `updated_at`·`device_id`, 삭제는 tombstone(`deleted = 1`).
 - 동기화는 어댑터 인터페이스로 분리해서 백엔드를 갈아끼울 수 있게 한다.
 - 무료 사용자는 로컬만, **유료 고객만 Firebase 동기화**를 쓴다.
   - Firestore 경로: `users/{uid}/repos/{repoKey}/branches/{branchKey}/items/{itemId}` (repoKey = 정규화한 remote URL의 SHA-256)
@@ -163,7 +165,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 5. 문서 작성기** (구현·리뷰 완료, Linux UI 확인. Windows 테스트 대기: `docs/testing/phase4-windows.md` E): 블록 그래프 편집, 미리보기, 저장·불러오기, 실행 취소, 프로젝트에 쓰기
 - [~] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
 - [ ] **Phase 7. Git 작업 관리**: 브랜치·worktree·상태·조작
-- [ ] **Phase 8. 메모/TODO + 동기화**
+- [~] **Phase 8a. 브랜치 메모/TODO (로컬)** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` F)
+- [ ] **Phase 8b. 메모 동기화** (유료 고객 Firebase)
 - [ ] **Phase 9. GitHub 연동**: 로그인, PR·이슈
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 

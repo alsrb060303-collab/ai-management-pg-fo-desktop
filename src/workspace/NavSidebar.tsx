@@ -24,7 +24,7 @@ const NAV: { page: Page; label: string; icon: LucideIcon; soon?: boolean }[] = [
   { page: "library", label: "라이브러리", icon: Library },
   { page: "config", label: "설정 지도", icon: MapIcon },
   { page: "work", label: "작업", icon: GitBranch, soon: true },
-  { page: "memo", label: "메모", icon: NotebookPen, soon: true },
+  { page: "memo", label: "메모", icon: NotebookPen },
 ];
 
 export function NavSidebar() {

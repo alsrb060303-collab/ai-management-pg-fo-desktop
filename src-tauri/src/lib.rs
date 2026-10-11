@@ -1,7 +1,9 @@
 mod claude_config;
 mod composer;
 mod dock;
+mod git;
 mod library;
+mod memo;
 mod shell;
 mod tray;
 
@@ -44,6 +46,14 @@ pub fn run() {
             composer::composer_compile,
             composer::composer_plan,
             composer::composer_write,
+            memo::memo_context,
+            memo::memo_get,
+            memo::memo_set_note,
+            memo::memo_add_todo,
+            memo::memo_update_todo,
+            memo::memo_delete_todo,
+            memo::memo_move_todo,
+            memo::memo_clear_done,
             shell::view_mode,
             shell::view_switch,
         ])
@@ -53,6 +63,7 @@ pub fn run() {
             shell::Shell::manage(handle);
             library::Library::manage(handle)?;
             composer::Composer::manage(handle)?;
+            memo::Memo::manage(handle)?;
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);

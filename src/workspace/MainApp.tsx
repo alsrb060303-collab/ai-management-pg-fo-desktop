@@ -11,6 +11,7 @@ import { ComingSoonPage } from "./pages/ComingSoonPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
+import { MemoPage } from "./pages/MemoPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 // The graph editor is the heaviest page; load it on first use.
@@ -31,12 +32,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
       description="브랜치 · worktree · 변경 상태와 GitHub PR · 이슈를 여기서 관리하게 됩니다."
     />
   ),
-  memo: () => (
-    <ComingSoonPage
-      title="메모"
-      description="브랜치별 메모와 TODO를 남기고 여러 기기에서 이어서 볼 수 있게 됩니다."
-    />
-  ),
+  memo: () => <MemoPage />,
   settings: () => <SettingsPage />,
 };
 

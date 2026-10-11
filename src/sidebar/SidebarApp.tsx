@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { DocsTab } from "../features/docs/DocsTab";
+import { MemoPanel } from "../features/memo/MemoPanel";
 import { subscribeDockStatus } from "../store/dock";
 import { useLibraryStore } from "../store/library";
 import { restoreProject, useProjectStore } from "../store/project";
@@ -64,7 +65,13 @@ export default function SidebarApp() {
       <TitleBar />
       <TabNav />
       <main className="flex-1 overflow-y-auto p-4">
-        {activeTab === "docs" ? <DocsTab /> : <Placeholder panel={panel} />}
+        {activeTab === "docs" ? (
+          <DocsTab />
+        ) : activeTab === "memo" ? (
+          <MemoPanel compact />
+        ) : (
+          <Placeholder panel={panel} />
+        )}
       </main>
       <StatusBar />
     </div>
