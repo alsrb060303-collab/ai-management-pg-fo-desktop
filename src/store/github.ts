@@ -1,0 +1,176 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { create } from "zustand";
+
+// Mirrors src-tauri/src/github.
+export interface Account {
+  login: string;
+  name: string | null;
+}
+
+export interface Status {
+  configured: boolean;
+  account: Account | null;
+  offline: boolean;
+}
+
+export interface DeviceCode {
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+}
+
+export interface Pull {
+  number: number;
+  title: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  url: string;
+  author: string;
+  head: string;
+  base: string;
+  updatedAt: string;
+}
+
+export interface Issue {
+  number: number;
+  title: string;
+  url: string;
+  author: string;
+  labels: string[];
+  comments: number;
+  updatedAt: string;
+}
+
+export interface Checks {
+  passed: number;
+  failed: number;
+  pending: number;
+  skipped: number;
+}
+
+export interface RepoView {
+  slug: string;
+  url: string;
+  defaultBranch: string;
+  pushed: boolean;
+  current: Pull | null;
+  checks: Checks | null;
+  pulls: Pull[];
+  issues: Issue[];
+}
+
+interface GitHubState {
+  status: Status | null;
+  /** A sign-in waiting for the user to enter the code on github.com. */
+  login: DeviceCode | null;
+  /** Why the last sign-in did not finish. */
+  loginError: string | null;
+  project: string | null;
+  /** `null` when the project is not on github.com (or not loaded yet). */
+  view: RepoView | null;
+  loading: boolean;
+  error: string | null;
+
+  init: () => Promise<void>;
+  startLogin: () => Promise<void>;
+  cancelLogin: () => void;
+  logout: () => Promise<void>;
+  load: (project: string | null) => Promise<void>;
+  createPr: (input: {
+    base: string;
+    title: string;
+    body: string;
+    draft: boolean;
+  }) => Promise<Pull | null>;
+}
+
+export const useGitHubStore = create<GitHubState>((set, get) => {
+  let seq = 0;
+  let listening = false;
+
+  const refreshStatus = async () => {
+    if (!isTauri()) return;
+    try {
+      set({ status: await invoke<Status>("github_status") });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  };
+
+  return {
+    status: null,
+    login: null,
+    loginError: null,
+    project: null,
+    view: null,
+    loading: false,
+    error: null,
+
+    init: async () => {
+      if (!isTauri()) return;
+      if (!listening) {
+        listening = true;
+        void listen<{ signedIn: boolean; message: string | null }>("github-auth", (event) => {
+          set({ login: null, loginError: event.payload.message });
+          void refreshStatus().then(() => {
+            if (event.payload.signedIn) void get().load(get().project);
+            else set({ view: null });
+          });
+        });
+      }
+      await refreshStatus();
+    },
+
+    startLogin: async () => {
+      set({ loginError: null });
+      try {
+        set({ login: await invoke<DeviceCode>("github_login_start") });
+      } catch (e) {
+        set({ loginError: String(e) });
+      }
+    },
+
+    cancelLogin: () => {
+      set({ login: null });
+      if (isTauri()) void invoke("github_login_cancel");
+    },
+
+    logout: async () => {
+      try {
+        await invoke("github_logout");
+      } catch (e) {
+        set({ error: String(e) });
+      }
+      set({ view: null });
+      await refreshStatus();
+    },
+
+    load: async (project) => {
+      if (project !== get().project) set({ project, view: null, error: null });
+      if (!project || !isTauri() || !get().status?.account) return;
+      const id = ++seq;
+      set({ loading: true });
+      try {
+        const view = await invoke<RepoView | null>("github_repo", { project });
+        if (id === seq && get().project === project) set({ view, error: null, loading: false });
+      } catch (e) {
+        if (id === seq) set({ error: String(e), loading: false });
+      }
+    },
+
+    createPr: async (input) => {
+      const { project } = get();
+      if (!project || !isTauri()) return null;
+      try {
+        const pull = await invoke<Pull>("github_create_pr", { project, ...input });
+        set({ error: null });
+        await get().load(project);
+        return pull;
+      } catch (e) {
+        set({ error: String(e) });
+        return null;
+      }
+    },
+  };
+});

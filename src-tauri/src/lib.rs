@@ -2,6 +2,7 @@ mod claude_config;
 mod composer;
 mod dock;
 mod git;
+mod github;
 mod library;
 mod memo;
 mod shell;
@@ -65,6 +66,12 @@ pub fn run() {
             work::work_remove_worktree,
             work::work_prune_worktrees,
             work::work_git_version,
+            github::github_status,
+            github::github_login_start,
+            github::github_login_cancel,
+            github::github_logout,
+            github::github_repo,
+            github::github_create_pr,
             shell::view_mode,
             shell::view_switch,
         ])
@@ -75,6 +82,7 @@ pub fn run() {
             library::Library::manage(handle)?;
             composer::Composer::manage(handle)?;
             memo::Memo::manage(handle)?;
+            github::GitHub::manage(handle);
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);

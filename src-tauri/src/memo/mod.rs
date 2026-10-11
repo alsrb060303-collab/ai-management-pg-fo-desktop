@@ -5,7 +5,7 @@
 //! Both windows read the same store; changes are announced with
 //! `MEMO_EVENT` so the other window refreshes.
 
-mod repo;
+pub(crate) mod repo;
 mod store;
 
 use std::path::Path;

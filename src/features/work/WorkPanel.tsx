@@ -22,6 +22,7 @@ import {
   useWorkStore,
   type Worktree,
 } from "../../store/work";
+import { GitHubSection } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
 
 /** How often the state is re-read while the panel is visible. */
@@ -111,6 +112,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
               compact={compact}
             />
           )}
+          <GitHubSection compact={compact} />
           <Changes compact={compact} />
           <Branches compact={compact} />
           <Worktrees compact={compact} />

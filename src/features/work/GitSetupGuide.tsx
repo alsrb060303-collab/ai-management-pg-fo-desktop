@@ -297,7 +297,7 @@ export function GitSetupGuide({
 const inputClass =
   "min-w-0 rounded-md border border-border bg-surface px-2 py-1 text-xs text-text outline-none placeholder:text-text-subtle focus:border-border-strong";
 
-function LinkButton({ href, children }: { href: string; children: ReactNode }) {
+export function LinkButton({ href, children }: { href: string; children: ReactNode }) {
   return (
     <button
       type="button"
@@ -314,7 +314,7 @@ function LinkButton({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /** Commands to type, with a button that copies all of them. */
-function Command({ lines }: { lines: string[] }) {
+export function Command({ lines }: { lines: string[] }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="group relative rounded-md border border-border bg-sunken">
