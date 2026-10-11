@@ -117,6 +117,12 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - `git` CLI 실행. Git for Windows가 없을 수 있으므로(Claude Code에선 선택 사항) 감지해서 안내한다.
 - Claude Code가 만드는 worktree(`.claude/worktrees/<name>`, 브랜치 `worktree-<name>`)도 함께 표시한다.
 
+**Phase 7 결정 (2026-10-11)**
+- 앱이 하는 조작: 상태·변경 파일·diff 보기, 브랜치 전환·만들기·삭제, worktree 만들기·삭제·정리. 커밋·push·pull은 Claude Code나 터미널에 맡긴다(나중에 확장 가능).
+- 변경 파일은 목록 + 읽기 전용 diff(HEAD 기준, 스테이징 여부 무관).
+- 앱에서 만드는 worktree도 Claude Code 규칙을 따른다(`.claude/worktrees/<이름>`, 브랜치 `worktree-<이름>`). `.claude/worktrees/`는 `.git/info/exclude`에 넣는다.
+- 되돌리기 어려운 조작은 확인창. 병합 안 된 브랜치 삭제·변경이 남은 worktree 삭제는 기본으로 막고, 경고를 두 번 확인해야 강제로 지운다. 기본·열린 worktree는 지울 수 없다.
+
 ### 3.6 GitHub
 - GitHub App(선택한 레포만 접근) + Device Flow. 토큰은 8시간, refresh token은 6개월(사용할 때마다 교체).
 - 토큰은 OS 자격 증명 저장소(`keyring` 4.x)에 보관한다. Tauri Stronghold 플러그인은 v3에서 제거 예정이라 쓰지 않는다.
@@ -164,7 +170,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 4. 메인 창 + 디자인 시스템** (구현·리뷰 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md`): 창 2개 전환, 테마(라이트/다크/시스템), 폰트, 메인 레이아웃. 기존 화면(설정 지도·라이브러리)을 메인 창에도 배치
 - [~] **Phase 5. 문서 작성기** (구현·리뷰 완료, Linux UI 확인. Windows 테스트 대기: `docs/testing/phase4-windows.md` E): 블록 그래프 편집, 미리보기, 저장·불러오기, 실행 취소, 프로젝트에 쓰기
 - [~] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
-- [ ] **Phase 7. Git 작업 관리**: 브랜치·worktree·상태·조작
+- [~] **Phase 7. Git 작업 관리** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` G): 브랜치·worktree·상태·diff·조작
 - [x] **Phase 8a. 브랜치 메모/TODO (로컬)**: 저장소·브랜치별 메모와 할 일, 브랜치 따라가기, 두 창 동기화
 - [ ] **Phase 8b. 메모 동기화** (유료 고객 Firebase)
 - [ ] **Phase 9. GitHub 연동**: 로그인, PR·이슈

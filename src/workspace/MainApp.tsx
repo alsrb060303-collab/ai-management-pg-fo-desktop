@@ -7,12 +7,12 @@ import { restoreProject } from "../store/project";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { saveBeforeLeaving } from "./leave";
 import { NavSidebar } from "./NavSidebar";
-import { ComingSoonPage } from "./pages/ComingSoonPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { MemoPage } from "./pages/MemoPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { WorkPage } from "./pages/WorkPage";
 
 // The graph editor is the heaviest page; load it on first use.
 const ComposerPage = lazy(() => import("./composer/ComposerPage"));
@@ -26,12 +26,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
   ),
   library: () => <LibraryPage />,
   config: () => <ConfigPage />,
-  work: () => (
-    <ComingSoonPage
-      title="작업"
-      description="브랜치 · worktree · 변경 상태와 GitHub PR · 이슈를 여기서 관리하게 됩니다."
-    />
-  ),
+  work: () => <WorkPage />,
   memo: () => <MemoPage />,
   settings: () => <SettingsPage />,
 };

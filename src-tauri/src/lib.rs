@@ -6,6 +6,7 @@ mod library;
 mod memo;
 mod shell;
 mod tray;
+mod work;
 
 use tauri::{Manager, WindowEvent};
 
@@ -54,6 +55,15 @@ pub fn run() {
             memo::memo_delete_todo,
             memo::memo_move_todo,
             memo::memo_clear_done,
+            work::work_overview,
+            work::work_diff,
+            work::work_switch,
+            work::work_create_branch,
+            work::work_check_branch,
+            work::work_delete_branch,
+            work::work_add_worktree,
+            work::work_remove_worktree,
+            work::work_prune_worktrees,
             shell::view_mode,
             shell::view_switch,
         ])

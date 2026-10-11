@@ -23,7 +23,7 @@ const NAV: { page: Page; label: string; icon: LucideIcon; soon?: boolean }[] = [
   { page: "composer", label: "문서 작성기", icon: Blocks },
   { page: "library", label: "라이브러리", icon: Library },
   { page: "config", label: "설정 지도", icon: MapIcon },
-  { page: "work", label: "작업", icon: GitBranch, soon: true },
+  { page: "work", label: "작업", icon: GitBranch },
   { page: "memo", label: "메모", icon: NotebookPen },
 ];
 

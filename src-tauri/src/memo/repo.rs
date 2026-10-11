@@ -66,12 +66,6 @@ fn remote_url(root: &Path) -> Option<String> {
         .filter(|u| !u.is_empty())
 }
 
-/// Whether `dir` or a parent has a `.git` entry. Decides between "not a
-/// repository" and a real git failure without parsing (localized) messages.
-fn inside_git(dir: &Path) -> bool {
-    dir.ancestors().any(|d| d.join(".git").exists())
-}
-
 fn strip_heads(name: &str) -> Option<String> {
     name.trim()
         .strip_prefix("refs/heads/")
@@ -105,7 +99,7 @@ pub fn inspect(project: &Path) -> git::Result<RepoInfo> {
         Ok(root) => PathBuf::from(root),
         // A real repository git cannot read (unsafe ownership, git missing):
         // say so instead of silently filing memos under the folder.
-        Err(e) if inside_git(&dir) => return Err(format!("git 저장소를 읽지 못했어요: {e}")),
+        Err(e) if git::inside_git(&dir) => return Err(format!("git 저장소를 읽지 못했어요: {e}")),
         Err(_) => {
             // Not a git repository: one memo for the folder.
             return Ok(RepoInfo {
