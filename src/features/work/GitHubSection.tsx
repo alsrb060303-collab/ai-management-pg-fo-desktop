@@ -72,7 +72,11 @@ export function GitHubSection({ compact }: { compact: boolean }) {
           {error}
         </p>
       )}
-      {!signedIn ? (
+      {status.offline ? (
+        <p className="text-xs text-text-subtle">
+          GitHub에 연결하지 못했어요. 인터넷이 돌아오면 다시 불러와요.
+        </p>
+      ) : !signedIn ? (
         <SignIn />
       ) : view ? (
         <>
@@ -97,7 +101,7 @@ function Header({ compact }: { compact: boolean }) {
   return (
     <h3 className="flex h-6 items-center gap-2 text-xs font-semibold">
       GitHub
-      {view && (
+      {view && account && (
         <button
           type="button"
           onClick={() => open(view.url)}

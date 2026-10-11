@@ -87,7 +87,10 @@ interface GitHubState {
 
 export const useGitHubStore = create<GitHubState>((set, get) => {
   let seq = 0;
+  let loginSeq = 0;
   let listening = false;
+  /** A sign-in request is on its way (a double click starts only one). */
+  let starting = false;
 
   const refreshStatus = async () => {
     if (!isTauri()) return;
@@ -123,15 +126,22 @@ export const useGitHubStore = create<GitHubState>((set, get) => {
     },
 
     startLogin: async () => {
+      if (starting) return;
+      starting = true;
+      const id = ++loginSeq;
       set({ loginError: null });
       try {
-        set({ login: await invoke<DeviceCode>("github_login_start") });
+        const login = await invoke<DeviceCode>("github_login_start");
+        if (id === loginSeq) set({ login });
       } catch (e) {
-        set({ loginError: String(e) });
+        if (id === loginSeq) set({ loginError: String(e) });
+      } finally {
+        starting = false;
       }
     },
 
     cancelLogin: () => {
+      loginSeq++;
       set({ login: null });
       if (isTauri()) void invoke("github_login_cancel");
     },
@@ -148,12 +158,17 @@ export const useGitHubStore = create<GitHubState>((set, get) => {
 
     load: async (project) => {
       if (project !== get().project) set({ project, view: null, error: null });
-      if (!project || !isTauri() || !get().status?.account) return;
+      // Signed in but offline at the last check: see whether GitHub is back.
+      if (get().status?.offline) await refreshStatus();
       const id = ++seq;
+      if (!project || !isTauri() || !get().status?.account) {
+        set({ loading: false });
+        return;
+      }
       set({ loading: true });
       try {
         const view = await invoke<RepoView | null>("github_repo", { project });
-        if (id === seq && get().project === project) set({ view, error: null, loading: false });
+        if (id === seq) set({ view, error: null, loading: false });
       } catch (e) {
         if (id === seq) set({ error: String(e), loading: false });
       }

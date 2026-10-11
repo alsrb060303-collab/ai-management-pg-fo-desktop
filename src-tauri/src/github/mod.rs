@@ -41,6 +41,8 @@ pub struct GitHub {
     account: Mutex<Option<Account>>,
     /// Bumped by every sign-in start and cancel; a poll with an older value stops.
     login: AtomicU64,
+    /// Serializes token changes against the generation and stale-401 checks.
+    write: Mutex<()>,
 }
 
 impl GitHub {
@@ -52,6 +54,7 @@ impl GitHub {
             token: Mutex::new(None),
             account: Mutex::new(None),
             login: AtomicU64::new(0),
+            write: Mutex::new(()),
         });
     }
 
@@ -92,8 +95,12 @@ impl GitHub {
         if let Err(e) = &result
             && e.contains("로그인이 만료")
         {
-            let _ = self.set_token(None);
-            let _ = app.emit(AUTH_EVENT, AuthEvent::signed_out());
+            // Only the token that failed: a newer sign-in may have replaced it.
+            let _guard = self.write.lock().unwrap_or_else(|e| e.into_inner());
+            if self.token().ok().flatten().as_deref() == Some(token.as_str()) {
+                let _ = self.set_token(None);
+                let _ = app.emit(AUTH_EVENT, AuthEvent::signed_out());
+            }
         }
         result
     }
@@ -169,6 +176,8 @@ pub async fn github_status(app: AppHandle) -> Result<Status, String> {
                 account: None,
                 offline: false,
             }),
+            // Signed in, but GitHub is out of reach: not a reason to ask
+            // for a new sign-in; the panel retries.
             Err(_) => Ok(Status {
                 configured,
                 account: None,
@@ -200,7 +209,14 @@ pub async fn github_login_start(app: AppHandle) -> Result<DeviceCode, String> {
             );
             let event = match outcome {
                 Ok(Outcome::Cancelled) => return,
-                Ok(Outcome::Token(token)) => match gh.set_token(Some(token)) {
+                Ok(Outcome::Token(token)) => match {
+                    // A cancel or newer sign-in since the poll returned wins.
+                    let _guard = gh.write.lock().unwrap_or_else(|e| e.into_inner());
+                    if gh.login.load(Ordering::SeqCst) != generation {
+                        return;
+                    }
+                    gh.set_token(Some(token))
+                } {
                     Ok(()) => AuthEvent {
                         signed_in: true,
                         message: None,
@@ -232,12 +248,16 @@ pub async fn github_login_start(app: AppHandle) -> Result<DeviceCode, String> {
 
 #[tauri::command]
 pub fn github_login_cancel(app: AppHandle) {
-    app.state::<GitHub>().login.fetch_add(1, Ordering::SeqCst);
+    let gh = app.state::<GitHub>();
+    let _guard = gh.write.lock().unwrap_or_else(|e| e.into_inner());
+    gh.login.fetch_add(1, Ordering::SeqCst);
 }
 
 #[tauri::command]
 pub async fn github_logout(app: AppHandle) -> Result<(), String> {
     blocking(app, |app, gh| {
+        let _guard = gh.write.lock().unwrap_or_else(|e| e.into_inner());
+        gh.login.fetch_add(1, Ordering::SeqCst);
         gh.set_token(None)?;
         let _ = app.emit(AUTH_EVENT, AuthEvent::signed_out());
         Ok(())

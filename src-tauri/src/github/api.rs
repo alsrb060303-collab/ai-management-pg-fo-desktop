@@ -134,8 +134,11 @@ struct RawIssue {
 
 #[derive(Deserialize)]
 struct RawRepo {
+    full_name: String,
     html_url: String,
     default_branch: String,
+    /// The upstream when this repository is a fork.
+    parent: Option<Box<RawRepo>>,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +149,7 @@ struct RawCheckRun {
 
 #[derive(Deserialize)]
 struct RawCheckRuns {
+    total_count: u32,
     check_runs: Vec<RawCheckRun>,
 }
 
@@ -185,13 +189,23 @@ fn enc(s: &str) -> String {
 
 fn checks(api: &Api, slug: &str, git_ref: &str) -> Result<Option<Checks>> {
     let r = enc(git_ref);
-    let runs: Option<RawCheckRuns> = api.get_opt(&format!(
-        "/repos/{slug}/commits/{r}/check-runs?per_page=100"
-    ))?;
+    // Up to 500 runs: big matrices spill past the first page.
+    let mut all = Vec::new();
+    for page in 1..=5 {
+        let runs: Option<RawCheckRuns> = api.get_opt(&format!(
+            "/repos/{slug}/commits/{r}/check-runs?per_page=100&page={page}"
+        ))?;
+        let Some(runs) = runs else { break };
+        let total = runs.total_count as usize;
+        all.extend(runs.check_runs);
+        if all.len() >= total {
+            break;
+        }
+    }
     let statuses: Option<RawCombined> =
         api.get_opt(&format!("/repos/{slug}/commits/{r}/status?per_page=100"))?;
     let mut c = Checks::default();
-    for run in runs.map(|r| r.check_runs).unwrap_or_default() {
+    for run in all {
         match (run.status.as_str(), run.conclusion.as_deref()) {
             ("completed", Some("success" | "neutral")) => c.passed += 1,
             ("completed", Some("skipped")) => c.skipped += 1,
@@ -209,22 +223,42 @@ fn checks(api: &Api, slug: &str, git_ref: &str) -> Result<Option<Checks>> {
     Ok((c != Checks::default()).then_some(c))
 }
 
-/// Everything for `slug` (`owner/repo`) with `branch` checked out locally.
-pub fn repo_view(api: &Api, slug: &str, branch: Option<&str>) -> Result<RepoView> {
+/// The repository PRs go to: the upstream of a fork, else `origin` itself.
+/// Returns (base repo, owner of the branch's repository).
+fn target(api: &Api, slug: &str) -> Result<(RawRepo, String)> {
     let repo: RawRepo = api.get(&format!("/repos/{slug}"))?;
-    let owner = slug.split('/').next().unwrap_or_default();
+    let owner = repo
+        .full_name
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    Ok(match repo.parent {
+        Some(parent) => (*parent, owner),
+        None => (repo, owner),
+    })
+}
+
+/// Everything for `slug` (`origin`, `owner/repo`) with `branch` checked out.
+/// When `origin` is a fork, PRs and issues come from its upstream, and the
+/// branch's PR is the one from the fork.
+pub fn repo_view(api: &Api, slug: &str, branch: Option<&str>) -> Result<RepoView> {
+    let (base, owner) = target(api, slug)?;
+    let base_slug = base.full_name.clone();
 
     let pulls: Vec<RawPull> = api.get(&format!(
-        "/repos/{slug}/pulls?state=open&sort=updated&direction=desc&per_page=30"
+        "/repos/{base_slug}/pulls?state=open&sort=updated&direction=desc&per_page=30"
     ))?;
     let pulls: Vec<Pull> = pulls.into_iter().map(|p| p.into_pull().0).collect();
 
+    // `/issues` lists pull requests too; ask for more and keep 30 issues.
     let issues: Vec<RawIssue> = api.get(&format!(
-        "/repos/{slug}/issues?state=open&sort=updated&direction=desc&per_page=30"
+        "/repos/{base_slug}/issues?state=open&sort=updated&direction=desc&per_page=100"
     ))?;
     let issues = issues
         .into_iter()
         .filter(|i| i.pull_request.is_none())
+        .take(30)
         .map(|i| Issue {
             number: i.number,
             title: i.title,
@@ -242,14 +276,14 @@ pub fn repo_view(api: &Api, slug: &str, branch: Option<&str>) -> Result<RepoView
             .get_opt::<serde_json::Value>(&format!("/repos/{slug}/branches/{}", enc(branch)))?
             .is_some();
         let mut mine: Vec<RawPull> = api.get(&format!(
-            "/repos/{slug}/pulls?state=all&head={}&sort=updated&direction=desc&per_page=10",
+            "/repos/{base_slug}/pulls?state=all&head={}&sort=updated&direction=desc&per_page=10",
             enc(&format!("{owner}:{branch}"))
         ))?;
         // An open one wins over older closed or merged ones.
         mine.sort_by_key(|p| p.state != "open");
         if let Some(pull) = mine.into_iter().next() {
             let (pull, sha) = pull.into_pull();
-            check = checks(api, slug, &sha)?;
+            check = checks(api, &base_slug, &sha)?;
             current = Some(pull);
         } else if pushed {
             check = checks(api, slug, branch)?;
@@ -257,9 +291,9 @@ pub fn repo_view(api: &Api, slug: &str, branch: Option<&str>) -> Result<RepoView
     }
 
     Ok(RepoView {
-        slug: slug.to_string(),
-        url: repo.html_url,
-        default_branch: repo.default_branch,
+        slug: base_slug,
+        url: base.html_url,
+        default_branch: base.default_branch,
         pushed,
         current,
         checks: check,
@@ -288,9 +322,16 @@ pub fn create_pull(
             "'{head}' 브랜치가 GitHub에 없어요. 먼저 push 해 주세요"
         ));
     }
+    let (target_repo, owner) = target(api, slug)?;
+    // From a fork, the head names the fork's owner.
+    let head_ref = if target_repo.full_name.eq_ignore_ascii_case(slug) {
+        head.to_string()
+    } else {
+        format!("{owner}:{head}")
+    };
     let raw: RawPull = api.post(
-        &format!("/repos/{slug}/pulls"),
-        &json!({ "title": title.trim(), "head": head, "base": base, "body": body, "draft": draft }),
+        &format!("/repos/{}/pulls", target_repo.full_name),
+        &json!({ "title": title.trim(), "head": head_ref, "base": base, "body": body, "draft": draft }),
     )?;
     Ok(raw.into_pull().0)
 }
@@ -312,7 +353,7 @@ mod tests {
         let (base, seen) = serve(vec![
             (
                 200,
-                r#"{"html_url":"https://github.com/o/r","default_branch":"main"}"#,
+                r#"{"full_name":"o/r","html_url":"https://github.com/o/r","default_branch":"main"}"#,
             ),
             (
                 200,
@@ -329,7 +370,7 @@ mod tests {
             ),
             (
                 200,
-                r#"{"check_runs":[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"failure"},{"status":"in_progress","conclusion":null},{"status":"completed","conclusion":"skipped"}]}"#,
+                r#"{"total_count":4,"check_runs":[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"failure"},{"status":"in_progress","conclusion":null},{"status":"completed","conclusion":"skipped"}]}"#,
             ),
             (200, r#"{"statuses":[{"state":"success"}]}"#),
         ]);
@@ -361,6 +402,46 @@ mod tests {
         assert!(seen[3].contains("/branches/feat%2Fx"), "{}", seen[3]);
         assert!(seen[4].contains("head=o%3Afeat%2Fx"), "{}", seen[4]);
         assert!(seen[5].contains("/commits/s2/check-runs"), "{}", seen[5]);
+    }
+
+    #[test]
+    fn a_fork_targets_its_upstream() {
+        let (base, seen) = serve(vec![
+            (
+                200,
+                r#"{"full_name":"me/r","html_url":"h","default_branch":"main","parent":{"full_name":"up/r","html_url":"u","default_branch":"dev"}}"#,
+            ),
+            (200, "[]"),
+            (200, "[]"),
+            (200, "{}"),
+            (200, "[]"),
+            (200, r#"{"total_count":0,"check_runs":[]}"#),
+            (200, r#"{"statuses":[]}"#),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let view = repo_view(&api, "me/r", Some("fix")).unwrap();
+        assert_eq!(
+            (view.slug.as_str(), view.default_branch.as_str()),
+            ("up/r", "dev")
+        );
+        let seen = seen.lock().unwrap();
+        assert!(seen[1].contains("/repos/up/r/pulls"), "{}", seen[1]);
+        assert!(seen[3].contains("/repos/me/r/branches/fix"), "{}", seen[3]);
+        assert!(
+            seen[4].contains("/repos/up/r/pulls?state=all&head=me%3Afix"),
+            "{}",
+            seen[4]
+        );
+        assert!(
+            seen[5].contains("/repos/me/r/commits/fix/check-runs"),
+            "{}",
+            seen[5]
+        );
     }
 
     #[test]

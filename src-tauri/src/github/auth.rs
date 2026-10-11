@@ -88,7 +88,7 @@ pub fn poll(
         if Instant::now() > deadline {
             return Ok(Outcome::Expired);
         }
-        let body = http::post_form(
+        let body = match http::post_form(
             agent,
             &url,
             &[
@@ -96,7 +96,16 @@ pub fn poll(
                 ("device_code", &code.device_code),
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ],
-        )?;
+        ) {
+            Ok(body) => body,
+            // A dropped connection: the code is still good, try again.
+            Err(e) if e.contains("연결하지 못했어요") => continue,
+            Err(e) => return Err(e),
+        };
+        // Cancelled (or superseded) while the request was in flight.
+        if cancel.load(Ordering::SeqCst) != generation {
+            return Ok(Outcome::Cancelled);
+        }
         if let Some(token) = body["access_token"].as_str() {
             return Ok(Outcome::Token(token.to_string()));
         }
