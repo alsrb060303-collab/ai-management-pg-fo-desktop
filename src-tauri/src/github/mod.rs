@@ -61,15 +61,15 @@ impl GitHub {
     fn token(&self) -> Result<Option<String>, String> {
         let mut cached = self.token.lock().unwrap_or_else(|e| e.into_inner());
         if cached.is_none() {
-            *cached = Some(self.store.load()?);
+            *cached = Some(self.store.load().map_err(String::from)?);
         }
         Ok(cached.clone().flatten())
     }
 
     fn set_token(&self, token: Option<String>) -> Result<(), String> {
         match &token {
-            Some(t) => self.store.save(t)?,
-            None => self.store.clear()?,
+            Some(t) => self.store.save(t).map_err(String::from)?,
+            None => self.store.clear().map_err(String::from)?,
         }
         *self.token.lock().unwrap_or_else(|e| e.into_inner()) = Some(token);
         *self.account.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -85,16 +85,12 @@ impl GitHub {
     }
 
     /// Runs an API call; an expired or revoked token signs out.
-    fn call<T>(
-        &self,
-        app: &AppHandle,
-        f: impl FnOnce(&Api) -> Result<T, String>,
-    ) -> Result<T, String> {
-        let token = self.token()?.ok_or("GitHub에 로그인해 주세요")?;
+    fn call<T>(&self, app: &AppHandle, f: impl FnOnce(&Api) -> http::Result<T>) -> http::Result<T> {
+        let token = self
+            .token()?
+            .ok_or_else(|| crate::tr!("GitHub에 로그인해 주세요", "Please sign in to GitHub"))?;
         let result = f(&self.api(&token));
-        if let Err(e) = &result
-            && e.contains("로그인이 만료")
-        {
+        if matches!(result, Err(http::Error::Unauthorized)) {
             // Only the token that failed: a newer sign-in may have replaced it.
             let _guard = self.write.lock().unwrap_or_else(|e| e.into_inner());
             if self.token().ok().flatten().as_deref() == Some(token.as_str()) {
@@ -171,7 +167,7 @@ pub async fn github_status(app: AppHandle) -> Result<Status, String> {
                     offline: false,
                 })
             }
-            Err(e) if e.contains("로그인이 만료") => Ok(Status {
+            Err(http::Error::Unauthorized) => Ok(Status {
                 configured,
                 account: None,
                 offline: false,
@@ -191,7 +187,12 @@ pub async fn github_status(app: AppHandle) -> Result<Status, String> {
 #[tauri::command]
 pub async fn github_login_start(app: AppHandle) -> Result<DeviceCode, String> {
     blocking(app, |app, gh| {
-        let client = client_id().ok_or("GitHub 앱 정보(Client ID)가 아직 설정되지 않았어요")?;
+        let client = client_id().ok_or_else(|| {
+            crate::tr!(
+                "GitHub 앱 정보(Client ID)가 아직 설정되지 않았어요",
+                "The GitHub app (client ID) isn't set up yet"
+            )
+        })?;
         let generation = gh.login.fetch_add(1, Ordering::SeqCst) + 1;
         let code = auth::start(&gh.agent, &gh.ends, &client)?;
         let app = app.clone();
@@ -231,15 +232,21 @@ pub async fn github_login_start(app: AppHandle) -> Result<DeviceCode, String> {
                 }
                 Ok(Outcome::Denied) => AuthEvent {
                     signed_in: false,
-                    message: Some("GitHub에서 로그인을 거절했어요".into()),
+                    message: Some(crate::tr!(
+                        "GitHub에서 로그인을 거절했어요",
+                        "GitHub declined the sign-in"
+                    )),
                 },
                 Ok(Outcome::Expired) => AuthEvent {
                     signed_in: false,
-                    message: Some("코드가 만료됐어요. 다시 로그인해 주세요".into()),
+                    message: Some(crate::tr!(
+                        "코드가 만료됐어요. 다시 로그인해 주세요",
+                        "The code expired. Please sign in again"
+                    )),
                 },
                 Err(e) => AuthEvent {
                     signed_in: false,
-                    message: Some(e),
+                    message: Some(e.into()),
                 },
             };
             let _ = app.emit(AUTH_EVENT, event);
@@ -287,6 +294,7 @@ pub async fn github_repo(app: AppHandle, project: String) -> Result<Option<RepoV
         };
         gh.call(app, |api| api::repo_view(api, &slug, branch.as_deref()))
             .map(Some)
+            .map_err(String::from)
     })
     .await
 }
@@ -301,14 +309,24 @@ pub async fn github_create_pr(
     draft: bool,
 ) -> Result<Pull, String> {
     blocking(app, move |app, gh| {
-        let (slug, branch) = github_repo_of(&project)?.ok_or("GitHub 저장소가 아니에요")?;
-        let head = branch.ok_or("브랜치를 체크아웃한 상태에서 PR을 만들 수 있어요")?;
+        let (slug, branch) = github_repo_of(&project)?
+            .ok_or_else(|| crate::tr!("GitHub 저장소가 아니에요", "Not a GitHub repository"))?;
+        let head = branch.ok_or_else(|| {
+            crate::tr!(
+                "브랜치를 체크아웃한 상태에서 PR을 만들 수 있어요",
+                "Check out a branch to open a PR"
+            )
+        })?;
         if head == base {
-            return Err("기준 브랜치와 다른 브랜치에서 PR을 만들어 주세요".into());
+            return Err(crate::tr!(
+                "기준 브랜치와 다른 브랜치에서 PR을 만들어 주세요",
+                "Open the PR from a branch other than its base"
+            ));
         }
         gh.call(app, |api| {
             api::create_pull(api, &slug, &head, &base, &title, &body, draft)
         })
+        .map_err(String::from)
     })
     .await
 }

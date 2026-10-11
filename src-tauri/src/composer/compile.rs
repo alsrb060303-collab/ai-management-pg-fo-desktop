@@ -440,6 +440,7 @@ mod tests {
             title: id.into(),
             summary: "summary".into(),
             category: String::new(),
+            en: None,
             source: Source::Builtin,
             name: id.split(':').next_back().unwrap().into(),
             description: Some("Does: things".into()),

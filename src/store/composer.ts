@@ -11,6 +11,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import { create } from "zustand";
+import { useLocaleStore } from "../i18n";
 import type { Mode } from "./library";
 
 // Mirrors src-tauri/src/composer.
@@ -31,6 +32,8 @@ export interface Block {
   model: string | null;
   body: string;
   extraFiles: number;
+  /** English title, summary and category, when the block has them. */
+  en?: { title: string; summary: string; category: string };
   /** Third-party blocks: where they come from (kept in written files). */
   origin: {
     repo: string;
@@ -178,6 +181,15 @@ function persistable(doc: ComposerDoc): ComposerDoc {
 
 const edgeColor = (kind: BlockKind | undefined) => `var(--c-kind-${kind ?? "instruction"})`;
 
+/** The catalog as received; `catalog` in the store is it in the UI language. */
+let rawCatalog: Block[] = [];
+
+function localized(raw: Block[]): Pick<ComposerState, "catalog" | "blocks"> {
+  const english = useLocaleStore.getState().locale === "en";
+  const catalog = raw.map((b) => (english && b.en ? { ...b, ...b.en } : b));
+  return { catalog, blocks: new Map(catalog.map((b) => [b.id, b])) };
+}
+
 export const useComposerStore = create<ComposerState>((set, get) => {
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let compileTimer: ReturnType<typeof setTimeout> | undefined;
@@ -280,8 +292,8 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     loadCatalog: async () => {
       if (!isTauri()) return;
       try {
-        const catalog = await invoke<Block[]>("composer_catalog");
-        set({ catalog, blocks: new Map(catalog.map((b) => [b.id, b])) });
+        rawCatalog = await invoke<Block[]>("composer_catalog");
+        set(localized(rawCatalog));
         scheduleCompile();
       } catch (e) {
         set({ error: String(e) });
@@ -519,4 +531,9 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       update((d) => ({ ...d, ...next }), false);
     },
   };
+});
+
+// Block titles and summaries follow the language.
+useLocaleStore.subscribe((state, prev) => {
+  if (state.locale !== prev.locale) useComposerStore.setState(localized(rawCatalog));
 });

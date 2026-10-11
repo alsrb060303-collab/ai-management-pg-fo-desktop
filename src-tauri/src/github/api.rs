@@ -312,15 +312,17 @@ pub fn create_pull(
     draft: bool,
 ) -> Result<Pull> {
     if title.trim().is_empty() {
-        return Err("PR 제목을 입력해 주세요".into());
+        return Err(crate::tr!("PR 제목을 입력해 주세요", "Enter a PR title").into());
     }
     if api
         .get_opt::<serde_json::Value>(&format!("/repos/{slug}/branches/{}", enc(head)))?
         .is_none()
     {
-        return Err(format!(
-            "'{head}' 브랜치가 GitHub에 없어요. 먼저 push 해 주세요"
-        ));
+        return Err(crate::tr!(
+            "'{head}' 브랜치가 GitHub에 없어요. 먼저 push 해 주세요",
+            "Branch '{head}' isn't on GitHub. Push it first"
+        )
+        .into());
     }
     let (target_repo, owner) = target(api, slug)?;
     // From a fork, the head names the fork's owner.
@@ -453,7 +455,8 @@ mod tests {
             base: &base,
             token: "t",
         };
-        let err = create_pull(&api, "o/r", "feat", "main", "Title", "", false).unwrap_err();
+        let err =
+            String::from(create_pull(&api, "o/r", "feat", "main", "Title", "", false).unwrap_err());
         assert!(err.contains("push"), "{err}");
         assert!(create_pull(&api, "o/r", "feat", "main", " ", "", false).is_err());
     }

@@ -7,6 +7,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
+import "./i18n";
 import { initTheme } from "./store/theme";
 
 // One bundle, two windows: the window label picks the UI, and each UI is

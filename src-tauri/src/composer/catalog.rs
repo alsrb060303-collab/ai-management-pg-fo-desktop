@@ -56,6 +56,13 @@ impl Origin {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct BlockText {
+    pub title: String,
+    pub summary: String,
+    pub category: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
@@ -66,6 +73,10 @@ pub struct Block {
     pub title: String,
     pub summary: String,
     pub category: String,
+    /// The same in English (`title_en`, `summary_en`, `category_en`
+    /// frontmatter); the frontend picks by language.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub en: Option<BlockText>,
     pub source: Source,
     /// File or folder name the block is written under, and the Claude Code
     /// name of a skill or subagent.
@@ -204,6 +215,11 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         title: fm.get("title").cloned().unwrap_or_else(|| stem.to_string()),
         summary: fm.get("summary").cloned().unwrap_or_default(),
         category: fm.get("category").cloned().unwrap_or_default(),
+        en: fm.get("title_en").map(|title| BlockText {
+            title: title.clone(),
+            summary: fm.get("summary_en").cloned().unwrap_or_default(),
+            category: fm.get("category_en").cloned().unwrap_or_default(),
+        }),
         source,
         name: fm.get("name").cloned().unwrap_or_else(|| stem.to_string()),
         description: fm.get("description").cloned(),
@@ -279,6 +295,11 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         title: item.name.clone(),
         summary: item.description.clone().unwrap_or_default(),
         category: "내 라이브러리".into(),
+        en: Some(BlockText {
+            title: item.name.clone(),
+            summary: item.description.clone().unwrap_or_default(),
+            category: "My library".into(),
+        }),
         source: Source::Library,
         // The folder or file name: where the copy is written. Its frontmatter,
         // including the item's own `name`, is kept as is.

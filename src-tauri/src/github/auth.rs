@@ -35,14 +35,27 @@ pub fn start(agent: &Agent, ends: &Endpoints, client_id: &str) -> Result<DeviceC
     )?;
     if let Some(error) = body["error"].as_str() {
         return Err(match error {
-            "device_flow_disabled" => "GitHub 앱 설정에서 Device Flow가 꺼져 있어요".into(),
-            _ => format!("GitHub 로그인을 시작하지 못했어요 ({error})"),
-        });
+            "device_flow_disabled" => crate::tr!(
+                "GitHub 앱 설정에서 Device Flow가 꺼져 있어요",
+                "Device Flow is turned off in the GitHub app's settings"
+            ),
+            _ => crate::tr!(
+                "GitHub 로그인을 시작하지 못했어요 ({error})",
+                "Couldn't start the GitHub sign-in ({error})"
+            ),
+        }
+        .into());
     }
     let text = |key: &str| body[key].as_str().map(str::to_string);
+    let missing = || {
+        crate::tr!(
+            "GitHub 응답에 코드가 없어요",
+            "GitHub's response has no code"
+        )
+    };
     Ok(DeviceCode {
-        device_code: text("device_code").ok_or("GitHub 응답에 코드가 없어요")?,
-        user_code: text("user_code").ok_or("GitHub 응답에 코드가 없어요")?,
+        device_code: text("device_code").ok_or_else(missing)?,
+        user_code: text("user_code").ok_or_else(missing)?,
         verification_uri: text("verification_uri")
             .unwrap_or_else(|| "https://github.com/login/device".into()),
         expires_in: body["expires_in"].as_u64().unwrap_or(900),
@@ -99,7 +112,7 @@ pub fn poll(
         ) {
             Ok(body) => body,
             // A dropped connection: the code is still good, try again.
-            Err(e) if e.contains("연결하지 못했어요") => continue,
+            Err(http::Error::Offline(_)) => continue,
             Err(e) => return Err(e),
         };
         // Cancelled (or superseded) while the request was in flight.
@@ -117,8 +130,20 @@ pub fn poll(
             }
             Some("expired_token") => return Ok(Outcome::Expired),
             Some("access_denied") => return Ok(Outcome::Denied),
-            Some(other) => return Err(format!("GitHub 로그인에 실패했어요 ({other})")),
-            None => return Err("GitHub 응답을 이해하지 못했어요".into()),
+            Some(other) => {
+                return Err(crate::tr!(
+                    "GitHub 로그인에 실패했어요 ({other})",
+                    "GitHub sign-in failed ({other})"
+                )
+                .into());
+            }
+            None => {
+                return Err(crate::tr!(
+                    "GitHub 응답을 이해하지 못했어요",
+                    "Couldn't understand GitHub's response"
+                )
+                .into());
+            }
         }
     }
 }
@@ -137,8 +162,13 @@ const SERVICE: &str = "ai-management";
 const ACCOUNT: &str = "github-token";
 
 fn entry() -> Result<keyring::Entry> {
-    keyring::Entry::new(SERVICE, ACCOUNT)
-        .map_err(|e| format!("자격 증명 저장소를 쓸 수 없어요 ({e})"))
+    keyring::Entry::new(SERVICE, ACCOUNT).map_err(|e| {
+        crate::tr!(
+            "자격 증명 저장소를 쓸 수 없어요 ({e})",
+            "The credential store isn't available ({e})"
+        )
+        .into()
+    })
 }
 
 impl TokenStore for Keyring {
@@ -146,20 +176,32 @@ impl TokenStore for Keyring {
         match entry()?.get_password() {
             Ok(token) => Ok(Some(token)),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("저장된 GitHub 로그인을 읽지 못했어요 ({e})")),
+            Err(e) => Err(crate::tr!(
+                "저장된 GitHub 로그인을 읽지 못했어요 ({e})",
+                "Couldn't read the saved GitHub sign-in ({e})"
+            )
+            .into()),
         }
     }
 
     fn save(&self, token: &str) -> Result<()> {
-        entry()?
-            .set_password(token)
-            .map_err(|e| format!("GitHub 로그인을 저장하지 못했어요 ({e})"))
+        entry()?.set_password(token).map_err(|e| {
+            crate::tr!(
+                "GitHub 로그인을 저장하지 못했어요 ({e})",
+                "Couldn't save the GitHub sign-in ({e})"
+            )
+            .into()
+        })
     }
 
     fn clear(&self) -> Result<()> {
         match entry()?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(format!("GitHub 로그인을 지우지 못했어요 ({e})")),
+            Err(e) => Err(crate::tr!(
+                "GitHub 로그인을 지우지 못했어요 ({e})",
+                "Couldn't remove the GitHub sign-in ({e})"
+            )
+            .into()),
         }
     }
 }

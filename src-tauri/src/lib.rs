@@ -3,6 +3,7 @@ mod composer;
 mod dock;
 mod git;
 mod github;
+mod i18n;
 mod library;
 mod memo;
 mod shell;
@@ -66,6 +67,7 @@ pub fn run() {
             work::work_remove_worktree,
             work::work_prune_worktrees,
             work::work_git_version,
+            i18n::set_locale,
             github::github_status,
             github::github_login_start,
             github::github_login_cancel,
