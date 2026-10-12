@@ -185,6 +185,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 8b. 메모 동기화 (데이터베이스 연동)** (구현 완료, Firebase 프로젝트 설정 후 Windows 테스트: `docs/sync-setup.md`, `docs/testing/phase4-windows.md` I): Firestore 연동, GitHub 계정으로 로그인, 허용 목록 계정만 사용
 - [ ] **Phase 8c. 요금제** (미결정 · 보류): 결제 수단·가격·유료 범위. 정해지면 결제 웹훅이 허용 목록(`allowed/{uid}`)을 채우게 바꾼다
 - [~] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
+- [~] **Phase 9b. GitHub 저장소 선택** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` J): 로그인 안 했으면 프로젝트와 상관없이 로그인 버튼, 내 저장소 목록에서 고르기(clone 있으면 로컬로 열기, 없으면 GitHub 보기: 브랜치·커밋·CI·PR·이슈, 브랜치 만들기/삭제, PR 만들기, clone해서 작업하기)
+- [~] **Phase 9c. 프로젝트 문서 편집** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` K): 연결한 폴더의 CLAUDE.md(하위 폴더 포함)·rules·skills·agents·commands·설정 파일 자동 감지, 앱 안 편집기로 읽고 고쳐서 바로 저장, 밖에서 바뀌면 알림, 새 문서·삭제
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크

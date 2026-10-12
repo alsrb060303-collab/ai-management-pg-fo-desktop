@@ -1,6 +1,7 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   Blocks,
+  FileText,
   GitBranch,
   House,
   Library,
@@ -25,6 +26,7 @@ const NAV: { page: Page; label: MessageKey; icon: LucideIcon; soon?: boolean }[]
   { page: "composer", label: "shell.nav.composer", icon: Blocks },
   { page: "library", label: "shell.nav.library", icon: Library },
   { page: "config", label: "shell.nav.config", icon: MapIcon },
+  { page: "files", label: "shell.nav.files", icon: FileText },
   { page: "work", label: "shell.nav.work", icon: GitBranch },
   { page: "memo", label: "shell.nav.memo", icon: NotebookPen },
 ];

@@ -45,7 +45,7 @@ const STATE_STYLES: Record<ConfigState, { label: MessageKey; className: string }
   notLoaded: { label: "docs.state.notLoaded", className: "text-text-muted" },
 };
 
-export function ConfigMapPanel() {
+export function ConfigMapPanel({ onEdit }: { onEdit?: (rel: string) => void } = {}) {
   const t = useT();
   const { current, recent, map, loading, error, choose, select, refresh } = useProjectStore();
   const loadLibrary = useLibraryStore((s) => s.load);
@@ -89,7 +89,12 @@ export function ConfigMapPanel() {
               </h3>
               <ul className="space-y-1.5">
                 {items.map((item) => (
-                  <ConfigRow key={`${item.scope}:${item.path}:${item.name}`} item={item} />
+                  <ConfigRow
+                    key={`${item.scope}:${item.path}:${item.name}`}
+                    item={item}
+                    editRel={onEdit && current ? relInProject(current, item.path) : null}
+                    onEdit={onEdit}
+                  />
                 ))}
               </ul>
             </section>
@@ -152,7 +157,15 @@ function ProjectBar({ current, recent, loading, onChoose, onSelect, onRefresh }:
   );
 }
 
-function ConfigRow({ item }: { item: ConfigItem }) {
+function ConfigRow({
+  item,
+  editRel,
+  onEdit,
+}: {
+  item: ConfigItem;
+  editRel?: string | null;
+  onEdit?: (rel: string) => void;
+}) {
   const t = useT();
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
@@ -206,9 +219,14 @@ function ConfigRow({ item }: { item: ConfigItem }) {
         {item.detail && <p className="mt-0.5 text-[10px] text-text-muted/80">{item.detail}</p>}
         {failed && <p className="mt-0.5 text-[10px] text-danger">{t("docs.item.openFailed")}</p>}
       </button>
-      {kind && (switchable || canImport) && (
+      {((kind && (switchable || canImport)) || (editRel && onEdit)) && (
         <div className="flex flex-wrap gap-1 px-2.5 pb-1.5">
-          {toggled && (
+          {editRel && onEdit && (
+            <button type="button" className={smallButton} onClick={() => onEdit(editRel)}>
+              {t("files.edit")}
+            </button>
+          )}
+          {toggled && kind && (
             <button
               type="button"
               className={smallButton}
@@ -227,7 +245,7 @@ function ConfigRow({ item }: { item: ConfigItem }) {
               onPick={(mode) => setEnabled(kind, item.name, false, mode)}
             />
           )}
-          {canImport && (
+          {canImport && kind && (
             <button
               type="button"
               className={smallButton}
@@ -245,6 +263,17 @@ function ConfigRow({ item }: { item: ConfigItem }) {
 
 const buttonClass =
   "shrink-0 rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-border-strong disabled:opacity-50";
+
+/** `path` relative to `project` (`/`-separated), or `null` outside it. */
+function relInProject(project: string, path: string): string | null {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const root = `${norm(project)}/`;
+  const file = norm(path);
+  const inside = /^[a-z]:/i.test(root)
+    ? file.toLowerCase().startsWith(root.toLowerCase())
+    : file.startsWith(root);
+  return inside && /\.(md|json)$/.test(file) ? file.slice(root.length) : null;
+}
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;

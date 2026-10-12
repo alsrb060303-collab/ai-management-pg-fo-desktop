@@ -1,6 +1,31 @@
 import type { Messages } from "./types";
 
 export const ko = {
+  "files.title": "프로젝트 문서",
+  "files.description":
+    "연결한 폴더의 CLAUDE.md(하위 폴더 포함)·규칙·Skills·Subagents·명령·설정 파일을 자동으로 찾아요. 여기서 고치고 저장하면 그 파일에 바로 써져요.",
+  "files.noProject":
+    "프로젝트 폴더를 연결하면 안에 있는 Claude Code 문서를 여기서 읽고 고칠 수 있어요.",
+  "files.empty": "아직 Claude Code 문서가 없어요. '새 문서'로 만들 수 있어요.",
+  "files.pick": "왼쪽에서 문서를 고르세요.",
+  "files.kind.other": "기타 (.claude)",
+  "files.new": "새 문서",
+  "files.new.kind": "종류",
+  "files.new.folder": "폴더 (비우면 프로젝트 루트)",
+  "files.new.name": "이름",
+  "files.save": "저장",
+  "files.saving": "저장 중…",
+  "files.revert": "되돌리기",
+  "files.reveal": "폴더에서 보기",
+  "files.delete": "삭제",
+  "files.deleteTitle": "문서 삭제",
+  "files.deleteConfirm": "'{rel}' 파일을 삭제할까요? 되돌릴 수 없어요.",
+  "files.discardTitle": "저장하지 않은 변경",
+  "files.discardConfirm": "저장하지 않은 변경이 있어요. 버리고 계속할까요?",
+  "files.changedOutside": "이 파일이 앱 밖에서 바뀌었어요. 어느 쪽을 남길까요?",
+  "files.useTheirs": "바뀐 파일 불러오기 (내 변경 버림)",
+  "files.keepMine": "내 변경으로 덮어쓰기",
+  "files.edit": "편집",
   // Views and pages
   "docs.view.map": "설정 지도",
   "docs.view.library": "라이브러리",
@@ -88,6 +113,30 @@ export const ko = {
 } as const;
 
 export const en: Messages<typeof ko> = {
+  "files.title": "Project docs",
+  "files.description":
+    "Finds the connected folder's CLAUDE.md files (subfolders too), rules, skills, subagents, commands and settings files. Edits you save here are written straight to the file.",
+  "files.noProject": "Connect a project folder to read and edit its Claude Code documents here.",
+  "files.empty": "No Claude Code documents yet. Create one with 'New document'.",
+  "files.pick": "Pick a document on the left.",
+  "files.kind.other": "Other (.claude)",
+  "files.new": "New document",
+  "files.new.kind": "Kind",
+  "files.new.folder": "Folder (empty for the project root)",
+  "files.new.name": "Name",
+  "files.save": "Save",
+  "files.saving": "Saving…",
+  "files.revert": "Revert",
+  "files.reveal": "Show in folder",
+  "files.delete": "Delete",
+  "files.deleteTitle": "Delete document",
+  "files.deleteConfirm": "Delete '{rel}'? This can't be undone.",
+  "files.discardTitle": "Unsaved changes",
+  "files.discardConfirm": "You have unsaved changes. Discard them and continue?",
+  "files.changedOutside": "This file changed outside the app. Which version should stay?",
+  "files.useTheirs": "Load the changed file (discard mine)",
+  "files.keepMine": "Overwrite with my changes",
+  "files.edit": "Edit",
   "docs.view.map": "Settings map",
   "docs.view.library": "Library",
   "docs.mapPage.description":

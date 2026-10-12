@@ -6,6 +6,7 @@ mod github;
 mod i18n;
 mod library;
 mod memo;
+mod project_docs;
 mod shell;
 mod sync;
 mod tray;
@@ -33,6 +34,10 @@ pub fn run() {
             dock::dock_set_pinned,
             dock::sidebar_hide,
             claude_config::claude_config_scan,
+            project_docs::project_docs_list,
+            project_docs::project_doc_read,
+            project_docs::project_doc_write,
+            project_docs::project_doc_delete,
             library::library_overview,
             library::library_set_dir,
             library::library_apply,
