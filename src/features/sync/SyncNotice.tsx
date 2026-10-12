@@ -25,8 +25,14 @@ export function SyncNotice() {
                   : t("sync.notice.revived", { name: c.name })}
               </li>
             ))}
-            {notice.tooBig.length > 0 && (
-              <li>{t("sync.notice.tooBig", { names: notice.tooBig.join(", ") })}</li>
+            {notice.held.length > 0 && (
+              <li>{t("sync.notice.held", { names: notice.held.join(", ") })}</li>
+            )}
+            {notice.failed.map(([name, why]) => (
+              <li key={`f:${name}:${why}`}>{t("sync.notice.failed", { name, why })}</li>
+            ))}
+            {notice.kept.length > 0 && (
+              <li>{t("sync.notice.kept", { names: notice.kept.join(", ") })}</li>
             )}
           </ul>
         </div>

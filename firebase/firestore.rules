@@ -61,7 +61,8 @@ service cloud.firestore {
           && d.name is string && d.name.size() <= 500
           && d.data is string && d.data.size() <= 900000
           && d.hash is string && d.hash.size() <= 100
-          && d.updatedAt is int
+          // A clock far ahead mustn't win every later conflict.
+          && d.updatedAt is int && d.updatedAt <= request.time.toMillis() + 86400000
           && d.deleted is bool
           && d.deviceId is string && d.deviceId.size() <= 100
           && d.syncedAt == request.time;

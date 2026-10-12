@@ -16,7 +16,7 @@
 //! What is machine-specific (project paths, `composed.json`, `applied.json`,
 //! the library folder setting) is never synced.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,6 +37,8 @@ const MAX_DEPTH: usize = 8;
 const PAGE: usize = 8;
 /// One upload request stays under Firestore's 10 MiB request limit.
 const UPLOAD_BYTES: usize = 4 * 1024 * 1024;
+/// And under its limit on writes per request.
+const UPLOAD_COUNT: usize = 200;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +104,25 @@ pub struct Base {
     pub key: String,
     pub hash: String,
     pub deleted: bool,
+    /// For a deletion's notice on other devices.
+    #[serde(default)]
+    pub name: String,
+    /// The server copy's `updatedAt`: an upload must be later to be accepted.
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
+impl Base {
+    fn of(item: &Item) -> Base {
+        Base {
+            kind: item.kind,
+            key: item.key.clone(),
+            hash: item.hash.clone(),
+            deleted: item.deleted,
+            name: item.name.clone(),
+            updated_at: item.updated_at,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -139,6 +160,13 @@ pub struct Roots {
 // ---------------------------------------------------------------------------
 // Reading what is here
 
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 fn mtime_ms(path: &Path) -> i64 {
     fs::metadata(path)
         .and_then(|m| m.modified())
@@ -156,8 +184,19 @@ fn valid_doc_id(id: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// A path segment every OS accepts (the library's own name rules, which
+/// cover Windows: reserved names, trailing dots and spaces, `<>:"|?*`).
+fn safe_segment(s: &str) -> bool {
+    crate::library::check_id(s).is_ok() && !s.starts_with('.')
+}
+
+/// A relative path inside a skill that is safe to write on any device.
+fn safe_rel(rel: &str) -> bool {
+    !rel.is_empty() && !rel.contains('\\') && rel.split('/').all(safe_segment)
+}
+
 /// A skill's text files as `relative path → text`, and how many files were
-/// left out (binary, too big, hidden or links).
+/// left out (binary, too big, hidden, links, or names other systems refuse).
 fn skill_files(dir: &Path) -> (BTreeMap<String, String>, usize) {
     fn visit(
         root: &Path,
@@ -167,15 +206,17 @@ fn skill_files(dir: &Path) -> (BTreeMap<String, String>, usize) {
         skipped: &mut usize,
     ) {
         let Ok(entries) = fs::read_dir(dir) else {
+            *skipped += 1;
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
             let Ok(meta) = fs::symlink_metadata(&path) else {
+                *skipped += 1;
                 continue;
             };
-            if name.starts_with('.') || meta.file_type().is_symlink() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !safe_segment(&name) || meta.file_type().is_symlink() {
                 *skipped += 1;
                 continue;
             }
@@ -191,23 +232,22 @@ fn skill_files(dir: &Path) -> (BTreeMap<String, String>, usize) {
                 *skipped += 1;
                 continue;
             }
-            let Ok(bytes) = fs::read(&path) else {
+            let Ok(text) = fs::read(&path).map(String::from_utf8) else {
                 *skipped += 1;
                 continue;
             };
-            let Ok(text) = String::from_utf8(bytes) else {
+            let Ok(text) = text else {
                 *skipped += 1;
                 continue;
             };
-            let rel = path
-                .strip_prefix(root)
-                .map(|p| {
-                    p.components()
-                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                        .collect::<Vec<_>>()
-                        .join("/")
-                })
-                .unwrap_or(name);
+            let Ok(rel) = path.strip_prefix(root) else {
+                continue;
+            };
+            let rel = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
             out.insert(rel, text);
         }
     }
@@ -217,129 +257,151 @@ fn skill_files(dir: &Path) -> (BTreeMap<String, String>, usize) {
     (out, skipped)
 }
 
-fn newest_mtime(dir: &Path, files: &BTreeMap<String, String>) -> i64 {
-    files
-        .keys()
-        .map(|rel| mtime_ms(&dir.join(rel)))
-        .max()
-        .unwrap_or_else(|| mtime_ms(dir))
+/// Where an item lives on this device.
+fn path_of(roots: &Roots, kind: Kind, key: &str) -> PathBuf {
+    match kind {
+        Kind::Doc => roots.docs.join(format!("{key}.json")),
+        Kind::Skill => roots.library.join("skills").join(key),
+        Kind::Agent => roots.library.join("agents").join(format!("{key}.md")),
+    }
 }
 
-/// Everything on this device that syncs. `partial` names skills with files
-/// that stay here; `too_big` names items over the size limit (not synced).
-#[derive(Debug, Default)]
-pub struct Scan {
-    pub items: BTreeMap<String, Item>,
-    pub partial: Vec<String>,
-    pub too_big: Vec<String>,
+/// Why an item on disk can't be read now; `None` when it isn't there.
+enum Read {
+    Ok(Item),
+    /// There, but not syncable right now (unreadable, not text, invalid,
+    /// too big): never treated as deleted, and never overwritten.
+    Held(String),
+    Missing,
 }
 
-pub fn scan(roots: &Roots, device: &str) -> Scan {
-    let mut out = Scan::default();
-    let add = |out: &mut Scan, item: Item| {
-        if item.data.len() > MAX_DATA {
-            out.too_big.push(item.name.clone());
-        } else {
-            out.items.insert(file_id(item.kind, &item.key), item);
-        }
+fn read_item(roots: &Roots, kind: Kind, key: &str, device: &str) -> Read {
+    let path = path_of(roots, kind, key);
+    let meta = match fs::symlink_metadata(&path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Read::Missing,
+        Err(_) => return Read::Held(key.to_string()),
     };
-    if let Ok(entries) = fs::read_dir(&roots.docs) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(id) = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .filter(|_| path.extension().is_some_and(|e| e == "json"))
-            else {
-                continue;
-            };
-            if !valid_doc_id(id) {
-                continue;
-            }
+    if meta.file_type().is_symlink() {
+        return Read::Held(key.to_string());
+    }
+    let item = |name: String, data: String, updated_at: i64| Item {
+        kind,
+        key: key.to_string(),
+        name,
+        hash: hash(&data),
+        data,
+        // A clock far ahead mustn't make an edit win every conflict.
+        updated_at: updated_at.min(now_ms()),
+        deleted: false,
+        device_id: device.to_string(),
+    };
+    let found = match kind {
+        Kind::Doc => {
             let Ok(data) = fs::read_to_string(&path) else {
-                continue;
+                return Read::Held(key.to_string());
             };
             let Ok(value) = serde_json::from_str::<Value>(&data) else {
-                continue;
+                return Read::Held(key.to_string());
             };
             let updated_at = value["updatedAt"]
                 .as_f64()
                 .map(|v| v.round() as i64)
                 .unwrap_or_else(|| mtime_ms(&path));
-            add(
-                &mut out,
-                Item {
-                    kind: Kind::Doc,
-                    key: id.to_string(),
-                    name: value["name"].as_str().unwrap_or(id).to_string(),
-                    hash: hash(&data),
-                    data,
-                    updated_at,
-                    deleted: false,
-                    device_id: device.to_string(),
-                },
-            );
+            let name = value["name"].as_str().unwrap_or(key).to_string();
+            item(name, data, updated_at)
         }
-    }
-    if let Ok(entries) = fs::read_dir(roots.library.join("skills")) {
-        for entry in entries.flatten() {
-            let dir = entry.path();
-            let id = entry.file_name().to_string_lossy().into_owned();
-            if id.starts_with('.')
-                || crate::library::check_id(&id).is_err()
-                || !dir.join("SKILL.md").is_file()
-            {
-                continue;
-            }
-            let (files, skipped) = skill_files(&dir);
-            if skipped > 0 {
-                out.partial.push(id.clone());
-            }
-            let data = serde_json::to_string(&files).unwrap_or_default();
-            add(
-                &mut out,
-                Item {
-                    kind: Kind::Skill,
-                    updated_at: newest_mtime(&dir, &files),
-                    name: id.clone(),
-                    key: id,
-                    hash: hash(&data),
-                    data,
-                    deleted: false,
-                    device_id: device.to_string(),
-                },
-            );
-        }
-    }
-    if let Ok(entries) = fs::read_dir(roots.library.join("agents")) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Some(id) = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .filter(|_| path.extension().is_some_and(|e| e == "md"))
-            else {
-                continue;
-            };
-            if id.starts_with('.') || crate::library::check_id(id).is_err() {
-                continue;
-            }
+        Kind::Agent => {
             let Ok(data) = fs::read_to_string(&path) else {
-                continue;
+                return Read::Held(key.to_string());
             };
-            add(
-                &mut out,
-                Item {
-                    kind: Kind::Agent,
-                    key: id.to_string(),
-                    name: id.to_string(),
-                    hash: hash(&data),
-                    data,
-                    updated_at: mtime_ms(&path),
-                    deleted: false,
-                    device_id: device.to_string(),
-                },
-            );
+            item(key.to_string(), data, mtime_ms(&path))
+        }
+        Kind::Skill => {
+            let (files, _) = skill_files(&path);
+            if !files.contains_key("SKILL.md") {
+                return Read::Held(key.to_string());
+            }
+            let updated_at = files
+                .keys()
+                .map(|rel| mtime_ms(&path.join(rel)))
+                .max()
+                .unwrap_or_else(|| mtime_ms(&path));
+            let data = serde_json::to_string(&files).unwrap_or_default();
+            item(key.to_string(), data, updated_at)
+        }
+    };
+    if found.data.len() > MAX_DATA {
+        Read::Held(found.name)
+    } else {
+        Read::Ok(found)
+    }
+}
+
+/// Everything on this device that syncs.
+#[derive(Debug, Default)]
+pub struct Scan {
+    pub items: BTreeMap<String, Item>,
+    /// On disk but not syncable now, by file id (with a display name).
+    pub held: BTreeMap<String, String>,
+    /// Skills with files that stay here (binary, large, hidden).
+    pub partial: Vec<String>,
+    /// Kinds whose folder couldn't be listed: nothing of that kind counts as
+    /// deleted this round.
+    pub unlisted: Vec<Kind>,
+}
+
+/// Lists a folder; `None` when it can't be read (a missing folder is empty).
+fn list_dir(dir: &Path) -> Option<Vec<fs::DirEntry>> {
+    match fs::read_dir(dir) {
+        Ok(entries) => Some(entries.flatten().collect()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Vec::new()),
+        Err(_) => None,
+    }
+}
+
+pub fn scan(roots: &Roots, device: &str) -> Scan {
+    let mut out = Scan::default();
+    let sources = [
+        (Kind::Doc, roots.docs.clone(), ".json"),
+        (Kind::Skill, roots.library.join("skills"), ""),
+        (Kind::Agent, roots.library.join("agents"), ".md"),
+    ];
+    for (kind, dir, ext) in sources {
+        let Some(entries) = list_dir(&dir) else {
+            out.unlisted.push(kind);
+            continue;
+        };
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let key = if ext.is_empty() {
+                name.as_str()
+            } else {
+                match name.strip_suffix(ext) {
+                    Some(k) => k,
+                    None => continue,
+                }
+            };
+            let valid = match kind {
+                Kind::Doc => valid_doc_id(key),
+                _ => safe_segment(key),
+            };
+            if !valid {
+                continue;
+            }
+            let id = file_id(kind, key);
+            match read_item(roots, kind, key, device) {
+                Read::Ok(item) => {
+                    if kind == Kind::Skill && skill_files(&entry.path()).1 > 0 {
+                        out.partial.push(key.to_string());
+                    }
+                    out.items.insert(id, item);
+                }
+                Read::Held(name) => {
+                    out.held.insert(id, name);
+                }
+                Read::Missing => {}
+            }
         }
     }
     out
@@ -348,36 +410,56 @@ pub fn scan(roots: &Roots, device: &str) -> Scan {
 // ---------------------------------------------------------------------------
 // Writing what arrives
 
-fn safe_rel(rel: &str) -> bool {
-    !rel.is_empty()
-        && !rel.starts_with('/')
-        && !rel.contains('\\')
-        && !rel.contains(':')
-        && rel
-            .split('/')
-            .all(|p| !p.is_empty() && p != "." && p != ".." && !p.starts_with('.'))
-}
-
 fn check_key(kind: Kind, key: &str) -> std::result::Result<(), String> {
     let ok = match kind {
         Kind::Doc => valid_doc_id(key),
-        Kind::Skill | Kind::Agent => crate::library::check_id(key).is_ok() && !key.starts_with('.'),
+        Kind::Skill | Kind::Agent => safe_segment(key),
     };
     if ok {
         Ok(())
     } else {
-        Err(format!("bad key: {key}"))
+        Err(crate::tr!(
+            "이름을 쓸 수 없어요: {key}",
+            "Unusable name: {key}"
+        ))
     }
 }
 
+/// Refuses to write through a link that is already on the way to `path`
+/// (from `root` down), which could point anywhere.
+fn no_links(root: &Path, path: &Path) -> std::result::Result<(), String> {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return Err("outside the folder".into());
+    };
+    let mut at = root.to_path_buf();
+    for part in rel.components() {
+        at.push(part);
+        if fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(crate::tr!(
+                "링크(바로가기)가 있어서 건너뛰었어요: {}",
+                "Skipped because of a link: {}",
+                at.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Puts `item` in place on this device, or removes it if it's deleted.
-pub fn apply(roots: &Roots, item: &Item) -> std::result::Result<(), String> {
+/// Returns a note when a deleted skill's folder was kept because it still
+/// holds files that never sync.
+pub fn apply(roots: &Roots, item: &Item) -> std::result::Result<Option<String>, String> {
     check_key(item.kind, &item.key)?;
+    let path = path_of(roots, item.kind, &item.key);
+    let root = match item.kind {
+        Kind::Doc => roots.docs.clone(),
+        _ => roots.library.clone(),
+    };
+    no_links(&root, &path)?;
     match item.kind {
         Kind::Doc => {
-            let path = roots.docs.join(format!("{}.json", item.key));
             if item.deleted {
-                return ops::remove_path(&path);
+                return ops::remove_path(&path).map(|_| None);
             }
             let mut value: Value = serde_json::from_str(&item.data).map_err(|e| e.to_string())?;
             if !value.is_object() {
@@ -385,49 +467,69 @@ pub fn apply(roots: &Roots, item: &Item) -> std::result::Result<(), String> {
             }
             value["id"] = Value::from(item.key.clone());
             fs::create_dir_all(&roots.docs).map_err(|e| e.to_string())?;
-            ops::write_atomic(
-                &path,
-                serde_json::to_string(&value).map_err(|e| e.to_string())?,
-            )
+            let text = serde_json::to_string(&value).map_err(|e| e.to_string())?;
+            ops::write_atomic(&path, text).map(|_| None)
         }
         Kind::Agent => {
-            let path = roots
-                .library
-                .join("agents")
-                .join(format!("{}.md", item.key));
             if item.deleted {
-                return ops::remove_path(&path);
+                return ops::remove_path(&path).map(|_| None);
             }
             fs::create_dir_all(roots.library.join("agents")).map_err(|e| e.to_string())?;
-            ops::write_atomic(&path, &item.data)
+            ops::write_atomic(&path, &item.data).map(|_| None)
         }
         Kind::Skill => {
-            let dir = roots.library.join("skills").join(&item.key);
+            let here = skill_files(&path).0;
             if item.deleted {
-                return ops::remove_path(&dir);
+                // Only what syncs goes; anything else keeps the folder.
+                for rel in here.keys() {
+                    ops::remove_path(&path.join(rel))?;
+                }
+                remove_empty_dirs(&path);
+                return Ok(path.exists().then(|| item.key.clone()));
             }
             let files: BTreeMap<String, String> =
                 serde_json::from_str(&item.data).map_err(|e| e.to_string())?;
-            if !files.contains_key("SKILL.md") || !files.keys().all(|r| safe_rel(r)) {
-                return Err("bad skill".into());
+            let mut lower = BTreeSet::new();
+            let clash = files.keys().any(|r| !lower.insert(r.to_lowercase()));
+            if !files.contains_key("SKILL.md") || clash || !files.keys().all(|r| safe_rel(r)) {
+                return Err(crate::tr!(
+                    "skill 파일 이름이 올바르지 않아요: {}",
+                    "A skill file name isn't valid: {}",
+                    item.key
+                ));
             }
             for (rel, text) in &files {
-                let path = dir.join(rel);
-                if let Some(parent) = path.parent() {
+                let file = path.join(rel);
+                no_links(&root, &file)?;
+                if let Some(parent) = file.parent() {
                     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
                 }
-                ops::write_atomic(&path, text)?;
+                ops::write_atomic(&file, text)?;
             }
-            // Text files the other device no longer has; binaries and other
-            // files that never sync stay.
-            for rel in skill_files(&dir).0.keys() {
+            // Text files the other device no longer has; files that never
+            // sync (binary, large, hidden) stay.
+            for rel in here.keys() {
                 if !files.contains_key(rel) {
-                    ops::remove_path(&dir.join(rel))?;
+                    ops::remove_path(&path.join(rel))?;
                 }
             }
-            Ok(())
+            remove_empty_dirs(&path);
+            Ok(None)
         }
     }
+}
+
+/// Removes empty folders below and including `dir`.
+fn remove_empty_dirs(dir: &Path) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if fs::symlink_metadata(&path).is_ok_and(|m| m.is_dir()) {
+                remove_empty_dirs(&path);
+            }
+        }
+    }
+    let _ = fs::remove_dir(dir);
 }
 
 /// Saves `item`'s content as a new item next to the original, named with
@@ -438,35 +540,36 @@ pub fn keep_copy(
     label: &str,
     stamp: i64,
 ) -> std::result::Result<String, String> {
-    let suffix = format!("{stamp:x}");
-    match item.kind {
+    // A fresh key that isn't taken (never derived by cutting the original).
+    let mut n = stamp;
+    let key = loop {
+        let key = match item.kind {
+            Kind::Doc => format!("d{n:x}"),
+            _ => format!("{}-conflict-{n:x}", item.key),
+        };
+        if key != item.key && fs::symlink_metadata(path_of(roots, item.kind, &key)).is_err() {
+            break key;
+        }
+        n += 1;
+    };
+    let name = format!("{} ({label})", item.name);
+    let data = match item.kind {
         Kind::Doc => {
-            let mut key = format!("{}-c{suffix}", item.key);
-            key.truncate(64);
-            let name = format!("{} ({label})", item.name);
             let mut value: Value = serde_json::from_str(&item.data).map_err(|e| e.to_string())?;
             value["name"] = Value::from(name.clone());
-            let copy = Item {
-                key,
-                data: serde_json::to_string(&value).map_err(|e| e.to_string())?,
-                deleted: false,
-                ..item.clone()
-            };
-            apply(roots, &copy)?;
-            Ok(name)
+            serde_json::to_string(&value).map_err(|e| e.to_string())?
         }
-        Kind::Skill | Kind::Agent => {
-            let key = format!("{}-conflict-{suffix}", item.key);
-            let copy = Item {
-                key: key.clone(),
-                name: key.clone(),
-                deleted: false,
-                ..item.clone()
-            };
-            apply(roots, &copy)?;
-            Ok(format!("{key} ({label})"))
-        }
-    }
+        _ => item.data.clone(),
+    };
+    let copy = Item {
+        name: name.clone(),
+        hash: hash(&data),
+        data,
+        deleted: false,
+        ..item.clone()
+    };
+    apply(roots, &Item { key, ..copy })?;
+    Ok(name)
 }
 
 // ---------------------------------------------------------------------------
@@ -491,7 +594,6 @@ pub fn from_fields(f: &Value) -> Option<Item> {
     let data = s("data").unwrap_or_default();
     let deleted = f["deleted"]["booleanValue"].as_bool().unwrap_or(false);
     let key = s("key")?;
-    check_key(kind, &key).ok()?;
     Some(Item {
         kind,
         name: s("name").unwrap_or_else(|| key.clone()),
@@ -525,7 +627,7 @@ pub enum Action {
 }
 
 pub fn decide(local: Option<&Item>, base: Option<&Base>, remote: &Item) -> Action {
-    let unchanged_here = |l: Option<&Item>| match (l, base) {
+    let unchanged_here = match (local, base) {
         (Some(l), Some(b)) => !b.deleted && l.hash == b.hash,
         (None, Some(b)) => b.deleted,
         (None, None) => true,
@@ -536,7 +638,7 @@ pub fn decide(local: Option<&Item>, base: Option<&Base>, remote: &Item) -> Actio
     match local {
         Some(l) if !remote.deleted && l.hash == remote.hash => Action::Agree,
         None if remote.deleted => Action::Agree,
-        _ if unchanged_here(local) => Action::Take,
+        _ if unchanged_here => Action::Take,
         _ if remote_same_as_base => Action::Keep,
         // Deleted here while they edited it: bring theirs back.
         None => Action::Take,
@@ -562,18 +664,17 @@ pub struct Conflict {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Outcome {
-    pub docs: bool,
+    /// Documents this round changed on disk (by id).
+    pub doc_ids: Vec<String>,
     pub library: bool,
     pub conflicts: Vec<Conflict>,
     pub partial: Vec<String>,
-    pub too_big: Vec<String>,
-}
-
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    /// Items that stay out of sync for now (too big, unreadable, invalid).
+    pub held: Vec<String>,
+    /// Items from other devices not applied here: `(name, why)`.
+    pub failed: Vec<(String, String)>,
+    /// Deleted skills whose folders were kept for files that never sync.
+    pub kept: Vec<String>,
 }
 
 fn other(e: String) -> Error {
@@ -593,7 +694,8 @@ pub fn exchange(
     let mut outcome = Outcome::default();
 
     // Another account, or another library folder: nothing here is known to
-    // the server yet, and nothing missing here was deleted on purpose.
+    // the server yet, and nothing missing here was deleted on purpose. Read
+    // the server from the start again so every item meets what is here.
     if state.uid.as_deref() != Some(session.uid.as_str()) {
         state = State {
             uid: Some(session.uid.clone()),
@@ -604,11 +706,14 @@ pub fn exchange(
     if state.library_dir.as_deref() != Some(library_dir.as_str()) {
         state.bases.retain(|_, b| b.kind == Kind::Doc);
         state.library_dir = Some(library_dir);
+        state.cursor = None;
     }
 
-    let mut local = scan(roots, device);
+    let local = scan(roots, device);
     // Ours won a conflict: upload it as later than theirs.
     let mut bump: BTreeMap<String, i64> = BTreeMap::new();
+    // Something was skipped or refused: read everything again next round.
+    let mut again = false;
 
     // 1. Take what other devices changed.
     let mut cursor = state.cursor.as_deref().and_then(Cursor::decode);
@@ -622,84 +727,24 @@ pub fn exchange(
             if id != file_id(remote.kind, &remote.key) {
                 continue;
             }
-            let here = local.items.get(&id).cloned();
-            let base = state.bases.get(&id).cloned();
-            let action = decide(here.as_ref(), base.as_ref(), &remote);
-            let changed_here = |o: &mut Outcome| match remote.kind {
-                Kind::Doc => o.docs = true,
-                _ => o.library = true,
-            };
-            let stamp = now_ms();
-            match action {
-                Action::Agree => {}
-                Action::Take => {
-                    apply(roots, &remote).map_err(other)?;
-                    changed_here(&mut outcome);
-                    if let (None, Some(b)) = (&here, &base)
-                        && !b.deleted
-                        && !remote.deleted
-                    {
-                        outcome.conflicts.push(Conflict {
-                            kind: remote.kind,
-                            name: remote.name.clone(),
-                            copy: None,
-                            revived: true,
-                        });
-                    }
+            match take(
+                roots,
+                &local,
+                &state,
+                &id,
+                &remote,
+                device,
+                &mut outcome,
+                &mut bump,
+            ) {
+                Ok(()) => {
+                    state.bases.insert(id, Base::of(&remote));
                 }
-                Action::Keep => {
-                    if remote.deleted && here.is_some() {
-                        outcome.conflicts.push(Conflict {
-                            kind: remote.kind,
-                            name: remote.name.clone(),
-                            copy: None,
-                            revived: true,
-                        });
-                        bump.insert(id.clone(), remote.updated_at + 1);
-                    }
-                }
-                Action::TakeAndCopyOurs => {
-                    let ours = here.clone().expect("local exists");
-                    let copy =
-                        keep_copy(roots, &ours, &crate::tr!("이 기기", "this device"), stamp)
-                            .map_err(other)?;
-                    apply(roots, &remote).map_err(other)?;
-                    changed_here(&mut outcome);
-                    outcome.conflicts.push(Conflict {
-                        kind: remote.kind,
-                        name: remote.name.clone(),
-                        copy: Some(copy),
-                        revived: false,
-                    });
-                }
-                Action::KeepAndCopyTheirs => {
-                    let copy = keep_copy(
-                        roots,
-                        &remote,
-                        &crate::tr!("다른 기기", "other device"),
-                        stamp,
-                    )
-                    .map_err(other)?;
-                    changed_here(&mut outcome);
-                    outcome.conflicts.push(Conflict {
-                        kind: remote.kind,
-                        name: remote.name.clone(),
-                        copy: Some(copy),
-                        revived: false,
-                    });
-                    bump.insert(id.clone(), remote.updated_at + 1);
+                Err(why) => {
+                    outcome.failed.push((remote.name.clone(), why));
+                    again = true;
                 }
             }
-            // The server's version is now the common ground.
-            state.bases.insert(
-                id.clone(),
-                Base {
-                    kind: remote.kind,
-                    key: remote.key.clone(),
-                    hash: remote.hash.clone(),
-                    deleted: remote.deleted,
-                },
-            );
         }
         if let Some(last) = last {
             state.cursor = Some(last.encode());
@@ -711,12 +756,10 @@ pub fn exchange(
         }
     }
 
-    // 2. Upload what changed here (re-read: taking and copying changed it).
-    if outcome.docs || outcome.library || !outcome.conflicts.is_empty() {
-        local = scan(roots, device);
-    }
+    // 2. Upload what changed here (read again: taking and copying changed it).
+    let local = scan(roots, device);
     outcome.partial = local.partial.clone();
-    outcome.too_big = local.too_big.clone();
+    outcome.held = local.held.values().cloned().collect();
     let mut uploads: Vec<(String, Item)> = Vec::new();
     for (id, item) in &local.items {
         let base = state.bases.get(id);
@@ -724,33 +767,48 @@ pub fn exchange(
             continue;
         }
         let mut item = item.clone();
-        if let Some(at) = bump.get(id) {
-            item.updated_at = item.updated_at.max(*at);
-        }
+        // Later than the server's copy, or the rules refuse it.
+        let floor = base
+            .map_or(0, |b| b.updated_at + 1)
+            .max(bump.get(id).copied().unwrap_or(0));
+        item.updated_at = item.updated_at.max(floor);
         uploads.push((id.clone(), item));
     }
     for (id, base) in &state.bases {
-        if !base.deleted && !local.items.contains_key(id) {
-            uploads.push((
-                id.clone(),
-                Item {
-                    kind: base.kind,
-                    key: base.key.clone(),
-                    name: base.key.clone(),
-                    data: String::new(),
-                    hash: String::new(),
-                    updated_at: now_ms(),
-                    deleted: true,
-                    device_id: device.to_string(),
-                },
-            ));
+        // Deleted here: only when its folder could be listed and the item
+        // is really gone (not just unreadable for now).
+        if base.deleted
+            || local.items.contains_key(id)
+            || local.held.contains_key(id)
+            || local.unlisted.contains(&base.kind)
+            || fs::symlink_metadata(path_of(roots, base.kind, &base.key)).is_ok()
+        {
+            continue;
         }
+        uploads.push((
+            id.clone(),
+            Item {
+                kind: base.kind,
+                key: base.key.clone(),
+                name: if base.name.is_empty() {
+                    base.key.clone()
+                } else {
+                    base.name.clone()
+                },
+                data: String::new(),
+                hash: String::new(),
+                updated_at: now_ms().max(base.updated_at + 1),
+                deleted: true,
+                device_id: device.to_string(),
+            },
+        ));
     }
     let mut start = 0;
     while start < uploads.len() {
         let mut end = start;
         let mut bytes = 0;
         while end < uploads.len()
+            && end - start < UPLOAD_COUNT
             && (end == start || bytes + uploads[end].1.data.len() < UPLOAD_BYTES)
         {
             bytes += uploads[end].1.data.len();
@@ -763,23 +821,132 @@ pub fn exchange(
             .collect();
         let accepted = client.put(session, COLLECTION, &docs)?;
         for ((id, item), ok) in chunk.iter().zip(accepted) {
-            // Refused: a newer copy is on the server; the next pull decides.
             if ok {
-                state.bases.insert(
-                    id.clone(),
-                    Base {
-                        kind: item.kind,
-                        key: item.key.clone(),
-                        hash: item.hash.clone(),
-                        deleted: item.deleted,
-                    },
-                );
+                state.bases.insert(id.clone(), Base::of(item));
+            } else {
+                // A newer copy is on the server: meet it on the next round.
+                again = true;
             }
         }
         save_state(state_path, &state).map_err(other)?;
         start = end;
     }
+
+    if again {
+        state.cursor = None;
+        save_state(state_path, &state).map_err(other)?;
+    }
     Ok(outcome)
+}
+
+/// Applies one item from the server according to [`decide`].
+#[allow(clippy::too_many_arguments)]
+fn take(
+    roots: &Roots,
+    local: &Scan,
+    state: &State,
+    id: &str,
+    remote: &Item,
+    device: &str,
+    outcome: &mut Outcome,
+    bump: &mut BTreeMap<String, i64>,
+) -> std::result::Result<(), String> {
+    if let Some(name) = local.held.get(id) {
+        return Err(crate::tr!(
+            "이 기기의 '{name}'을(를) 지금 읽을 수 없어서 건너뛰었어요",
+            "Skipped: '{name}' on this device can't be read right now"
+        ));
+    }
+    let here = local.items.get(id);
+    // A name that differs only in case is the same file on Windows and macOS.
+    if here.is_none()
+        && !remote.deleted
+        && local.items.values().any(|i| {
+            i.kind == remote.kind
+                && i.key != remote.key
+                && i.key.to_lowercase() == remote.key.to_lowercase()
+        })
+    {
+        return Err(crate::tr!(
+            "대소문자만 다른 같은 이름이 이 기기에 있어요",
+            "This device has the same name in different case"
+        ));
+    }
+    // The user may have saved since the scan: then it's a conflict, next round.
+    let now = match read_item(roots, remote.kind, &remote.key, device) {
+        Read::Ok(i) => Some(i.hash),
+        Read::Missing => None,
+        Read::Held(_) => Some(String::new()),
+    };
+    if now != here.map(|i| i.hash.clone()) {
+        return Err(crate::tr!(
+            "방금 바뀌어서 다음 동기화 때 맞춰요",
+            "Just changed; it's matched on the next sync"
+        ));
+    }
+    let base = state.bases.get(id);
+    let stamp = now_ms();
+    let changed = |o: &mut Outcome| match remote.kind {
+        Kind::Doc => o.doc_ids.push(remote.key.clone()),
+        _ => o.library = true,
+    };
+    let revived = |o: &mut Outcome, name: &str| {
+        o.conflicts.push(Conflict {
+            kind: remote.kind,
+            name: name.to_string(),
+            copy: None,
+            revived: true,
+        })
+    };
+    match decide(here, base, remote) {
+        Action::Agree => {}
+        Action::Take => {
+            if let Some(kept) = apply(roots, remote)? {
+                outcome.kept.push(kept);
+            }
+            changed(outcome);
+            if here.is_none() && base.is_some_and(|b| !b.deleted) && !remote.deleted {
+                revived(outcome, &remote.name);
+            }
+        }
+        Action::Keep => {
+            if remote.deleted
+                && let Some(h) = here
+            {
+                revived(outcome, &h.name);
+                bump.insert(id.to_string(), remote.updated_at + 1);
+            }
+        }
+        Action::TakeAndCopyOurs => {
+            let ours = here.ok_or("missing")?;
+            let copy = keep_copy(roots, ours, &crate::tr!("이 기기", "this device"), stamp)?;
+            apply(roots, remote)?;
+            changed(outcome);
+            outcome.conflicts.push(Conflict {
+                kind: remote.kind,
+                name: remote.name.clone(),
+                copy: Some(copy),
+                revived: false,
+            });
+        }
+        Action::KeepAndCopyTheirs => {
+            let copy = keep_copy(
+                roots,
+                remote,
+                &crate::tr!("다른 기기", "other device"),
+                stamp,
+            )?;
+            changed(outcome);
+            outcome.conflicts.push(Conflict {
+                kind: remote.kind,
+                name: remote.name.clone(),
+                copy: Some(copy),
+                revived: false,
+            });
+            bump.insert(id.to_string(), remote.updated_at + 1);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -800,12 +967,7 @@ mod tests {
     }
 
     fn base_of(i: &Item) -> Base {
-        Base {
-            kind: i.kind,
-            key: i.key.clone(),
-            hash: i.hash.clone(),
-            deleted: i.deleted,
-        }
+        Base::of(i)
     }
 
     #[test]
@@ -920,12 +1082,15 @@ mod tests {
         let name = keep_copy(&roots, d, "다른 기기", 255).unwrap();
         assert_eq!(name, "Plan (다른 기기)");
         let copy: Value =
-            serde_json::from_str(&fs::read_to_string(roots.docs.join("dabc-cff.json")).unwrap())
+            serde_json::from_str(&fs::read_to_string(roots.docs.join("dff.json")).unwrap())
                 .unwrap();
         assert_eq!(
             (copy["id"].as_str(), copy["name"].as_str()),
-            (Some("dabc-cff"), Some("Plan (다른 기기)"))
+            (Some("dff"), Some("Plan (다른 기기)"))
         );
+        // The next copy at the same moment takes a fresh id.
+        keep_copy(&roots, d, "다른 기기", 255).unwrap();
+        assert!(roots.docs.join("d100.json").is_file());
 
         let gone = Item {
             deleted: true,
@@ -933,6 +1098,98 @@ mod tests {
         };
         apply(&roots, &gone).unwrap();
         assert!(!roots.library.join("agents/reviewer.md").exists());
+    }
+
+    #[test]
+    fn unreadable_items_are_held_not_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let roots = Roots {
+            docs: tmp.path().join("compositions"),
+            library: tmp.path().join("library"),
+        };
+        fs::create_dir_all(&roots.docs).unwrap();
+        fs::write(roots.docs.join("dbroken.json"), "{ not json").unwrap();
+        fs::write(
+            roots.docs.join("dbig.json"),
+            format!("{{\"x\":\"{}\"}}", "a".repeat(MAX_DATA)),
+        )
+        .unwrap();
+        let skill = roots.library.join("skills/no-skill-md");
+        fs::create_dir_all(&skill).unwrap();
+        fs::write(skill.join("notes.md"), "x").unwrap();
+        let s = scan(&roots, "me");
+        assert!(s.items.is_empty());
+        assert_eq!(s.held.len(), 3);
+        assert!(s.unlisted.is_empty());
+
+        // A deleted skill keeps the files that never sync.
+        let files: BTreeMap<String, String> = [("SKILL.md".to_string(), "x".to_string())].into();
+        let live = item(
+            Kind::Skill,
+            "keep",
+            &serde_json::to_string(&files).unwrap(),
+            0,
+        );
+        apply(&roots, &live).unwrap();
+        fs::write(roots.library.join("skills/keep/logo.png"), [0u8, 159]).unwrap();
+        let kept = apply(
+            &roots,
+            &Item {
+                deleted: true,
+                ..live.clone()
+            },
+        )
+        .unwrap();
+        assert_eq!(kept.as_deref(), Some("keep"));
+        assert!(!roots.library.join("skills/keep/SKILL.md").exists());
+        assert!(roots.library.join("skills/keep/logo.png").exists());
+        // Without such files the folder goes.
+        apply(
+            &roots,
+            &item(
+                Kind::Skill,
+                "gone",
+                &serde_json::to_string(&files).unwrap(),
+                0,
+            ),
+        )
+        .unwrap();
+        let gone = item(Kind::Skill, "gone", "", 0);
+        assert_eq!(
+            apply(
+                &roots,
+                &Item {
+                    deleted: true,
+                    ..gone
+                }
+            )
+            .unwrap(),
+            None
+        );
+        assert!(!roots.library.join("skills/gone").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_in_the_way_are_not_written_through() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let roots = Roots {
+            docs: tmp.path().join("c"),
+            library: tmp.path().join("l"),
+        };
+        fs::create_dir_all(roots.library.join("skills")).unwrap();
+        std::os::unix::fs::symlink(&outside, roots.library.join("skills/s")).unwrap();
+        let files: BTreeMap<String, String> = [("SKILL.md".to_string(), "x".to_string())].into();
+        assert!(
+            apply(
+                &roots,
+                &item(Kind::Skill, "s", &serde_json::to_string(&files).unwrap(), 0)
+            )
+            .is_err()
+        );
+        assert!(!outside.join("SKILL.md").exists());
     }
 
     #[test]
@@ -956,6 +1213,22 @@ mod tests {
         );
         assert!(apply(&roots, &item(Kind::Agent, "../x", "x", 0)).is_err());
         assert!(apply(&roots, &item(Kind::Doc, "Bad Id", "{}", 0)).is_err());
+        assert!(
+            apply(&roots, &item(Kind::Agent, "con", "x", 0)).is_err(),
+            "Windows reserved name"
+        );
+        let case: BTreeMap<String, String> = [
+            ("SKILL.md".to_string(), "x".to_string()),
+            ("skill.md".to_string(), "y".to_string()),
+        ]
+        .into();
+        assert!(
+            apply(
+                &roots,
+                &item(Kind::Skill, "c", &serde_json::to_string(&case).unwrap(), 0)
+            )
+            .is_err()
+        );
         assert!(!tmp.path().join("escape.md").exists());
     }
 
@@ -986,6 +1259,8 @@ mod tests {
                 key: "dabc".into(),
                 hash: hash(v1),
                 deleted: false,
+                name: "Plan".into(),
+                updated_at: 1,
             },
         );
         save_state(&state_path, &state).unwrap();
@@ -1057,7 +1332,7 @@ mod tests {
                 .unwrap()
                 .starts_with("Plan (")
         );
-        assert!(outcome.docs && outcome.library);
+        assert!(!outcome.doc_ids.is_empty() && outcome.library);
         assert!(roots.library.join("agents/reviewer.md").is_file());
         // Only the copy is new here, so only it is uploaded.
         let seen = seen.lock().unwrap();

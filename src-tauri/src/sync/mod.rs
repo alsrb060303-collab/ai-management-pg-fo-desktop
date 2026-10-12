@@ -264,20 +264,32 @@ fn cycle(app: &AppHandle, sync: &Sync, last_sync: Option<i64>) -> firebase::Resu
         .meta("device_id")
         .map_err(Error::Other)?
         .unwrap_or_default();
-    let outcome = files::exchange(
+    // Documents and the library don't hold up the memos: their error is
+    // reported, but the memos above are synced either way.
+    let files = files::exchange(
         &client,
         &session,
         &roots,
         &data_dir.join("sync-files.json"),
         &device,
-    )?;
-    if outcome.docs
-        || outcome.library
-        || !outcome.conflicts.is_empty()
-        || !outcome.too_big.is_empty()
-    {
-        let _ = app.emit(FILES_EVENT, &outcome);
-    }
+    );
+    let outcome = match files {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            return Ok(Status {
+                state: State::Error,
+                uid,
+                last_sync: Some(now_ms()),
+                message: Some(crate::tr!(
+                    "메모는 동기화했지만 문서·라이브러리는 못 했어요: {}",
+                    "Notes synced, but documents and the library didn't: {}",
+                    String::from(e)
+                )),
+            });
+        }
+    };
+    // Every round, so the app always shows the current partial/held lists.
+    let _ = app.emit(FILES_EVENT, &outcome);
 
     Ok(Status {
         state: State::Idle,

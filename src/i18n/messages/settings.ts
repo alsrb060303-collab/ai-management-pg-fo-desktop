@@ -64,7 +64,12 @@ export const ko = {
   "sync.notice.copy":
     "'{name}'을(를) 두 기기에서 같이 고쳐서, 나중에 고친 쪽을 남기고 다른 쪽은 '{copy}'(으)로 따로 저장했어요.",
   "sync.notice.revived": "'{name}'을(를) 한쪽에서 지우고 다른 쪽에서 고쳐서, 고친 내용을 남겼어요.",
-  "sync.notice.tooBig": "너무 커서(900KB 초과) 동기화하지 못했어요: {names}",
+  "sync.notice.held":
+    "지금은 동기화하지 못하는 항목이 있어요(900KB 초과, 읽을 수 없음, 형식 오류). 다른 기기의 사본은 그대로 둬요: {names}",
+  "sync.notice.failed": "다른 기기의 '{name}'을(를) 이 기기에 적용하지 못했어요: {why}",
+  "sync.notice.kept":
+    "다른 기기에서 지운 skill이지만, 동기화되지 않는 파일(이미지 등)이 있어 폴더는 남겼어요: {names}",
+  "sync.otherDevice": "다른 기기",
   "sync.notice.dismiss": "확인",
   "settings.library": "라이브러리",
   "settings.libraryDir": "라이브러리 폴더",
@@ -143,7 +148,12 @@ export const en: Messages<typeof ko> = {
     "'{name}' was changed on two devices. The later edit was kept and the other was saved as '{copy}'.",
   "sync.notice.revived":
     "'{name}' was deleted on one device and edited on another, so the edit was kept.",
-  "sync.notice.tooBig": "Too big to sync (over 900 KB): {names}",
+  "sync.notice.held":
+    "Some items can't sync right now (over 900 KB, unreadable or invalid). Copies on other devices are left alone: {names}",
+  "sync.notice.failed": "Couldn't apply '{name}' from another device here: {why}",
+  "sync.notice.kept":
+    "A skill deleted on another device still has files here that don't sync (images and such), so its folder stays: {names}",
+  "sync.otherDevice": "other device",
   "sync.notice.dismiss": "OK",
   "settings.library": "Library",
   "settings.libraryDir": "Library folder",
