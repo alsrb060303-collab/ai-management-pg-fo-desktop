@@ -34,6 +34,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | GitHub | GitHub App + Device Flow 로그인 | 클라이언트 시크릿 불필요(오픈소스 OK), 레포 단위 권한 |
 | 배포 | GitHub Releases + Tauri updater, NSIS 설치 파일 | 무료 |
 | 외부 블록을 사용자 파일에 써넣을 때의 저작자 표시(NOTICE) 의무 | 공개 전 법률 검토 |
+| 설치 파일에 서드파티 라이선스 전문 동봉(블록 LICENSE, npm·Rust 의존성, 글꼴)과 앱 안 "오픈소스 라이선스" 화면. 지금은 저장소에만 있음 | 공개 배포 전 필수 |
 | React Flow의 WebKitGTK(Linux)·WebView2 실제 조작(드래그, 연결 거부) | 실기 테스트 필요 |
 | 작업 중 사용량 한도에 걸리면 | 풀리는 시각에 바로 이어서 하도록 예약(send_later) |
 | 코드 서명 | 처음엔 미서명 → 공개 릴리스 후 SignPath Foundation(OSS 무료) 신청 | 비용 0 |
