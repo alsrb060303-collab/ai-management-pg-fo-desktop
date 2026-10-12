@@ -2,6 +2,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { FileText, FolderOpen, Plus, RefreshCw, RotateCcw, Save, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ResizeHandle, usePanelWidth } from "../../components/Resizable";
 import { PageHeader } from "../../components/ui";
 import { type MessageKey, useT } from "../../i18n";
 import { useProjectStore } from "../../store/project";
@@ -65,6 +66,7 @@ export function ProjectDocsPage() {
   const choose = useProjectStore((s) => s.choose);
   const { entries, loading, error, rel, load, refresh, dismissError } = useProjectDocsStore();
   const [creating, setCreating] = useState(false);
+  const docsPanel = usePanelWidth("project-docs", 256, 180, 520);
 
   useEffect(() => {
     void load(project);
@@ -128,36 +130,39 @@ export function ProjectDocsPage() {
             </div>
           )}
           <div className="flex min-h-0 flex-1 gap-4">
-            <aside className="w-64 shrink-0 space-y-3 overflow-y-auto">
-              <button
-                type="button"
-                onClick={() => setCreating(!creating)}
-                className="flex w-full items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs hover:border-border-strong"
-              >
-                <Plus size={13} />
-                {t("files.new")}
-              </button>
-              {creating && <NewDocForm onDone={() => setCreating(false)} />}
-              {!loading && entries.length === 0 && (
-                <p className="text-xs text-text-muted">{t("files.empty")}</p>
-              )}
-              {KINDS.map(({ kind, label }) => {
-                const items = entries.filter((e) => e.kind === kind);
-                if (!items.length) return null;
-                return (
-                  <section key={kind}>
-                    <h3 className="mb-1 text-[11px] font-semibold text-text-muted">
-                      {t(label)} <span className="font-normal">{items.length}</span>
-                    </h3>
-                    <ul className="space-y-px">
-                      {items.map((entry) => (
-                        <DocRow key={entry.rel} entry={entry} active={entry.rel === rel} />
-                      ))}
-                    </ul>
-                  </section>
-                );
-              })}
-            </aside>
+            <div className="relative shrink-0" style={{ width: docsPanel.width }}>
+              <ResizeHandle side="right" {...docsPanel.handle} />
+              <aside className="h-full space-y-3 overflow-y-auto pr-2">
+                <button
+                  type="button"
+                  onClick={() => setCreating(!creating)}
+                  className="flex w-full items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2.5 py-1.5 text-xs hover:border-border-strong"
+                >
+                  <Plus size={13} />
+                  {t("files.new")}
+                </button>
+                {creating && <NewDocForm onDone={() => setCreating(false)} />}
+                {!loading && entries.length === 0 && (
+                  <p className="text-xs text-text-muted">{t("files.empty")}</p>
+                )}
+                {KINDS.map(({ kind, label }) => {
+                  const items = entries.filter((e) => e.kind === kind);
+                  if (!items.length) return null;
+                  return (
+                    <section key={kind}>
+                      <h3 className="mb-1 text-[11px] font-semibold text-text-muted">
+                        {t(label)} <span className="font-normal">{items.length}</span>
+                      </h3>
+                      <ul className="space-y-px">
+                        {items.map((entry) => (
+                          <DocRow key={entry.rel} entry={entry} active={entry.rel === rel} />
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })}
+              </aside>
+            </div>
             <div className="flex min-w-0 flex-1 flex-col">
               {rel ? (
                 <Editor project={project} />

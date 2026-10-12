@@ -4,6 +4,7 @@ import { useReactFlow } from "@xyflow/react";
 import { ChevronDown, ExternalLink, Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ResizeHandle, usePanelWidth } from "../../components/Resizable";
 import { type MessageKey, useT } from "../../i18n";
 import {
   type Block,
@@ -127,9 +128,14 @@ export function Palette() {
   };
 
   const addOutputNode = (target: Target) => addOutput(target, place.nearCenter());
+  const panel = usePanelWidth("composer-palette", 256, 200, 480);
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+    <aside
+      className="relative flex shrink-0 flex-col border-r border-border bg-sidebar"
+      style={{ width: panel.width }}
+    >
+      <ResizeHandle side="right" {...panel.handle} />
       <div className="space-y-2 p-3">
         <label className="flex h-9 items-center gap-2 rounded-lg border border-border bg-surface-raised px-2.5 focus-within:border-border-strong">
           <Search size={15} className="shrink-0 text-text-subtle" />

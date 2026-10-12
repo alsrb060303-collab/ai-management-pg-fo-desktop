@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Logo } from "../components/Logo";
+import { ResizeHandle, usePanelWidth } from "../components/Resizable";
 import { IconButton } from "../components/ui";
 import { type MessageKey, useT } from "../i18n";
 import { useComposerStore } from "../store/composer";
@@ -41,13 +42,16 @@ export function NavSidebar() {
   const openId = useComposerStore((s) => s.doc?.id);
   const { newDoc, openDoc, deleteDoc } = useComposerStore.getState();
   const t = useT();
+  const panel = usePanelWidth("nav", 256, 200, 420);
 
   return (
     <aside
-      className={`flex shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-200 ${
-        collapsed ? "w-[52px]" : "w-64"
+      className={`relative flex shrink-0 flex-col border-r border-border bg-sidebar ${
+        panel.dragging ? "" : "transition-[width] duration-200"
       }`}
+      style={{ width: collapsed ? 52 : panel.width }}
     >
+      {!collapsed && <ResizeHandle side="right" {...panel.handle} />}
       <div className="flex h-12 shrink-0 items-center gap-1 px-2.5">
         {!collapsed && (
           <button
