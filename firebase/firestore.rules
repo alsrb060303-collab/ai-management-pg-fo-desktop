@@ -1,6 +1,7 @@
 rules_version = '2';
 
-// Memo sync (Phase 8b). Each account reads and writes only its own items,
+// Memo sync (Phase 8b), plus composer documents and library items
+// (`files`). Each account reads and writes only its own items,
 // and only after the owner added it to the allow list: a document
 // `allowed/{uid}` created by hand in the Firebase console (Phase 8c will let
 // payments fill this list). The newer `updatedAt` wins; the device id breaks
@@ -32,6 +33,37 @@ service cloud.firestore {
           && d.done is bool && d.deleted is bool
           && d.position is number
           && d.createdAt is int && d.updatedAt is int
+          && d.deviceId is string && d.deviceId.size() <= 100
+          && d.syncedAt == request.time;
+      }
+
+      function newer(d) {
+        return resource == null
+          || d.updatedAt > resource.data.updatedAt
+          || (d.updatedAt == resource.data.updatedAt && d.deviceId >= resource.data.deviceId);
+      }
+
+      allow read: if allowed() && request.auth.uid == userId;
+      allow create, update: if allowed() && request.auth.uid == userId
+        && valid(request.resource.data) && newer(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Composer documents and library skills/subagents: one document each,
+    // the text in `data` (a skill's files as one JSON map). Deleting writes
+    // `deleted: true` with empty data.
+    match /users/{userId}/files/{fileId} {
+      function valid(d) {
+        return d.keys().hasOnly(['kind', 'key', 'name', 'data', 'hash', 'updatedAt',
+                                 'deleted', 'deviceId', 'syncedAt'])
+          && d.kind in ['doc', 'skill', 'agent']
+          && d.key is string && d.key.size() > 0 && d.key.size() <= 200
+          && d.name is string && d.name.size() <= 500
+          && d.data is string && d.data.size() <= 900000
+          && d.hash is string && d.hash.size() <= 100
+          // A clock far ahead mustn't win every later conflict.
+          && d.updatedAt is int && d.updatedAt <= request.time.toMillis() + 86400000
+          && d.deleted is bool
           && d.deviceId is string && d.deviceId.size() <= 100
           && d.syncedAt == request.time;
       }

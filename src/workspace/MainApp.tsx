@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense, useEffect } from "react";
+import { SyncNotice } from "../features/sync/SyncNotice";
 import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
 import { restoreProject } from "../store/project";
@@ -74,6 +75,7 @@ export default function MainApp() {
       >
         {PAGES[page]()}
       </main>
+      <SyncNotice />
     </div>
   );
 }

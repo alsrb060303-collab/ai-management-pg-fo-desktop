@@ -13,6 +13,7 @@ import {
 import { create } from "zustand";
 import { onLocaleApplied, t, useLocaleStore } from "../i18n";
 import type { Mode } from "./library";
+import { useSyncStore } from "./sync";
 
 // Mirrors src-tauri/src/composer.
 export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
@@ -187,6 +188,11 @@ interface ComposerState {
   deleteDoc: (id: string) => Promise<void>;
   /** Saves pending edits right away (before switching documents or windows). */
   flushSave: () => Promise<void>;
+  /**
+   * After sync changed documents on disk: reloads the list, and the open
+   * document unless it has an edit waiting to be saved.
+   */
+  reloadFromDisk: (ids: string[]) => Promise<void>;
   rename: (name: string) => void;
 
   onNodesChange: (changes: NodeChange<ComposerNode>[]) => void;
@@ -225,6 +231,21 @@ const PREVIEW_TARGET: Record<BlockKind, Target> = {
   agent: "agents",
   hook: "hooks",
 };
+
+/** JSON with sorted keys, to compare documents however they were built. */
+function canonical(doc: ComposerDoc): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.keys(v)
+              .sort()
+              .map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return JSON.stringify(sort(persistable(doc)));
+}
 
 function newId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -300,10 +321,14 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     }, 120);
   };
 
+  /** The open document as it was last read from or written to disk. */
+  let onDisk = "";
+
   const save = async (doc: ComposerDoc) => {
     if (!isTauri()) return;
     try {
       await invoke("composer_doc_save", { doc: persistable(doc) });
+      if (get().doc?.id === doc.id) onDisk = canonical(doc);
       if (get().doc?.id === doc.id) set({ saveState: "saved" });
       void get().loadDocs();
     } catch (e) {
@@ -356,6 +381,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
   };
 
   const open = (doc: ComposerDoc) => {
+    onDisk = canonical(doc);
     set({
       doc,
       past: [],
@@ -432,6 +458,47 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       cancelPending();
       const { doc } = get();
       if (doc) await save(doc);
+    },
+
+    reloadFromDisk: async (ids) => {
+      if (!isTauri()) return;
+      await get().loadDocs();
+      const { doc, docs, saveState } = get();
+      if (!doc || !ids.includes(doc.id)) return;
+      // Edits not on disk yet: they must not be lost, nor the other device's.
+      const pending = saveTimer !== undefined || saveState === "saving";
+      if (!docs.some((d) => d.id === doc.id)) {
+        // Deleted on another device; unsaved edits here bring it back.
+        if (pending) return;
+        const next = docs[0];
+        if (next) {
+          set({ doc: null });
+          await get().openDoc(next.id);
+        } else {
+          await get().newDoc();
+        }
+        return;
+      }
+      try {
+        const loaded = await invoke<ComposerDoc>("composer_doc_load", { id: doc.id });
+        const fresh = { ...blankDoc(), ...loaded, id: doc.id };
+        if (canonical(fresh) === onDisk) return;
+        if (pending || saveTimer !== undefined) {
+          // Keep editing ours; theirs is kept next to it as a copy.
+          const name = `${fresh.name} (${t("sync.otherDevice")})`;
+          const copy = { ...fresh, id: newId("d"), name, updatedAt: Date.now() };
+          await invoke("composer_doc_save", { doc: persistable(copy) });
+          onDisk = canonical(fresh);
+          useSyncStore
+            .getState()
+            .addConflicts([{ kind: "doc", name: fresh.name, copy: name, revived: false }]);
+          await get().loadDocs();
+          return;
+        }
+        open(fresh);
+      } catch (e) {
+        set({ error: String(e) });
+      }
     },
 
     newDoc: async () => {

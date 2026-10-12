@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { CommandsPanel } from "../features/commands/CommandsPanel";
 import { DocsTab } from "../features/docs/DocsTab";
 import { MemoPanel } from "../features/memo/MemoPanel";
+import { SyncNotice } from "../features/sync/SyncNotice";
 import { WorkPanel } from "../features/work/WorkPanel";
 import { subscribeDockStatus } from "../store/dock";
 import { useLibraryStore } from "../store/library";
@@ -59,6 +60,7 @@ export default function SidebarApp() {
         )}
       </main>
       <StatusBar />
+      <SyncNotice />
     </div>
   );
 }

@@ -43,9 +43,9 @@ export const ko = {
   "settings.pinHint": "다른 창보다 항상 위에 보여요.",
   "settings.shortcut": "보이기 / 숨기기 단축키",
   "settings.sync": "동기화",
-  "settings.sync.title": "메모 동기화",
+  "settings.sync.title": "기기 간 동기화",
   "settings.sync.hint":
-    "브랜치 메모와 할 일을 다른 기기와 맞춰요. 작업 탭의 GitHub 계정으로 로그인해요.",
+    "브랜치 메모·할 일, 문서 작성기 문서, 내 라이브러리(skill·subagent)를 다른 기기와 맞춰요. 작업 탭의 GitHub 계정으로 로그인해요.",
   "settings.sync.notConfigured": "이 빌드에는 동기화 서버가 아직 설정되지 않았어요.",
   "settings.sync.off": "꺼져 있어요. 메모는 이 기기에만 저장돼요.",
   "settings.sync.needsGitHub": "작업 탭에서 GitHub에 로그인하면 동기화를 쓸 수 있어요.",
@@ -58,6 +58,19 @@ export const ko = {
   "settings.sync.accountId": "계정 ID",
   "settings.sync.copy": "복사",
   "settings.sync.copied": "복사됨",
+  "settings.sync.partial":
+    "이 skill들의 이미지·실행 파일·숨김 파일·512KB 넘는 파일은 이 기기에만 있어요: {names}",
+  "sync.notice.title": "다른 기기와 동기화하다 확인할 게 생겼어요",
+  "sync.notice.copy":
+    "'{name}'을(를) 두 기기에서 같이 고쳐서, 나중에 고친 쪽을 남기고 다른 쪽은 '{copy}'(으)로 따로 저장했어요.",
+  "sync.notice.revived": "'{name}'을(를) 한쪽에서 지우고 다른 쪽에서 고쳐서, 고친 내용을 남겼어요.",
+  "sync.notice.held":
+    "지금은 동기화하지 못하는 항목이 있어요(900KB 초과, 읽을 수 없음, 형식 오류). 다른 기기의 사본은 그대로 둬요: {names}",
+  "sync.notice.failed": "다른 기기의 '{name}'을(를) 이 기기에 적용하지 못했어요: {why}",
+  "sync.notice.kept":
+    "다른 기기에서 지운 skill이지만, 동기화되지 않는 파일(이미지 등)이 있어 폴더는 남겼어요: {names}",
+  "sync.otherDevice": "다른 기기",
+  "sync.notice.dismiss": "확인",
   "settings.library": "라이브러리",
   "settings.libraryDir": "라이브러리 폴더",
   "settings.loading": "불러오는 중…",
@@ -113,9 +126,9 @@ export const en: Messages<typeof ko> = {
   "settings.pinHint": "Stays above other windows.",
   "settings.shortcut": "Show / hide shortcut",
   "settings.sync": "Sync",
-  "settings.sync.title": "Note sync",
+  "settings.sync.title": "Sync across devices",
   "settings.sync.hint":
-    "Keeps branch notes and to-dos in step across devices. Signs in with the GitHub account from the Work tab.",
+    "Keeps branch notes and to-dos, composer documents and your library (skills, subagents) in step across devices. Signs in with the GitHub account from the Work tab.",
   "settings.sync.notConfigured": "This build has no sync server set up yet.",
   "settings.sync.off": "Off. Notes stay on this device.",
   "settings.sync.needsGitHub": "Sign in to GitHub in the Work tab to use sync.",
@@ -128,6 +141,20 @@ export const en: Messages<typeof ko> = {
   "settings.sync.accountId": "Account ID",
   "settings.sync.copy": "Copy",
   "settings.sync.copied": "Copied",
+  "settings.sync.partial":
+    "Images, programs, hidden files and files over 512 KB in these skills stay on this device: {names}",
+  "sync.notice.title": "Sync needs your attention",
+  "sync.notice.copy":
+    "'{name}' was changed on two devices. The later edit was kept and the other was saved as '{copy}'.",
+  "sync.notice.revived":
+    "'{name}' was deleted on one device and edited on another, so the edit was kept.",
+  "sync.notice.held":
+    "Some items can't sync right now (over 900 KB, unreadable or invalid). Copies on other devices are left alone: {names}",
+  "sync.notice.failed": "Couldn't apply '{name}' from another device here: {why}",
+  "sync.notice.kept":
+    "A skill deleted on another device still has files here that don't sync (images and such), so its folder stays: {names}",
+  "sync.otherDevice": "other device",
+  "sync.notice.dismiss": "OK",
   "settings.library": "Library",
   "settings.libraryDir": "Library folder",
   "settings.loading": "Loading…",

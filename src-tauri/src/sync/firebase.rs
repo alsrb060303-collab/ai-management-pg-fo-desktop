@@ -285,6 +285,111 @@ impl Client<'_> {
     }
 }
 
+impl Client<'_> {
+    /// Writes documents `(id, fields)` to `users/{uid}/{collection}`, each
+    /// stamped with the server's `syncedAt`. Returns, per document, whether
+    /// the server accepted it (the rules refuse an older copy).
+    pub fn put(
+        &self,
+        session: &Session,
+        collection: &str,
+        docs: &[(String, Value)],
+    ) -> Result<Vec<bool>> {
+        if docs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let base = format!(
+            "projects/{}/databases/(default)/documents/users/{}/{collection}",
+            self.config.project_id, session.uid
+        );
+        let writes: Vec<Value> = docs
+            .iter()
+            .map(|(id, fields)| {
+                json!({
+                    "update": { "name": format!("{base}/{id}"), "fields": fields },
+                    "updateTransforms": [
+                        { "fieldPath": "syncedAt", "setToServerValue": "REQUEST_TIME" }
+                    ],
+                })
+            })
+            .collect();
+        let url = format!("{}:batchWrite", self.documents());
+        let (status, body) = send(
+            self.agent
+                .post(&url)
+                .header("Authorization", &Self::bearer(session))
+                .send_json(json!({ "writes": writes })),
+        )?;
+        if status >= 400 {
+            return Err(api_error(status, &body));
+        }
+        let statuses = body["status"].as_array().cloned().unwrap_or_default();
+        Ok((0..docs.len())
+            .map(|i| {
+                statuses
+                    .get(i)
+                    .is_none_or(|s| s["code"].as_i64().unwrap_or(0) == 0)
+            })
+            .collect())
+    }
+
+    /// Documents of `users/{uid}/{collection}` stored after `after`, oldest
+    /// first, as `(document id, fields)`, and where this page ended.
+    pub fn changes(
+        &self,
+        session: &Session,
+        collection: &str,
+        after: Option<&Cursor>,
+        limit: usize,
+    ) -> Result<Page> {
+        let mut query = json!({
+            "from": [{ "collectionId": collection }],
+            "orderBy": [
+                { "field": { "fieldPath": "syncedAt" }, "direction": "ASCENDING" },
+                { "field": { "fieldPath": "__name__" }, "direction": "ASCENDING" }
+            ],
+            "limit": limit,
+        });
+        if let Some(c) = after {
+            query["startAt"] = json!({
+                "values": [{ "timestampValue": c.time }, { "referenceValue": c.name }],
+                "before": false,
+            });
+        }
+        let url = format!("{}/users/{}:runQuery", self.documents(), session.uid);
+        let (status, body) = send(
+            self.agent
+                .post(&url)
+                .header("Authorization", &Self::bearer(session))
+                .send_json(json!({ "structuredQuery": query })),
+        )?;
+        if status >= 400 {
+            return Err(api_error(status, &body));
+        }
+        let mut docs = Vec::new();
+        let mut last = None;
+        for entry in body.as_array().cloned().unwrap_or_default() {
+            let doc = &entry["document"];
+            let Some(name) = doc["name"].as_str() else {
+                continue;
+            };
+            if let Some(time) = doc["fields"]["syncedAt"]["timestampValue"].as_str() {
+                last = Some(Cursor {
+                    time: time.to_string(),
+                    name: name.to_string(),
+                });
+            }
+            if let Some(id) = name.rsplit('/').next() {
+                docs.push((id.to_string(), doc["fields"].clone()));
+            }
+        }
+        Ok((docs, last))
+    }
+}
+
+/// Documents of one page, as `(document id, fields)`, and where it ended.
+pub type Page = (Vec<(String, Value)>, Option<Cursor>);
+
 /// Where the last pull stopped.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cursor {

@@ -121,6 +121,7 @@ function SyncCard() {
     void init();
   }, [init]);
 
+  const partial = useSyncStore((s) => s.partial);
   const state = status?.state ?? "notConfigured";
   const configured = state !== "notConfigured";
   const on = configured && state !== "off";
@@ -149,7 +150,13 @@ function SyncCard() {
       {configured && (
         <Row
           title={<span className={state === "error" ? "text-danger" : ""}>{detail}</span>}
-          description={state === "error" ? last : undefined}
+          description={
+            state === "error"
+              ? last
+              : partial.length > 0
+                ? t("settings.sync.partial", { names: partial.join(", ") })
+                : undefined
+          }
         >
           {on && state !== "needsGitHub" && state !== "notAllowed" && (
             <Button size="sm" disabled={state === "syncing"} onClick={syncNow}>

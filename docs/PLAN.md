@@ -143,6 +143,12 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
   - 읽기·쓰기 절약: `updatedAt > lastSync` 증분 조회, 쓰기는 모아서 전송.
 - 로그인: GitHub(Device Flow) 토큰 → `GithubAuthProvider.credential(token)` → `signInWithCredential`. 앱 안 팝업 로그인은 안 되므로 쓰지 않는다.
 
+**문서·라이브러리 동기화 결정 (2026-10-12)**
+- 문서 작성기 문서(`compositions/*.json`)와 라이브러리(skill 폴더의 텍스트 파일, subagent .md)도 메모와 같은 계정·허용 목록으로 동기화한다. Firestore `users/{uid}/files/{kind-해시}` 한 문서에 한 항목씩 넣는다(최대 900KB).
+- 로컬 파일이 기준이다. `sync-files.json`에 항목마다 마지막으로 서버와 맞춘 내용의 해시(base)를 둔다. 한쪽만 바뀌면 그쪽을 따르고, 양쪽 다 바뀌면 나중에 고친 쪽이 이긴다. 진 쪽은 "이름 (다른 기기)" 또는 "(이 기기)" 사본으로 남기고 경고를 띄운다. 한쪽에서 지우고 다른 쪽에서 고쳤으면 고친 쪽을 남긴다.
+- 동기화하지 않는 것: `composed.json`, `applied.json`, `config.json`(프로젝트 경로·라이브러리 폴더 설정), skill 폴더의 바이너리·숨김·512KB 넘는 파일.
+- 계정이나 라이브러리 폴더가 바뀌면 base를 비워서, 없는 항목을 "지운 것"으로 올리지 않는다.
+
 **Phase 8b 결정 (2026-10-11)**
 - 요금제(8c)가 정해질 때까지는 **허용 목록**에 있는 계정만 동기화한다. Firebase 콘솔에서 `allowed/{uid}` 문서를 직접 만든다. 보안 규칙이 강제한다(`firebase/firestore.rules`).
 - 로그인은 작업 탭의 GitHub 로그인을 재사용한다. Rust가 Identity Toolkit REST(`accounts:signInWithIdp`, `providerId=github.com`)로 GitHub 토큰을 Firebase 세션으로 바꾼다. JS SDK는 데스크탑 웹뷰를 지원하지 않아서 쓰지 않는다.

@@ -2,8 +2,10 @@
 //! store stays the source of truth; a background thread uploads rows changed
 //! here and applies rows other devices uploaded, newest `updatedAt` winning.
 //! Only accounts the owner put on the allow list (`allowed/{uid}`) can sync
-//! until paid plans exist (Phase 8c).
+//! until paid plans exist (Phase 8c). Composer documents and the library
+//! sync in the same round (`files`).
 
+mod files;
 mod firebase;
 
 use std::sync::{Condvar, Mutex};
@@ -22,6 +24,8 @@ const API_KEY: &str = "AIzaSyCVMgGo7nbOod5D2MgKc8YmavULPhv9pYc";
 const PROJECT_ID: &str = "ai-manager-7d33c";
 
 pub const STATUS_EVENT: &str = "sync-status";
+/// Documents or library items changed (or conflicted) in a sync round.
+pub const FILES_EVENT: &str = "files-synced";
 /// How often to look for changes from other devices while the app runs.
 const INTERVAL: Duration = Duration::from_secs(60);
 /// Edits are gathered for this long before uploading.
@@ -130,7 +134,7 @@ pub fn kick(app: &AppHandle, delay: Duration) {
     }
 }
 
-/// After a local memo edit: upload soon.
+/// After a local edit (memo, composer document): upload soon.
 pub fn changed(app: &AppHandle) {
     kick(app, DEBOUNCE);
 }
@@ -247,6 +251,45 @@ fn cycle(app: &AppHandle, sync: &Sync, last_sync: Option<i64>) -> firebase::Resu
             serde_json::json!({ "repoKey": repo_key, "branch": branch }),
         );
     }
+
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| Error::Other(e.to_string()))?;
+    let roots = files::Roots {
+        docs: crate::composer::docs_dir(&data_dir),
+        library: app.state::<crate::library::Library>().library_dir(),
+    };
+    let device = store
+        .meta("device_id")
+        .map_err(Error::Other)?
+        .unwrap_or_default();
+    // Documents and the library don't hold up the memos: their error is
+    // reported, but the memos above are synced either way.
+    let files = files::exchange(
+        &client,
+        &session,
+        &roots,
+        &data_dir.join("sync-files.json"),
+        &device,
+    );
+    let outcome = match files {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            return Ok(Status {
+                state: State::Error,
+                uid,
+                last_sync: Some(now_ms()),
+                message: Some(crate::tr!(
+                    "메모는 동기화했지만 문서·라이브러리는 못 했어요: {}",
+                    "Notes synced, but documents and the library didn't: {}",
+                    String::from(e)
+                )),
+            });
+        }
+    };
+    // Every round, so the app always shows the current partial/held lists.
+    let _ = app.emit(FILES_EVENT, &outcome);
 
     Ok(Status {
         state: State::Idle,

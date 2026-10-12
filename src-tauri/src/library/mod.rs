@@ -170,6 +170,11 @@ impl Library {
         list(&dir)
     }
 
+    /// The library folder in use (what sync reads and writes).
+    pub(crate) fn library_dir(&self) -> PathBuf {
+        self.dir(&self.lock())
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
