@@ -101,3 +101,13 @@ Phase 1 체크리스트(`phase1-windows.md`)와 함께 확인한다.
 - [ ] Claude에게 "이 브랜치 할 일 뭐야?"라고 물으면 메모·할 일을 알고 답한다.
 - [ ] 앱을 끈 상태에서 `/todo x` → "앱이 꺼져 있어요" 안내, 앱을 켜면 추가된다.
 - [ ] 추천 mods(token-weather 등) 설치/제거가 되고, claude-hud는 안내대로 `/claude-hud:setup` 후 상태줄이 보인다.
+
+## N. MCP 서버 관리
+- [ ] 왼쪽 메뉴 "MCP 서버"(또는 설정 지도의 "MCP 관리") → 프로젝트·로컬·개인 서버가 범위별로 보이고, 몇 초 뒤 연결 상태(연결됨/연결 실패/승인 대기/로그인 필요)가 뜬다.
+- [ ] 서버 추가 → 범위 "개인"으로 저장 → `claude mcp get <이름>`에 같은 내용이 보인다. 수정·삭제도 반영된다.
+- [ ] 범위 "프로젝트"로 저장 → `.mcp.json`에 들어가고, 원래 있던 다른 키는 그대로다. 이 프로젝트의 `.claude/settings.local.json`에 승인(enabledMcpjsonServers)이 들어간다.
+- [ ] 프로젝트 서버 스위치를 끄면 `disabledMcpjsonServers`로 옮겨지고, Claude Code `/mcp`에서도 꺼져 있다.
+- [ ] 환경변수·헤더 값은 ●●●로 가려지고 눈 아이콘으로 보인다. 토큰처럼 보이는 값에는 "${이름}로 바꾸기" 안내가 뜬다.
+- [ ] 추천 서버 "추가"(예: filesystem) → `cmd /c npx …`로 채워진 폼이 뜨고, 저장 뒤 Claude Code에서 실제로 연결된다(Node.js 필요).
+- [ ] 붙여넣어 가져오기: README의 `claude mcp add …` 명령이나 JSON을 붙여넣으면 서버가 읽히고 "확인하고 추가"로 폼이 열린다.
+- [ ] claude 명령이 없는 PC: 노란 안내가 뜨고 프로젝트(.mcp.json) 서버만 보인다.

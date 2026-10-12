@@ -10,6 +10,7 @@ import {
   NotebookPen,
   PanelLeft,
   PanelRightOpen,
+  Plug,
   Plus,
   Settings,
   Trash2,
@@ -27,6 +28,7 @@ const NAV: { page: Page; label: MessageKey; icon: LucideIcon; soon?: boolean }[]
   { page: "library", label: "shell.nav.library", icon: Library },
   { page: "config", label: "shell.nav.config", icon: MapIcon },
   { page: "files", label: "shell.nav.files", icon: FileText },
+  { page: "mcp", label: "shell.nav.mcp", icon: Plug },
   { page: "work", label: "shell.nav.work", icon: GitBranch },
   { page: "memo", label: "shell.nav.memo", icon: NotebookPen },
 ];

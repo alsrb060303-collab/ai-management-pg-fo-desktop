@@ -6,6 +6,7 @@ export type Page =
   | "library"
   | "config"
   | "files"
+  | "mcp"
   | "work"
   | "memo"
   | "settings";

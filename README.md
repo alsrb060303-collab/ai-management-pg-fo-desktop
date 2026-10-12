@@ -13,6 +13,10 @@ Claude Code로 작업할 때 **터미널 옆에 붙어서** 문서·git 작업·
 - **프로젝트 문서**: 폴더를 연결하면 CLAUDE.md(하위 폴더 포함)·AGENTS.md·rules·skills·agents·commands·설정 파일을 자동으로 찾아 앱 안에서 읽고 고친다. 밖에서 파일이 바뀌면 알려준다.
 - **라이브러리**: 자주 쓰는 skill·subagent를 모아 두고 프로젝트에 적용하거나 뺀다.
 
+**MCP 서버**
+- 프로젝트(.mcp.json)·로컬·개인 MCP 서버를 한 화면에서 보고 연결 상태를 확인하고, 추가·수정·삭제한다. 개인 서버는 설치된 `claude mcp` 명령으로 다룬다(로그인 정보가 있는 `~/.claude.json`은 열지 않음).
+- 프로젝트 서버를 켜고 끄고, 라이선스를 확인한 추천 서버를 넣거나, README의 JSON·`claude mcp add` 명령을 붙여넣어 가져온다. 비밀값은 가려서 보여주고 `${변수}` 참조로 바꾸도록 안내한다.
+
 **작업 (git · GitHub)**
 - 브랜치·worktree 만들기·전환·삭제, 변경 파일과 diff, **커밋·push·pull**.
 - GitHub 로그인(Device Flow): 브랜치의 PR·CI, 열린 PR·이슈, PR 만들기.

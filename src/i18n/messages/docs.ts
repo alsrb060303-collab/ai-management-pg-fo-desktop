@@ -84,6 +84,7 @@ export const ko = {
   "docs.map.pickProject":
     "프로젝트 폴더를 고르면 Claude Code가 그 프로젝트에서 읽는 설정을 범위별로 보여줍니다.",
   "docs.map.empty": "이 프로젝트에 적용되는 Claude Code 설정이 없습니다.",
+  "docs.map.manageMcp": "MCP 관리",
   "docs.project.recent": "최근 프로젝트",
   "docs.project.none": "프로젝트 없음",
   "docs.project.choose": "폴더 선택",
@@ -208,6 +209,7 @@ export const en: Messages<typeof ko> = {
   "docs.map.pickProject":
     "Choose a project folder to see the settings Claude Code reads in that project, by scope.",
   "docs.map.empty": "No Claude Code settings apply to this project.",
+  "docs.map.manageMcp": "Manage MCP",
   "docs.project.recent": "Recent projects",
   "docs.project.none": "No project",
   "docs.project.choose": "Choose folder",
