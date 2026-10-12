@@ -97,7 +97,8 @@ export const ko = {
   "mcp.rec.context7": "라이브러리의 최신 문서를 찾아 넣어 줘요 (Upstash)",
   "mcp.rec.notion": "Notion 페이지 검색·편집. /mcp 에서 로그인 (Notion 운영)",
   "mcp.rec.linear": "Linear 이슈 읽기 전용. /mcp 에서 로그인 (Linear 운영)",
-  "mcp.rec.cloudflare": "Cloudflare 계정의 Workers·DNS·R2 등을 다뤄요. /mcp 에서 로그인 (Cloudflare 공식)",
+  "mcp.rec.cloudflare":
+    "Cloudflare 계정의 Workers·DNS·R2 등을 다뤄요. /mcp 에서 로그인 (Cloudflare 공식)",
   "mcp.rec.supabase":
     "Supabase DB 조회·스키마·문서. 읽기 전용으로 넣어요(read_only=true). /mcp 에서 로그인 (Supabase 공식)",
   "mcp.rec.stripe":
