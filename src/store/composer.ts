@@ -38,6 +38,10 @@ export interface Block {
   matcher?: string | null;
   body: string;
   extraFiles: number;
+  /** Bundled skills: files written next to SKILL.md (paths relative to it). */
+  companions: string[];
+  /** Bytes of text the block writes, body and companion files together. */
+  size: number;
   /** English title, summary and category, when the block has them. */
   en?: { title: string; summary: string; category: string; detail?: string | null };
   /** Third-party blocks: where they come from (kept in written files). */

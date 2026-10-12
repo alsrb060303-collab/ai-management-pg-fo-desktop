@@ -52,6 +52,15 @@ export const ko = {
   "composer.detail.where.agent":
     ".claude/agents에 들어가요. Claude가 일을 맡기는 별도 도우미로, 따로 대화하며 결과만 돌려줘요.",
   "composer.detail.extraFiles": "이 skill 폴더의 다른 파일 {n}개는 복사되지 않아요.",
+  "composer.detail.companions": "함께 쓰이는 참고 파일 {n}개 (필요할 때만 읽혀요)",
+  "composer.large.title": "큰 블록이에요",
+  "composer.large.body":
+    "'{title}'은(는) 본문이 약 {kb}KB예요. Claude가 이 내용을 불러올 때마다 그만큼 컨텍스트(토큰)를 써요. 그래도 넣을까요?",
+  "composer.large.files":
+    "참고 파일 {n}개(약 {kb}KB)도 함께 써져요. 이 파일들은 필요할 때만 읽혀요.",
+  "composer.large.dontShow": "다시 보지 않기",
+  "composer.large.cancel": "취소",
+  "composer.large.add": "넣기",
   "composer.detail.showText": "실제로 들어갈 내용",
   "composer.detail.add": "추가",
   "composer.preview.unconnected":
@@ -195,6 +204,15 @@ export const en: Messages<typeof ko> = {
   "composer.detail.where.agent":
     "Goes into .claude/agents. A separate helper Claude hands work to; it works in its own context and returns the result.",
   "composer.detail.extraFiles": "{n} other files in this skill's folder aren't copied.",
+  "composer.detail.companions": "{n} reference files come with it (read only when needed)",
+  "composer.large.title": "This is a large block",
+  "composer.large.body":
+    "'{title}' has about {kb} KB of text. Claude uses that much context (tokens) each time it loads it. Add it anyway?",
+  "composer.large.files":
+    "{n} reference files (about {kb} KB) are written too. They're read only when needed.",
+  "composer.large.dontShow": "Don't show this again",
+  "composer.large.cancel": "Cancel",
+  "composer.large.add": "Add",
   "composer.detail.showText": "What gets written",
   "composer.detail.add": "Add",
   "composer.preview.unconnected":

@@ -1060,10 +1060,18 @@ fn npx(args: &[&str], env: &[(&str, &str)]) -> Config {
 }
 
 fn uvx(args: &[&str]) -> Config {
+    uvx_env(args, &[])
+}
+
+fn uvx_env(args: &[&str], env: &[(&str, &str)]) -> Config {
     Config {
         transport: "stdio".into(),
         command: "uvx".into(),
         args: args.iter().map(|s| s.to_string()).collect(),
+        env: env
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
         ..Config::default()
     }
 }
@@ -1185,6 +1193,98 @@ pub fn recommended() -> Vec<Recommended> {
             license: "hosted",
             needs: "signin",
             config: http("https://mcp.linear.app/mcp/readonly", &[]),
+        },
+        Recommended {
+            id: "cloudflare",
+            name: "cloudflare",
+            repo: "cloudflare/mcp",
+            license: "Apache-2.0",
+            needs: "signin",
+            config: http("https://mcp.cloudflare.com/mcp", &[]),
+        },
+        Recommended {
+            id: "supabase",
+            name: "supabase",
+            repo: "supabase-community/supabase-mcp",
+            license: "Apache-2.0",
+            needs: "signin",
+            // Read-only until the user removes the flag.
+            config: http("https://mcp.supabase.com/mcp?read_only=true", &[]),
+        },
+        Recommended {
+            id: "stripe",
+            name: "stripe",
+            repo: "stripe/agent-toolkit",
+            license: "MIT",
+            needs: "signin",
+            config: http("https://mcp.stripe.com", &[]),
+        },
+        Recommended {
+            id: "aws-docs",
+            name: "aws-docs",
+            repo: "awslabs/mcp",
+            license: "Apache-2.0",
+            needs: "uv",
+            config: uvx_env(
+                &["awslabs.aws-documentation-mcp-server@latest"],
+                &[("FASTMCP_LOG_LEVEL", "ERROR")],
+            ),
+        },
+        Recommended {
+            id: "postgres",
+            name: "postgres",
+            repo: "crystaldba/postgres-mcp",
+            license: "MIT",
+            needs: "token",
+            // Restricted mode: read-only queries with a time limit.
+            config: uvx_env(
+                &["postgres-mcp", "--access-mode=restricted"],
+                &[("DATABASE_URI", "${DATABASE_URI}")],
+            ),
+        },
+        Recommended {
+            id: "next-devtools",
+            name: "next-devtools",
+            repo: "vercel/next-devtools-mcp",
+            license: "MIT",
+            needs: "node",
+            config: npx(
+                &["-y", "next-devtools-mcp@latest"],
+                &[("NEXT_TELEMETRY_DISABLED", "1")],
+            ),
+        },
+        Recommended {
+            id: "atlassian",
+            name: "atlassian",
+            repo: "sooperset/mcp-atlassian",
+            license: "MIT",
+            needs: "token",
+            config: uvx_env(
+                &["mcp-atlassian"],
+                &[
+                    ("JIRA_URL", "${JIRA_URL}"),
+                    ("JIRA_USERNAME", "${JIRA_USERNAME}"),
+                    ("JIRA_API_TOKEN", "${JIRA_API_TOKEN}"),
+                    ("CONFLUENCE_URL", "${CONFLUENCE_URL}"),
+                    ("CONFLUENCE_USERNAME", "${CONFLUENCE_USERNAME}"),
+                    ("CONFLUENCE_API_TOKEN", "${CONFLUENCE_API_TOKEN}"),
+                ],
+            ),
+        },
+        Recommended {
+            id: "figma",
+            name: "figma",
+            repo: "GLips/Figma-Context-MCP",
+            license: "MIT",
+            needs: "token",
+            config: npx(
+                &["-y", "figma-developer-mcp", "--stdio"],
+                &[
+                    ("FIGMA_API_KEY", "${FIGMA_API_KEY}"),
+                    ("FRAMELINK_TELEMETRY", "off"),
+                    ("DO_NOT_TRACK", "1"),
+                ],
+            ),
         },
     ]
 }
