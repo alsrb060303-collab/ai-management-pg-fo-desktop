@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertTriangle, ExternalLink, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ResizeHandle, usePanelWidth } from "../../components/Resizable";
 import { Button } from "../../components/ui";
 import { useT } from "../../i18n";
 import {
@@ -15,6 +16,7 @@ import { KIND_LABEL, kindColor } from "./kinds";
 type Tab = "preview" | "block";
 
 export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
+  const panel = usePanelWidth("composer-preview", 360, 280, 760);
   const compiled = useComposerStore((s) => s.compiled);
   const selected = useComposerStore(
     (s) => s.doc?.nodes.find((n) => n.selected && n.type === "block") as BlockNode | undefined,
@@ -53,7 +55,11 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
   const file = alone ?? files.find((f) => f.path === path) ?? files[0];
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface">
+    <aside
+      className="relative flex shrink-0 flex-col border-l border-border bg-surface"
+      style={{ width: panel.width }}
+    >
+      <ResizeHandle side="left" {...panel.handle} />
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
         <TabButton active={tab === "preview"} onClick={() => setTab("preview")}>
           {t("composer.preview.tab")}

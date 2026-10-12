@@ -545,6 +545,29 @@ mod tests {
         }
     }
 
+    /// A value like `'quoted' words` would be read as just `quoted`.
+    #[test]
+    fn frontmatter_values_are_not_partly_quoted() {
+        let texts = BUILTIN
+            .iter()
+            .map(|(stem, text)| (*stem, *text))
+            .chain(EXTERNAL.iter().map(|(_, stem, text)| (*stem, *text)));
+        for (stem, text) in texts {
+            let fm = text.split("\n---").next().unwrap_or_default();
+            for line in fm.lines().skip(1) {
+                let Some((_, value)) = line.split_once(": ") else {
+                    continue;
+                };
+                let value = value.trim();
+                for q in ['\'', '"'] {
+                    if value.starts_with(q) {
+                        assert!(value.len() > 1 && value.ends_with(q), "{stem}: {line}");
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn every_builtin_block_parses() {
         let blocks = builtin();

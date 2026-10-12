@@ -5,6 +5,7 @@ const TABS: { id: TabId; label: MessageKey }[] = [
   { id: "docs", label: "shell.tab.docs" },
   { id: "work", label: "shell.tab.work" },
   { id: "memo", label: "shell.tab.memo" },
+  { id: "commands", label: "shell.tab.commands" },
 ];
 
 export function TabNav() {

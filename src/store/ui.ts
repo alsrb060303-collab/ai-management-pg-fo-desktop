@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type TabId = "docs" | "work" | "memo";
+export type TabId = "docs" | "work" | "memo" | "commands";
 
 interface UiState {
   activeTab: TabId;

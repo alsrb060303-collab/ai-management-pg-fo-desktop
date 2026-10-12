@@ -8,6 +8,7 @@ export const ko = {
   "shell.nav.config": "설정 지도",
   "shell.nav.files": "프로젝트 문서",
   "shell.nav.mcp": "MCP 서버",
+  "shell.nav.commands": "명령어",
   "shell.nav.work": "작업",
   "shell.nav.memo": "메모",
   "shell.nav.settings": "설정",
@@ -40,6 +41,7 @@ export const ko = {
   "shell.tab.docs": "문서",
   "shell.tab.work": "작업",
   "shell.tab.memo": "메모",
+  "shell.tab.commands": "명령어",
 
   // Sidebar window: title bar
   "shell.title.toMain": "메인 창으로 전환",
@@ -69,6 +71,7 @@ export const en: Messages<typeof ko> = {
   "shell.nav.config": "Settings map",
   "shell.nav.files": "Project docs",
   "shell.nav.mcp": "MCP servers",
+  "shell.nav.commands": "Commands",
   "shell.nav.work": "Work",
   "shell.nav.memo": "Notes",
   "shell.nav.settings": "Settings",
@@ -101,6 +104,7 @@ export const en: Messages<typeof ko> = {
   "shell.tab.docs": "Docs",
   "shell.tab.work": "Work",
   "shell.tab.memo": "Notes",
+  "shell.tab.commands": "Commands",
 
   "shell.title.toMain": "Switch to main window",
   "shell.title.undock": "Undock from terminal",

@@ -37,6 +37,7 @@ pub fn run() {
             dock::dock_set_pinned,
             dock::sidebar_hide,
             claude_config::claude_config_scan,
+            claude_config::claude_commands,
             mcp::mcp_list,
             mcp::mcp_save,
             mcp::mcp_remove,
