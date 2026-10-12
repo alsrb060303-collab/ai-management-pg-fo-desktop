@@ -61,6 +61,8 @@ pub struct BlockText {
     pub title: String,
     pub summary: String,
     pub category: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -73,6 +75,10 @@ pub struct Block {
     pub title: String,
     pub summary: String,
     pub category: String,
+    /// A few sentences on what the block makes Claude do, shown when the
+    /// block is opened (`detail` / `detail_en` frontmatter).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
     /// The same in English (`title_en`, `summary_en`, `category_en`
     /// frontmatter); the frontend picks by language.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -225,10 +231,12 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         title: fm.get("title").cloned().unwrap_or_else(|| stem.to_string()),
         summary: fm.get("summary").cloned().unwrap_or_default(),
         category: fm.get("category").cloned().unwrap_or_default(),
+        detail: fm.get("detail").cloned(),
         en: fm.get("title_en").map(|title| BlockText {
             title: title.clone(),
             summary: fm.get("summary_en").cloned().unwrap_or_default(),
             category: fm.get("category_en").cloned().unwrap_or_default(),
+            detail: fm.get("detail_en").cloned(),
         }),
         source,
         name: fm.get("name").cloned().unwrap_or_else(|| stem.to_string()),
@@ -278,6 +286,7 @@ pub fn external(cache: Option<&Path>) -> Vec<Block> {
                     title: bundled.title,
                     summary: bundled.summary,
                     category: bundled.category,
+                    detail: bundled.detail,
                     en: bundled.en,
                     ..cached
                 },
@@ -291,6 +300,20 @@ fn same_upstream(a: &Block, b: &Block) -> bool {
     match (&a.origin, &b.origin) {
         (Some(a), Some(b)) => a.repo == b.repo && a.path == b.path && a.license == b.license,
         _ => false,
+    }
+}
+
+/// The first sentence of `text` (up to `. `, `.\n` or a line break), or all
+/// of it when it has one sentence.
+pub(crate) fn first_sentence(text: &str) -> String {
+    let text = text.trim();
+    let end = text
+        .char_indices()
+        .find(|&(i, c)| c == '\n' || (c == '.' && text[i + 1..].starts_with([' ', '\n'])))
+        .map(|(i, c)| if c == '.' { i + 1 } else { i });
+    match end {
+        Some(i) => text[..i].trim().to_string(),
+        None => text.to_string(),
     }
 }
 
@@ -310,16 +333,22 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
             .map_or(0, |n| n.saturating_sub(1)),
         ItemKind::Agent => 0,
     };
+    // A long description reads as one line; the whole of it is the detail.
+    let description = item.description.clone().unwrap_or_default();
+    let summary = first_sentence(&description);
+    let detail = (summary != description.trim()).then(|| description.trim().to_string());
     Some(Block {
         id: format!("library:{prefix}:{}", item.id),
         kind,
         title: item.name.clone(),
-        summary: item.description.clone().unwrap_or_default(),
+        summary: summary.clone(),
         category: "내 라이브러리".into(),
+        detail: detail.clone(),
         en: Some(BlockText {
             title: item.name.clone(),
-            summary: item.description.clone().unwrap_or_default(),
+            summary,
             category: "My library".into(),
+            detail,
         }),
         source: Source::Library,
         // The folder or file name: where the copy is written. Its frontmatter,
@@ -515,5 +544,41 @@ mod tests {
             block.frontmatter.as_deref(),
             Some("name: deploy\ndescription: Ship it")
         );
+    }
+
+    #[test]
+    fn long_descriptions_shorten_to_their_first_sentence() {
+        assert_eq!(
+            first_sentence("Reviews code. Use after every change.\nMore."),
+            "Reviews code."
+        );
+        assert_eq!(
+            first_sentence("Use v1.2 tools for x"),
+            "Use v1.2 tools for x"
+        );
+        assert_eq!(first_sentence("Line one\nline two"), "Line one");
+    }
+
+    #[test]
+    fn bundled_blocks_carry_a_detail_in_both_languages() {
+        for block in builtin().into_iter().chain(external(None)) {
+            assert!(
+                block.detail.as_deref().is_some_and(|d| d.len() > 20),
+                "{}",
+                block.id
+            );
+            let en = block.en.as_ref().unwrap();
+            assert!(
+                en.detail.as_deref().is_some_and(|d| d.len() > 20),
+                "{}",
+                block.id
+            );
+            assert!(
+                block.summary.chars().count() <= 40,
+                "{}: {}",
+                block.id,
+                block.summary
+            );
+        }
     }
 }

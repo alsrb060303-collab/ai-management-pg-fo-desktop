@@ -2,8 +2,10 @@
 kind: agent
 title: Python 전문가
 title_en: Python expert
-summary: 최신 Python(3.12+)의 비동기·성능·운영 수준 코드를 맡는 subagent.
-summary_en: A subagent for modern Python (3.12+): async, performance, and production-ready code.
+summary: 최신 Python 코드 작성 담당이에요
+summary_en: A modern Python assistant
+detail: 별도로 일하는 subagent예요. Python 3.12+ 문법, async, 타입 힌트, 성능을 고려한 운영 수준의 코드를 작성해요.
+detail_en: A separate subagent for production-grade Python 3.12+: async, type hints and performance-minded code.
 category: Python
 category_en: Python
 name: python-pro

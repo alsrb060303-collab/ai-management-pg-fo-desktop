@@ -2,8 +2,10 @@
 kind: skill
 title: git worktree로 작업 분리
 title_en: Isolate work with git worktrees
-summary: 새 기능 작업을 별도 worktree에서 시작하게 해요.
-summary_en: Starts new feature work in a separate worktree.
+summary: 새 기능은 별도 worktree에서 시작해요
+summary_en: Starts features in a separate worktree
+detail: 새 작업을 시작할 때 지금 작업 폴더를 건드리지 않도록 git worktree로 분리된 폴더를 만들고, 거기서 의존성 설치와 테스트 확인까지 한 뒤 작업을 시작해요.
+detail_en: Before new work, creates a separate git worktree so your current checkout stays untouched, installs dependencies and runs the tests there, then starts.
 category: Git
 category_en: Git
 name: using-git-worktrees

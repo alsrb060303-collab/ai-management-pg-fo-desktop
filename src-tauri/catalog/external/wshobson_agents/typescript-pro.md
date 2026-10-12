@@ -2,8 +2,10 @@
 kind: agent
 title: TypeScript 전문가
 title_en: TypeScript expert
-summary: 고급 타입·제네릭·엄격한 타입 안전성을 다루는 subagent.
-summary_en: A subagent for advanced types, generics, and strict type safety.
+summary: 고급 TypeScript 타입 설계 담당이에요
+summary_en: An assistant for advanced TypeScript types
+detail: 별도로 일하는 subagent예요. 제네릭·조건부 타입 같은 고급 타입과 엄격한 타입 안전성이 필요한 설계를 맡아요.
+detail_en: A separate subagent for advanced types (generics, conditional types) and strictly type-safe designs.
 category: TypeScript
 category_en: TypeScript
 name: typescript-pro

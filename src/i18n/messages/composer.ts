@@ -35,9 +35,19 @@ export const ko = {
   "composer.palette.failed": "{n}개 실패 ({reason})",
   "composer.palette.loading": "블록을 불러오는 중…",
   "composer.palette.noMatch": "찾는 블록이 없어요.",
-  "composer.palette.dragHint": "누르거나 캔버스로 끌어다 놓아 추가",
+  "composer.palette.dragHint": "누르면 자세히 보기 · 캔버스로 끌어다 놓아 추가",
   "composer.palette.myLibrary": "내 라이브러리",
   "composer.palette.add": "{title} 추가",
+  "composer.detail.where.instruction": "CLAUDE.md에 들어가서 매 대화마다 항상 적용돼요.",
+  "composer.detail.where.rule": ".claude/rules에 파일로 들어가서 항상 적용돼요.",
+  "composer.detail.where.ruleFor": ".claude/rules에 들어가고, {paths} 파일을 다룰 때만 적용돼요.",
+  "composer.detail.where.skill":
+    ".claude/skills에 들어가요. 평소엔 이름·설명만 읽히고, 관련된 일을 할 때 Claude가 꺼내 써요.",
+  "composer.detail.where.agent":
+    ".claude/agents에 들어가요. Claude가 일을 맡기는 별도 도우미로, 따로 대화하며 결과만 돌려줘요.",
+  "composer.detail.extraFiles": "이 skill 폴더의 다른 파일 {n}개는 복사되지 않아요.",
+  "composer.detail.showText": "실제로 들어갈 내용",
+  "composer.detail.add": "추가",
   "composer.palette.addToCanvas": "캔버스에 추가",
   "composer.palette.addOutput": "출력 추가",
 
@@ -133,9 +143,20 @@ export const en: Messages<typeof ko> = {
   "composer.palette.failed": "{n} failed ({reason})",
   "composer.palette.loading": "Loading blocks…",
   "composer.palette.noMatch": "No matching blocks.",
-  "composer.palette.dragHint": "Click, or drag onto the canvas, to add",
+  "composer.palette.dragHint": "Click for details · drag onto the canvas to add",
   "composer.palette.myLibrary": "My library",
   "composer.palette.add": "Add {title}",
+  "composer.detail.where.instruction": "Goes into CLAUDE.md and applies in every conversation.",
+  "composer.detail.where.rule": "Goes into .claude/rules as a file and always applies.",
+  "composer.detail.where.ruleFor":
+    "Goes into .claude/rules and applies only when working on {paths}.",
+  "composer.detail.where.skill":
+    "Goes into .claude/skills. Only its name and description are read up front; Claude pulls it in for related work.",
+  "composer.detail.where.agent":
+    "Goes into .claude/agents. A separate helper Claude hands work to; it works in its own context and returns the result.",
+  "composer.detail.extraFiles": "{n} other files in this skill's folder aren't copied.",
+  "composer.detail.showText": "What gets written",
+  "composer.detail.add": "Add",
   "composer.palette.addToCanvas": "Add to canvas",
   "composer.palette.addOutput": "Add output",
 

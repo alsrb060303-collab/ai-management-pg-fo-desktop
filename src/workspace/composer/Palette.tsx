@@ -1,9 +1,17 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useReactFlow } from "@xyflow/react";
-import { Loader2, Plus, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, ExternalLink, Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type MessageKey, useT } from "../../i18n";
-import { type Block, type BlockKind, type Target, useComposerStore } from "../../store/composer";
+import {
+  type Block,
+  type BlockKind,
+  originUrl,
+  type Target,
+  useComposerStore,
+} from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
 
 const FILTERS: { value: BlockKind | "all"; label: MessageKey }[] = [
@@ -61,6 +69,8 @@ export function Palette() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<BlockKind | "all">("all");
   const [ghost, setGhost] = useState<{ block: Block; x: number; y: number } | null>(null);
+  /** The block whose details are open. */
+  const [opened, setOpened] = useState<string | null>(null);
   const place = usePlacement();
 
   const groups = useMemo(() => {
@@ -98,10 +108,10 @@ export function Palette() {
     };
     const up = (ev: PointerEvent) => {
       stop();
-      // A click on the row without dragging adds the block near the canvas center.
+      // A click on the row without dragging opens (or closes) its details.
       if (!dragging) {
         if (ev.target instanceof Node && row.contains(ev.target)) {
-          addBlock(block.id, place.nearCenter());
+          setOpened((id) => (id === block.id ? null : block.id));
         }
         return;
       }
@@ -212,7 +222,9 @@ export function Palette() {
                             </span>
                           )}
                         </div>
-                        <div className="line-clamp-2 text-xs leading-snug text-text-muted">
+                        <div
+                          className={`text-xs leading-snug text-text-muted ${opened === block.id ? "" : "line-clamp-2"}`}
+                        >
                           {block.summary}
                         </div>
                       </div>
@@ -227,6 +239,12 @@ export function Palette() {
                         <Plus size={15} />
                       </button>
                     </div>
+                    {opened === block.id && (
+                      <BlockDetail
+                        block={block}
+                        onAdd={() => addBlock(block.id, place.nearCenter())}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>
@@ -265,5 +283,71 @@ export function Palette() {
           document.body,
         )}
     </aside>
+  );
+}
+
+/** Where each kind of block ends up, explained once per kind. */
+const KIND_WHERE: Record<BlockKind, MessageKey> = {
+  instruction: "composer.detail.where.instruction",
+  rule: "composer.detail.where.rule",
+  skill: "composer.detail.where.skill",
+  agent: "composer.detail.where.agent",
+};
+
+const openLink = (url: string) => {
+  if (isTauri()) void openUrl(url);
+  else window.open(url, "_blank");
+};
+
+/** A block's details: what it does, where it goes, where it's from, and its text. */
+function BlockDetail({ block, onAdd }: { block: Block; onAdd: () => void }) {
+  const t = useT();
+  const [showText, setShowText] = useState(false);
+  const where =
+    block.kind === "rule" && block.paths.length
+      ? t("composer.detail.where.ruleFor", { paths: block.paths.join(", ") })
+      : t(KIND_WHERE[block.kind]);
+  return (
+    <div className="mx-1 mt-1 mb-2 space-y-2 rounded-lg border border-border bg-surface-raised p-2.5 text-xs">
+      {block.detail && <p className="leading-relaxed text-text">{block.detail}</p>}
+      <p className="text-text-muted">{where}</p>
+      {block.extraFiles > 0 && (
+        <p className="text-warning">{t("composer.detail.extraFiles", { n: block.extraFiles })}</p>
+      )}
+      {block.origin && (
+        <button
+          type="button"
+          onClick={() => block.origin && openLink(originUrl(block.origin))}
+          className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-text"
+          title={block.origin.copyright}
+        >
+          {block.origin.repo} · {block.origin.license}
+          <ExternalLink size={10} />
+        </button>
+      )}
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setShowText(!showText)}
+          className="flex items-center gap-0.5 text-text-muted hover:text-text"
+        >
+          <ChevronDown size={12} className={showText ? "rotate-180" : ""} />
+          {t("composer.detail.showText")}
+        </button>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="ml-auto flex items-center gap-1 rounded-md bg-primary px-2 py-0.5 font-medium text-primary-fg hover:bg-primary-hover"
+        >
+          <Plus size={12} />
+          {t("composer.detail.add")}
+        </button>
+      </div>
+      {showText && (
+        <pre className="selectable max-h-56 overflow-auto rounded-md bg-sunken p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+          {block.body}
+        </pre>
+      )}
+    </div>
   );
 }

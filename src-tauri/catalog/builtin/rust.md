@@ -2,8 +2,10 @@
 kind: rule
 title: Rust 규칙
 title_en: Rust rules
-summary: clippy 경고 0, 라이브러리 코드에서 unwrap 지양, 명확한 에러 타입. .rs 파일에만 적용돼요.
-summary_en: Zero clippy warnings, no unwrap in library code, clear error types. Applies to .rs files only.
+summary: Rust 파일에 clippy·에러 타입 규칙을 적용해요
+summary_en: Rust conventions for .rs files
+detail: .rs 파일을 다룰 때만 적용돼요. clippy 경고 0개, 라이브러리 코드에서 unwrap 대신 에러 반환, 의미 있는 에러 타입을 쓰게 해요.
+detail_en: Applies only to .rs files: zero clippy warnings, returning errors instead of unwrap in library code, and meaningful error types.
 category: Rust
 category_en: Rust
 paths:

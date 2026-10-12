@@ -121,12 +121,18 @@ pub(super) fn cached_text(
         "---\nkind: {kind}\ntitle: {}\nsummary: {}\ncategory: {}\n",
         block.title, block.summary, block.category
     );
+    if let Some(detail) = &block.detail {
+        out.push_str(&format!("detail: {}\n", clean(detail)));
+    }
     // Our own English display text, like the Korean, is kept from the bundle.
     if let Some(en) = &block.en {
         out.push_str(&format!(
             "title_en: {}\nsummary_en: {}\ncategory_en: {}\n",
             en.title, en.summary, en.category
         ));
+        if let Some(detail) = &en.detail {
+            out.push_str(&format!("detail_en: {}\n", clean(detail)));
+        }
     }
     out.push_str(&format!(
         "name: {}\ndescription: \"{description}\"\n",

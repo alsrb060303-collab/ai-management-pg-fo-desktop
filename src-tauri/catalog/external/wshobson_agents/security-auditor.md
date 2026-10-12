@@ -2,8 +2,10 @@
 kind: agent
 title: 보안 감사
 title_en: Security auditor
-summary: 취약점 점검·위협 모델링 관점으로 코드를 검토하는 subagent.
-summary_en: A subagent that reviews code for vulnerabilities and with threat modeling.
+summary: 취약점과 위협을 점검하는 보안 담당이에요
+summary_en: A security assistant that audits for risks
+detail: 별도로 일하는 subagent예요. 인증·권한, 입력 검증, 비밀 관리, 의존성 취약점을 점검하고 위험도 순으로 정리해 고칠 방법을 제안해요.
+detail_en: A separate subagent that audits auth, input validation, secrets and dependency vulnerabilities, ranks the risks and proposes fixes.
 category: 보안
 category_en: Security
 name: security-auditor

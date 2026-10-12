@@ -2,8 +2,10 @@
 kind: skill
 title: 브랜치 마무리
 title_en: Finish a branch
-summary: 구현·테스트가 끝난 뒤 merge, PR, 정리 중 무엇을 할지 정리해 줘요.
-summary_en: Once the work and tests are done, helps decide between merging, a PR, or cleaning up.
+summary: 작업 끝난 브랜치를 merge·PR·정리 중 골라 마무리해요
+summary_en: Wraps up a finished branch: merge, PR or clean up
+detail: 구현과 테스트가 끝났을 때 테스트를 다시 확인한 뒤, 로컬 merge·PR 만들기·그대로 두기·버리기 중에서 고르게 하고 고른 대로 정리(worktree 삭제 등)까지 해줘요.
+detail_en: When implementation and tests are done, re-runs the tests, then lets you choose: merge locally, open a PR, keep the branch, or discard it, and cleans up (worktrees and so on) accordingly.
 category: Git
 category_en: Git
 name: finishing-a-development-branch

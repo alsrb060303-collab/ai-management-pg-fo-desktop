@@ -2,8 +2,10 @@
 kind: agent
 title: 성능 엔지니어
 title_en: Performance engineer
-summary: 관측·프로파일링으로 병목을 찾아 최적화하는 subagent.
-summary_en: A subagent that finds and fixes bottlenecks through observability and profiling.
+summary: 느린 곳을 측정해서 찾고 고치는 담당이에요
+summary_en: Finds and fixes slow spots by measuring
+detail: 별도로 일하는 subagent예요. 추측 대신 프로파일링·측정으로 병목을 찾고, 캐시·쿼리·번들 크기 등을 개선한 뒤 전후 수치를 비교해요.
+detail_en: A separate subagent that profiles and measures instead of guessing, fixes bottlenecks (caching, queries, bundle size) and compares numbers before and after.
 category: 성능
 category_en: Performance
 name: performance-engineer

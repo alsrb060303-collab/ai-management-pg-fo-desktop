@@ -2,8 +2,10 @@
 kind: rule
 title: Go 규칙
 title_en: Go rules
-summary: gofmt, 에러 감싸기, 작은 인터페이스. .go 파일에만 적용돼요.
-summary_en: gofmt, wrapped errors, small interfaces. Applies to .go files only.
+summary: Go 파일에 gofmt·에러 처리 규칙을 적용해요
+summary_en: Go conventions for .go files
+detail: .go 파일을 다룰 때만 적용되는 규칙이에요. gofmt 형식, 에러를 감싸서 문맥 남기기, 작은 인터페이스, 고루틴 누수 주의 같은 Go 관례를 따르게 해요.
+detail_en: Applies only when working on .go files: gofmt formatting, wrapping errors with context, small interfaces, and care with goroutine leaks.
 category: Go
 category_en: Go
 paths:

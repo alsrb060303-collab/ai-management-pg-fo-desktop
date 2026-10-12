@@ -24,6 +24,8 @@ export interface Block {
   title: string;
   summary: string;
   category: string;
+  /** A few sentences on what the block makes Claude do (shown when opened). */
+  detail?: string | null;
   source: "builtin" | "library" | "external";
   name: string;
   description: string | null;
@@ -33,7 +35,7 @@ export interface Block {
   body: string;
   extraFiles: number;
   /** English title, summary and category, when the block has them. */
-  en?: { title: string; summary: string; category: string };
+  en?: { title: string; summary: string; category: string; detail?: string | null };
   /** Third-party blocks: where they come from (kept in written files). */
   origin: {
     repo: string;

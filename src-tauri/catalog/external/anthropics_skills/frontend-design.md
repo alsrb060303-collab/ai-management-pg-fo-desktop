@@ -2,8 +2,10 @@
 kind: skill
 title: 프론트엔드 디자인
 title_en: Frontend design
-summary: 뻔한 AI 느낌이 아닌, 의도가 분명한 UI를 디자인하도록 돕는 skill.
-summary_en: A skill for designing intentional UI that does not look like generic AI output.
+summary: 흔한 AI 느낌 없이 개성 있는 UI를 디자인해요
+summary_en: Designs distinctive UI, not generic AI look
+detail: Anthropic의 공개 skill이에요. 화면을 만들 때 먼저 분위기·색·글꼴 방향을 정하고, 뻔한 그라데이션·카드 나열 대신 의도가 분명한 레이아웃과 디테일로 구현하게 해요.
+detail_en: Anthropic's open skill: picks a clear visual direction (tone, color, type) before building, then implements a deliberate layout instead of generic gradients and card grids.
 category: 디자인
 category_en: Design
 name: frontend-design
