@@ -30,8 +30,27 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
   }, [selectedId]);
 
   const files = compiled?.files ?? [];
-  const file = files.find((f) => f.path === path) ?? files[0];
   const warnings = compiled?.warnings ?? [];
+
+  // A double-clicked node: its output's file, or (a block no output uses
+  // yet) the file it would become on its own.
+  const focus = useComposerStore((s) => s.focus);
+  const standalone = useComposerStore((s) => s.standalone);
+  const focusFile = focus
+    ? files.find((f) => f.node === focus || f.blocks.includes(focus))
+    : undefined;
+  const focusPath = focusFile?.path;
+  useEffect(() => {
+    if (!focus) return;
+    setTab("preview");
+    if (focusPath) setPath(focusPath);
+  }, [focus, focusPath]);
+  const alone = focus && !focusFile ? standalone : null;
+  const choose = (p: string) => {
+    void useComposerStore.getState().focusNode(null);
+    setPath(p);
+  };
+  const file = alone ?? files.find((f) => f.path === path) ?? files[0];
 
   return (
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-surface">
@@ -59,10 +78,11 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
             </ul>
           )}
 
-          {files.length === 0 ? (
+          {files.length === 0 && !alone ? (
             <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
               <p className="text-sm font-medium">{t("composer.preview.empty")}</p>
               <p className="mt-1 text-xs text-text-muted">{t("composer.preview.emptyHint")}</p>
+              <p className="mt-2 text-xs text-text-subtle">{t("composer.preview.dblclickHint")}</p>
             </div>
           ) : (
             <>
@@ -71,10 +91,10 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                   <button
                     key={f.path}
                     type="button"
-                    onClick={() => setPath(f.path)}
+                    onClick={() => choose(f.path)}
                     title={f.path}
                     className={`shrink-0 rounded-md px-2 py-1 font-mono text-[11px] ${
-                      f.path === file?.path
+                      f.path === file?.path && !alone
                         ? "bg-active text-text"
                         : "text-text-muted hover:bg-hover"
                     }`}
@@ -102,6 +122,11 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                       {t("composer.preview.lines", { n: file.lines })}
                     </span>
                   </div>
+                  {alone && (
+                    <p className="mx-3 mb-2 rounded-md bg-sunken px-2.5 py-1.5 text-[11px] text-text-muted">
+                      {t("composer.preview.unconnected")}
+                    </p>
+                  )}
                   {file.section && (
                     <p className="mx-3 mb-2 rounded-md bg-accent-soft px-2.5 py-1.5 text-[11px] text-text-muted">
                       {t("composer.preview.section", { path: file.path })}

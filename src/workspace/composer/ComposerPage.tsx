@@ -34,6 +34,11 @@ export default function ComposerPage() {
   const doc = useComposerStore((s) => s.doc);
   const [writing, setWriting] = useState(false);
   const [preview, setPreview] = useState(readPreviewPref);
+  // Double-clicking a node opens the preview on its file.
+  const focus = useComposerStore((s) => s.focus);
+  useEffect(() => {
+    if (focus) setPreview(true);
+  }, [focus]);
   const t = useT();
   const togglePreview = () => {
     setPreview(!preview);
@@ -92,6 +97,8 @@ function Canvas() {
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onNodeDragStart={checkpoint}
+        onNodeDoubleClick={(_, node) => void useComposerStore.getState().focusNode(node.id)}
+        zoomOnDoubleClick={false}
         onBeforeDelete={async ({ nodes, edges }) => {
           // React Flow asks on every Delete key press, even with nothing selected.
           if (nodes.length > 0 || edges.length > 0) checkpoint();

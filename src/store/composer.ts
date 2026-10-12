@@ -136,7 +136,24 @@ interface ComposerState {
   reorder: (nodeId: string, from: number, to: number) => void;
   undo: () => void;
   redo: () => void;
+
+  /** The node whose file the preview shows (double-clicked on the canvas). */
+  focus: string | null;
+  /**
+   * For a focused block no output uses yet: the file it would be written as,
+   * compiled on its own.
+   */
+  standalone: OutFile | null;
+  focusNode: (nodeId: string | null) => Promise<void>;
 }
+
+/** The output a block of each kind goes to when previewed on its own. */
+const PREVIEW_TARGET: Record<BlockKind, Target> = {
+  instruction: "claudeMd",
+  rule: "rules",
+  skill: "skills",
+  agent: "agents",
+};
 
 function newId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -268,7 +285,16 @@ export const useComposerStore = create<ComposerState>((set, get) => {
   };
 
   const open = (doc: ComposerDoc) => {
-    set({ doc, past: [], future: [], compiled: null, saveState: "saved", error: null });
+    set({
+      doc,
+      past: [],
+      future: [],
+      compiled: null,
+      saveState: "saved",
+      error: null,
+      focus: null,
+      standalone: null,
+    });
     scheduleCompile();
   };
 
@@ -474,6 +500,41 @@ export const useComposerStore = create<ComposerState>((set, get) => {
           { id: newId("b"), type: "block", position, data: { blockId }, selected: true },
         ],
       })),
+
+    focus: null,
+    standalone: null,
+
+    focusNode: async (nodeId) => {
+      set({ focus: nodeId, standalone: null });
+      const { doc, compiled, blocks } = get();
+      const node = doc?.nodes.find((n) => n.id === nodeId);
+      if (!doc || !node || node.type !== "block" || !isTauri()) return;
+      // Already part of an output's file: the preview shows that one.
+      if (compiled?.files.some((f) => f.blocks.includes(node.id))) return;
+      const kind = blocks.get(node.data.blockId)?.kind;
+      if (!kind) return;
+      const { selected: _s, dragging: _d, ...block } = node;
+      const out = "preview-output";
+      const temp: ComposerDoc = {
+        ...doc,
+        nodes: [
+          block as ComposerNode,
+          {
+            id: out,
+            type: "output",
+            position: { x: 0, y: 0 },
+            data: { target: PREVIEW_TARGET[kind], scope: "team", order: [node.id] },
+          },
+        ],
+        edges: [{ id: "preview-edge", source: node.id, target: out }],
+      };
+      try {
+        const result = await invoke<Compiled>("composer_compile", { doc: temp });
+        if (get().focus === nodeId) set({ standalone: result.files[0] ?? null });
+      } catch (e) {
+        set({ error: String(e) });
+      }
+    },
 
     addOutput: (target, position) =>
       update((doc) => ({

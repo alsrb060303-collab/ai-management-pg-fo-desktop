@@ -48,6 +48,9 @@ export const ko = {
   "composer.detail.extraFiles": "이 skill 폴더의 다른 파일 {n}개는 복사되지 않아요.",
   "composer.detail.showText": "실제로 들어갈 내용",
   "composer.detail.add": "추가",
+  "composer.preview.unconnected":
+    "아직 출력에 연결하지 않은 블록이에요. 연결하면 이 파일로 써져요.",
+  "composer.preview.dblclickHint": "블록이나 출력을 더블클릭하면 그 파일을 미리 봐요.",
   "composer.palette.addToCanvas": "캔버스에 추가",
   "composer.palette.addOutput": "출력 추가",
 
@@ -157,6 +160,9 @@ export const en: Messages<typeof ko> = {
   "composer.detail.extraFiles": "{n} other files in this skill's folder aren't copied.",
   "composer.detail.showText": "What gets written",
   "composer.detail.add": "Add",
+  "composer.preview.unconnected":
+    "This block isn't connected to an output yet. Connected, it would be written as this file.",
+  "composer.preview.dblclickHint": "Double-click a block or output to preview its file.",
   "composer.palette.addToCanvas": "Add to canvas",
   "composer.palette.addOutput": "Add output",
 
