@@ -8,6 +8,7 @@ import { useSyncStore } from "../store/sync";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { saveBeforeLeaving } from "./leave";
 import { NavSidebar } from "./NavSidebar";
+import { CommandsPage } from "./pages/CommandsPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
@@ -31,6 +32,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
   config: () => <ConfigPage />,
   files: () => <ProjectDocsPage />,
   mcp: () => <McpPage />,
+  commands: () => <CommandsPage />,
   work: () => <WorkPage />,
   memo: () => <MemoPage />,
   settings: () => <SettingsPage />,
