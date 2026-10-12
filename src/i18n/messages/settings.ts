@@ -1,6 +1,30 @@
 import type { Messages } from "./types";
 
 export const ko = {
+  "mods.title": "Claude Code 연동",
+  "mods.claude": "Claude Code",
+  "mods.checking": "확인하는 중…",
+  "mods.noClaude": "claude 명령을 찾지 못했어요. Claude Code를 설치한 뒤 다시 확인하세요.",
+  "mods.tooOld": "{version} · mods는 2.1.287 이상에서 동작해요. `claude update`로 업데이트하세요.",
+  "mods.recheck": "다시 확인",
+  "mods.own.title": "브랜치 메모 mod",
+  "mods.own.description":
+    "Claude Code 입력창 위에 이 브랜치의 할 일·PR·CI를 한 줄로 보여주고, 메모와 할 일 패널(/notes), /todo · /memo 명령을 더해요. Claude도 메모와 할 일을 알고 작업해요. 앱이 켜져 있어야 반영돼요.",
+  "mods.install": "설치",
+  "mods.uninstall": "제거",
+  "mods.working": "진행 중…",
+  "mods.installed": "설치했어요. Claude Code를 새로 열거나 /reload-plugins 하면 적용돼요.",
+  "mods.uninstalled": "제거했어요. Claude Code를 새로 열면 사라져요.",
+  "mods.recommended": "추천 mods",
+  "mods.rec.tokenWeather":
+    "입력창 위에 컨텍스트 창이 얼마나 찼는지 예보처럼 보여줘요. (Anthropic 공식 예제)",
+  "mods.rec.blastRadius":
+    "rm -rf, 강제 push 같은 위험한 명령을 멈추고 무엇이 바뀌는지 보여준 뒤 진행/취소를 고르게 해요. (Anthropic 공식 예제)",
+  "mods.rec.replayTheater":
+    "/replay로 Claude가 마지막 턴에 고친 파일을 하나씩 다시 봐요. (Anthropic 공식 예제)",
+  "mods.rec.claudeHud": "상태줄에 컨텍스트 사용량·비용·사용 한도를 실시간으로 보여줘요.",
+  "mods.rec.claudeHudNote":
+    "설치 후 Claude Code에서 /claude-hud:setup 을 한 번 실행하세요. Node 18 이상 필요.",
   "settings.title": "설정",
   "settings.display": "화면",
   "settings.theme": "테마",
@@ -47,6 +71,30 @@ export const ko = {
 } as const;
 
 export const en: Messages<typeof ko> = {
+  "mods.title": "Claude Code integration",
+  "mods.claude": "Claude Code",
+  "mods.checking": "Checking…",
+  "mods.noClaude": "Couldn't find the claude command. Install Claude Code, then check again.",
+  "mods.tooOld": "{version} · mods need 2.1.287 or newer. Update with `claude update`.",
+  "mods.recheck": "Check again",
+  "mods.own.title": "Branch notes mod",
+  "mods.own.description":
+    "Shows this branch's to-dos, PR and CI in one line above Claude Code's prompt, and adds a notes pane (/notes) and /todo · /memo commands. Claude reads the note and to-dos too. Changes apply while the app is running.",
+  "mods.install": "Install",
+  "mods.uninstall": "Remove",
+  "mods.working": "Working…",
+  "mods.installed": "Installed. Open a new Claude Code session or run /reload-plugins to use it.",
+  "mods.uninstalled": "Removed. It's gone from new Claude Code sessions.",
+  "mods.recommended": "Recommended mods",
+  "mods.rec.tokenWeather":
+    "A forecast of how full the context window is, above the prompt. (Anthropic sample)",
+  "mods.rec.blastRadius":
+    "Holds risky commands like rm -rf or a force push, shows what they'd change, and asks to proceed or cancel. (Anthropic sample)",
+  "mods.rec.replayTheater":
+    "/replay steps through the files Claude changed in its last turn. (Anthropic sample)",
+  "mods.rec.claudeHud": "A live status line with context use, cost and rate limits.",
+  "mods.rec.claudeHudNote":
+    "After installing, run /claude-hud:setup once in Claude Code. Needs Node 18+.",
   "settings.title": "Settings",
   "settings.display": "Display",
   "settings.theme": "Theme",

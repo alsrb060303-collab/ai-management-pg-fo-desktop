@@ -1,4 +1,6 @@
+mod bridge;
 mod claude_config;
+mod claude_mod;
 mod composer;
 mod dock;
 mod git;
@@ -6,6 +8,7 @@ mod github;
 mod i18n;
 mod library;
 mod memo;
+mod project_docs;
 mod shell;
 mod sync;
 mod tray;
@@ -33,6 +36,10 @@ pub fn run() {
             dock::dock_set_pinned,
             dock::sidebar_hide,
             claude_config::claude_config_scan,
+            project_docs::project_docs_list,
+            project_docs::project_doc_read,
+            project_docs::project_doc_write,
+            project_docs::project_doc_delete,
             library::library_overview,
             library::library_set_dir,
             library::library_apply,
@@ -67,8 +74,16 @@ pub fn run() {
             work::work_add_worktree,
             work::work_remove_worktree,
             work::work_prune_worktrees,
+            work::work_commit,
+            work::work_push,
+            work::work_pull,
             work::work_git_version,
             i18n::set_locale,
+            bridge::bridge_github,
+            claude_mod::claude_mod_status,
+            claude_mod::claude_mod_install,
+            claude_mod::claude_mod_install_recommended,
+            claude_mod::claude_mod_uninstall,
             sync::sync_status,
             sync::sync_now,
             sync::sync_set_enabled,
@@ -78,6 +93,16 @@ pub fn run() {
             github::github_logout,
             github::github_repo,
             github::github_create_pr,
+            github::github_repos,
+            github::github_local_clones,
+            github::github_remote,
+            github::github_remote_create_branch,
+            github::github_remote_delete_branch,
+            github::github_remote_create_pr,
+            github::github_clone,
+            github::github_remote_tree,
+            github::github_remote_file,
+            github::github_remote_commit,
             shell::view_mode,
             shell::view_switch,
         ])
@@ -90,6 +115,7 @@ pub fn run() {
             memo::Memo::manage(handle)?;
             github::GitHub::manage(handle);
             sync::Sync::manage(handle);
+            bridge::manage(handle);
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);

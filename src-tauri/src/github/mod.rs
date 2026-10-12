@@ -18,7 +18,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use ureq::Agent;
 
-use api::{Account, Pull, RepoView};
+use api::{Account, FileChange, Pull, RemoteTree, RemoteView, RepoSummary, RepoView};
 use auth::{DeviceCode, Outcome, TokenStore};
 use http::{Api, Endpoints};
 
@@ -333,6 +333,388 @@ pub async fn github_create_pr(
         }
         gh.call(app, |api| {
             api::create_pull(api, &slug, &head, &base, &title, &body, draft)
+        })
+        .map_err(String::from)
+    })
+    .await
+}
+
+/// `owner/repo` with GitHub's allowed characters only (it goes into URLs and
+/// a clone target folder).
+fn check_slug(slug: &str) -> Result<(), String> {
+    let ok = |part: &str| {
+        !part.is_empty()
+            && !part.starts_with('.')
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
+    match slug.split_once('/') {
+        Some((owner, repo)) if ok(owner) && ok(repo) => Ok(()),
+        _ => Err(crate::tr!(
+            "GitHub 저장소 이름이 올바르지 않아요: {slug}",
+            "Not a valid GitHub repository name: {slug}"
+        )),
+    }
+}
+
+/// The signed-in account's repositories.
+#[tauri::command]
+pub async fn github_repos(app: AppHandle) -> Result<Vec<RepoSummary>, String> {
+    blocking(app, |app, gh| {
+        gh.call(app, api::list_repos).map_err(String::from)
+    })
+    .await
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalClone {
+    /// `owner/repo`, lowercase.
+    pub slug: String,
+    pub path: String,
+}
+
+/// Which of `paths` are clones of github.com repositories.
+#[tauri::command]
+pub async fn github_local_clones(paths: Vec<String>) -> Vec<LocalClone> {
+    tauri::async_runtime::spawn_blocking(move || {
+        paths
+            .into_iter()
+            .filter_map(|path| {
+                let info = crate::memo::repo::inspect(Path::new(&path)).ok()?;
+                let slug = info.key.strip_prefix("github.com/")?;
+                (slug.split('/').count() == 2).then(|| LocalClone {
+                    slug: slug.to_lowercase(),
+                    path,
+                })
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// A repository seen on GitHub without a clone; `branch` defaults to the
+/// default branch.
+#[tauri::command]
+pub async fn github_remote(
+    app: AppHandle,
+    slug: String,
+    branch: Option<String>,
+) -> Result<RemoteView, String> {
+    check_slug(&slug)?;
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| api::remote_view(api, &slug, branch.as_deref()))
+            .map_err(String::from)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn github_remote_create_branch(
+    app: AppHandle,
+    slug: String,
+    name: String,
+    from: String,
+) -> Result<(), String> {
+    check_slug(&slug)?;
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| api::create_branch(api, &slug, &name, &from))
+            .map_err(String::from)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn github_remote_delete_branch(
+    app: AppHandle,
+    slug: String,
+    name: String,
+) -> Result<(), String> {
+    check_slug(&slug)?;
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| api::delete_branch(api, &slug, &name))
+            .map_err(String::from)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn github_remote_create_pr(
+    app: AppHandle,
+    slug: String,
+    head: String,
+    base: String,
+    title: String,
+    body: String,
+    draft: bool,
+) -> Result<Pull, String> {
+    check_slug(&slug)?;
+    if head == base {
+        return Err(crate::tr!(
+            "기준 브랜치와 다른 브랜치에서 PR을 만들어 주세요",
+            "Open the PR from a branch other than its base"
+        ));
+    }
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| {
+            api::create_pull(api, &slug, &head, &base, &title, &body, draft)
+        })
+        .map_err(String::from)
+    })
+    .await
+}
+
+/// Clones `slug` into a new folder under `parent` and returns its path. The
+/// sign-in token is handed to git for this one command only (an
+/// environment-only config, not written to the clone); later fetches and
+/// pushes use the user's own git credentials.
+#[tauri::command]
+pub async fn github_clone(app: AppHandle, slug: String, parent: String) -> Result<String, String> {
+    check_slug(&slug)?;
+    blocking(app, move |_, gh| {
+        let token = gh
+            .token()?
+            .ok_or_else(|| crate::tr!("GitHub에 로그인해 주세요", "Please sign in to GitHub"))?;
+        clone_into(&token, &slug, Path::new(&parent))
+    })
+    .await
+}
+
+fn clone_into(token: &str, slug: &str, parent: &Path) -> Result<String, String> {
+    let name = slug.split('/').nth(1).unwrap_or(slug);
+    let target = parent.join(name);
+    let path = target.to_string_lossy().into_owned();
+    if target.exists() {
+        // Already a clone of this repository: just open it.
+        let same = crate::memo::repo::inspect(&target)
+            .map(|info| info.key == format!("github.com/{}", slug.to_lowercase()))
+            .unwrap_or(false);
+        if same {
+            return Ok(path);
+        }
+        return Err(crate::tr!(
+            "'{path}' 폴더가 이미 있어요. 다른 위치를 골라 주세요",
+            "'{path}' already exists. Choose another location"
+        ));
+    }
+    let url = format!("https://github.com/{slug}.git");
+    let target_arg = target.to_string_lossy();
+    crate::git::run_env(
+        parent,
+        &["clone", "--", &url, &target_arg],
+        &git_auth_env(token),
+    )
+    .map_err(|detail| crate::tr!("clone하지 못했어요: {detail}", "Couldn't clone: {detail}"))?;
+    Ok(path)
+}
+
+/// Environment that hands git the sign-in token for github.com over HTTPS,
+/// for one command only (nothing is written to any git config).
+pub(crate) fn git_auth_env(token: &str) -> Vec<(String, String)> {
+    let header = format!(
+        "AUTHORIZATION: basic {}",
+        base64(format!("x-access-token:{token}").as_bytes())
+    );
+    vec![
+        ("GIT_CONFIG_COUNT".into(), "1".into()),
+        (
+            "GIT_CONFIG_KEY_0".into(),
+            "http.https://github.com/.extraheader".into(),
+        ),
+        ("GIT_CONFIG_VALUE_0".into(), header),
+    ]
+}
+
+/// The auth environment when signed in to GitHub, else nothing (git then
+/// uses the user's own credentials).
+pub(crate) fn git_auth(app: &AppHandle) -> Vec<(String, String)> {
+    current_token(app)
+        .map(|t| git_auth_env(&t))
+        .unwrap_or_default()
+}
+
+/// Standard base64 with padding; line breaks (GitHub wraps at 60) are
+/// skipped. `None` for anything else.
+pub(crate) fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let clean: Vec<u8> = text.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
+    if !clean.len().is_multiple_of(4) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(clean.len() / 4 * 3);
+    for chunk in clean.chunks(4) {
+        let pad = chunk.iter().rev().take_while(|&&c| c == b'=').count();
+        if pad > 2 {
+            return None;
+        }
+        let mut n = 0u32;
+        for &c in &chunk[..4 - pad] {
+            n = n << 6 | value(c)? as u32;
+        }
+        n <<= 6 * pad as u32;
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..3 - pad]);
+    }
+    Some(out)
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (chunk[0] as u32) << 16
+            | (*chunk.get(1).unwrap_or(&0) as u32) << 8
+            | *chunk.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_matches_the_standard_alphabet() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(
+            base64(b"x-access-token:gho_1"),
+            "eC1hY2Nlc3MtdG9rZW46Z2hvXzE="
+        );
+    }
+
+    #[test]
+    fn base64_round_trips() {
+        for text in ["", "f", "fo", "foo", "foob", "한글 텍스트\n"] {
+            assert_eq!(
+                base64_decode(&base64(text.as_bytes())).unwrap(),
+                text.as_bytes()
+            );
+        }
+        assert_eq!(base64_decode("Zm9v\nYmFy\n").unwrap(), b"foobar");
+        assert!(base64_decode("Zm9").is_none());
+        assert!(base64_decode("Zm9!").is_none());
+    }
+
+    #[test]
+    fn slugs_are_checked_before_use() {
+        assert!(check_slug("me/repo.name_2").is_ok());
+        for bad in [
+            "me", "me/", "/r", "me/r/x", "me/../r", "me/.git", "me/r x", "-c/x;y",
+        ] {
+            assert!(check_slug(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn clone_refuses_a_folder_that_is_something_else() {
+        let dir = std::env::temp_dir().join(format!("aim-clone-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("repo")).unwrap();
+        let err = clone_into("t", "me/repo", &dir).unwrap_err();
+        assert!(err.contains("repo"), "{err}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+/// Every file in `branch` (and the commit it is at).
+#[tauri::command]
+pub async fn github_remote_tree(
+    app: AppHandle,
+    slug: String,
+    branch: String,
+) -> Result<RemoteTree, String> {
+    check_slug(&slug)?;
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| api::remote_tree(api, &slug, &branch))
+            .map_err(String::from)
+    })
+    .await
+}
+
+/// A file's text by blob id. Refused for binary or very large files.
+#[tauri::command]
+pub async fn github_remote_file(
+    app: AppHandle,
+    slug: String,
+    sha: String,
+) -> Result<String, String> {
+    check_slug(&slug)?;
+    if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("bad blob id".into());
+    }
+    blocking(app, move |app, gh| {
+        let bytes = gh
+            .call(app, |api| api::blob(api, &slug, &sha))
+            .map_err(String::from)?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err(crate::tr!(
+                "파일이 너무 커서 열 수 없어요 (2MB 초과)",
+                "The file is too large to open (over 2 MB)"
+            ));
+        }
+        String::from_utf8(bytes).map_err(|_| {
+            crate::tr!(
+                "텍스트 파일이 아니라서 열 수 없어요",
+                "Not a text file, so it can't be opened"
+            )
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn github_remote_commit(
+    app: AppHandle,
+    slug: String,
+    branch: String,
+    expected_head: String,
+    changes: Vec<FileChange>,
+    message: String,
+    new_branch: Option<String>,
+) -> Result<String, String> {
+    check_slug(&slug)?;
+    if changes.iter().any(|c| {
+        c.path.is_empty()
+            || c.path.starts_with('/')
+            || c.path
+                .split('/')
+                .any(|p| p.is_empty() || p == "." || p == "..")
+    }) {
+        return Err(crate::tr!(
+            "파일 경로가 올바르지 않아요",
+            "A file path isn't valid"
+        ));
+    }
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| {
+            api::commit_files(
+                api,
+                &slug,
+                &branch,
+                &expected_head,
+                &changes,
+                &message,
+                new_branch.as_deref(),
+            )
         })
         .map_err(String::from)
     })

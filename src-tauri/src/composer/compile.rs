@@ -360,6 +360,9 @@ fn skill_file(block: &Block, body: &str) -> String {
         block.name,
         quoted(description)
     );
+    if block.manual {
+        fm.push_str("disable-model-invocation: true\n");
+    }
     // `license` and `metadata` are portable Agent Skills fields.
     if let Some(origin) = &block.origin {
         fm.push_str(&format!(
@@ -460,6 +463,7 @@ mod tests {
             title: id.into(),
             summary: "summary".into(),
             category: String::new(),
+            detail: None,
             en: None,
             source: Source::Builtin,
             name: id.split(':').next_back().unwrap().into(),
@@ -467,6 +471,7 @@ mod tests {
             paths: Vec::new(),
             tools: Some("Read, Grep".into()),
             model: None,
+            manual: false,
             body: body.into(),
             extra_files: 0,
             origin: None,

@@ -12,21 +12,78 @@ import {
 } from "../../store/project";
 import { ModeButtons, smallButton } from "./ModeButtons";
 
-/** `hint` is translated; `path` (a file or settings key) is shown as is. */
-const SECTIONS: { kind: ConfigKind; title: MessageKey; hint?: MessageKey; path?: string }[] = [
+/** `hint` says in one line what the kind does; `path` (where it lives) is the tooltip. */
+const SECTIONS: { kind: ConfigKind; title: MessageKey; hint: MessageKey; path: string }[] = [
   {
     kind: "instructions",
     title: "docs.section.instructions",
     hint: "docs.section.instructionsHint",
+    path: "CLAUDE.md",
   },
-  { kind: "rule", title: "docs.section.rule", path: ".claude/rules" },
-  { kind: "skill", title: "docs.section.skill", hint: "docs.section.skillHint" },
-  { kind: "agent", title: "docs.section.agent", hint: "docs.section.agentHint" },
-  { kind: "command", title: "docs.section.command", path: ".claude/commands" },
-  { kind: "mcp", title: "docs.section.mcp", path: ".mcp.json" },
-  { kind: "plugin", title: "docs.section.plugin", path: "enabledPlugins" },
-  { kind: "settings", title: "docs.section.settings", path: "settings.json" },
+  {
+    kind: "rule",
+    title: "docs.section.rule",
+    hint: "docs.section.ruleHint",
+    path: ".claude/rules",
+  },
+  {
+    kind: "skill",
+    title: "docs.section.skill",
+    hint: "docs.section.skillHint",
+    path: ".claude/skills",
+  },
+  {
+    kind: "agent",
+    title: "docs.section.agent",
+    hint: "docs.section.agentHint",
+    path: ".claude/agents",
+  },
+  {
+    kind: "command",
+    title: "docs.section.command",
+    hint: "docs.section.commandHint",
+    path: ".claude/commands",
+  },
+  { kind: "mcp", title: "docs.section.mcp", hint: "docs.section.mcpHint", path: ".mcp.json" },
+  {
+    kind: "plugin",
+    title: "docs.section.plugin",
+    hint: "docs.section.pluginHint",
+    path: "enabledPlugins",
+  },
+  {
+    kind: "settings",
+    title: "docs.section.settings",
+    hint: "docs.section.settingsHint",
+    path: "settings.json",
+  },
 ];
+
+/** What each scope means, shown when an item is opened. */
+const SCOPE_HELP: Record<ConfigScope, MessageKey> = {
+  managed: "docs.scopeHelp.managed",
+  user: "docs.scopeHelp.user",
+  parent: "docs.scopeHelp.parent",
+  project: "docs.scopeHelp.project",
+  local: "docs.scopeHelp.local",
+};
+
+const STATE_HELP: Record<ConfigState, MessageKey> = {
+  active: "docs.stateHelp.active",
+  conditional: "docs.stateHelp.conditional",
+  limited: "docs.stateHelp.limited",
+  off: "docs.stateHelp.off",
+  shadowed: "docs.stateHelp.shadowed",
+  notLoaded: "docs.stateHelp.notLoaded",
+};
+
+/** The first sentence of a (long, often English) description. */
+function firstSentence(text: string): string {
+  const t = text.trim();
+  const m = /^(.+?[.!?])(\s|$)/s.exec(t);
+  const line = (m ? m[1] : t).split("\n")[0];
+  return line ?? t;
+}
 
 const SCOPE_LABELS: Record<ConfigScope, MessageKey> = {
   managed: "docs.scope.managed",
@@ -45,7 +102,7 @@ const STATE_STYLES: Record<ConfigState, { label: MessageKey; className: string }
   notLoaded: { label: "docs.state.notLoaded", className: "text-text-muted" },
 };
 
-export function ConfigMapPanel() {
+export function ConfigMapPanel({ onEdit }: { onEdit?: (rel: string) => void } = {}) {
   const t = useT();
   const { current, recent, map, loading, error, choose, select, refresh } = useProjectStore();
   const loadLibrary = useLibraryStore((s) => s.load);
@@ -81,15 +138,24 @@ export function ConfigMapPanel() {
           if (items.length === 0) return null;
           return (
             <section key={section.kind}>
-              <h3 className="mb-1.5 flex items-baseline gap-2 text-xs font-semibold">
+              <h3
+                className="mb-1.5 flex items-baseline gap-2 text-xs font-semibold"
+                title={section.path}
+              >
                 {t(section.title)}
-                <span className="font-normal text-text-muted">
-                  {section.hint ? t(section.hint) : section.path} · {items.length}
+                <span className="font-normal text-text-subtle">{items.length}</span>
+                <span className="min-w-0 truncate font-normal text-text-muted">
+                  {t(section.hint)}
                 </span>
               </h3>
               <ul className="space-y-1.5">
                 {items.map((item) => (
-                  <ConfigRow key={`${item.scope}:${item.path}:${item.name}`} item={item} />
+                  <ConfigRow
+                    key={`${item.scope}:${item.path}:${item.name}`}
+                    item={item}
+                    editRel={onEdit && current ? relInProject(current, item.path) : null}
+                    onEdit={onEdit}
+                  />
                 ))}
               </ul>
             </section>
@@ -152,13 +218,22 @@ function ProjectBar({ current, recent, loading, onChoose, onSelect, onRefresh }:
   );
 }
 
-function ConfigRow({ item }: { item: ConfigItem }) {
+function ConfigRow({
+  item,
+  editRel,
+  onEdit,
+}: {
+  item: ConfigItem;
+  editRel?: string | null;
+  onEdit?: (rel: string) => void;
+}) {
   const t = useT();
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
   const { busy, setEnabled, importItem, overview } = useLibraryStore();
 
   const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
   const reveal = () => {
     if (!isTauri() || !item.path) return;
     revealItemInDir(item.path).then(
@@ -184,10 +259,9 @@ function ConfigRow({ item }: { item: ConfigItem }) {
     <li className="rounded-md border border-border bg-surface-raised hover:border-border-strong">
       <button
         type="button"
-        onClick={reveal}
-        disabled={!item.path}
-        title={item.path || undefined}
-        className="block w-full px-2.5 py-1.5 text-left disabled:cursor-default"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="block w-full px-2.5 py-1.5 text-left"
       >
         <div className="flex items-center gap-1.5 text-xs">
           <span
@@ -200,15 +274,45 @@ function ConfigRow({ item }: { item: ConfigItem }) {
           </span>
           <span className={`shrink-0 text-[10px] ${state.className}`}>{t(state.label)}</span>
         </div>
-        {item.description && (
-          <p className="mt-0.5 line-clamp-2 text-[11px] text-text-muted">{item.description}</p>
+        {!open && (item.description || item.detail) && (
+          <p className="mt-0.5 truncate text-[11px] text-text-muted">
+            {item.description ? firstSentence(item.description) : item.detail}
+          </p>
         )}
-        {item.detail && <p className="mt-0.5 text-[10px] text-text-muted/80">{item.detail}</p>}
-        {failed && <p className="mt-0.5 text-[10px] text-danger">{t("docs.item.openFailed")}</p>}
       </button>
-      {kind && (switchable || canImport) && (
+      {open && (
+        <div className="space-y-1.5 px-2.5 pb-2 text-[11px] leading-relaxed">
+          {item.description && <p className="text-text">{item.description}</p>}
+          {item.detail && <p className="text-text-muted">{item.detail}</p>}
+          <p className="text-text-muted">
+            <span className="font-medium text-text">{t(state.label)}</span> ·{" "}
+            {t(STATE_HELP[item.state])}
+          </p>
+          <p className="text-text-muted">
+            <span className="font-medium text-text">{t(SCOPE_LABELS[item.scope])}</span> ·{" "}
+            {t(SCOPE_HELP[item.scope])}
+          </p>
+          {item.path && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="selectable min-w-0 flex-1 truncate font-mono text-[10px] text-text-subtle">
+                {item.path}
+              </span>
+              <button type="button" className={smallButton} onClick={reveal}>
+                {t("docs.item.reveal")}
+              </button>
+            </div>
+          )}
+          {failed && <p className="text-[10px] text-danger">{t("docs.item.openFailed")}</p>}
+        </div>
+      )}
+      {((kind && (switchable || canImport)) || (editRel && onEdit)) && (
         <div className="flex flex-wrap gap-1 px-2.5 pb-1.5">
-          {toggled && (
+          {editRel && onEdit && (
+            <button type="button" className={smallButton} onClick={() => onEdit(editRel)}>
+              {t("files.edit")}
+            </button>
+          )}
+          {toggled && kind && (
             <button
               type="button"
               className={smallButton}
@@ -227,7 +331,7 @@ function ConfigRow({ item }: { item: ConfigItem }) {
               onPick={(mode) => setEnabled(kind, item.name, false, mode)}
             />
           )}
-          {canImport && (
+          {canImport && kind && (
             <button
               type="button"
               className={smallButton}
@@ -245,6 +349,17 @@ function ConfigRow({ item }: { item: ConfigItem }) {
 
 const buttonClass =
   "shrink-0 rounded-md border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-border-strong disabled:opacity-50";
+
+/** `path` relative to `project` (`/`-separated), or `null` outside it. */
+function relInProject(project: string, path: string): string | null {
+  const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const root = `${norm(project)}/`;
+  const file = norm(path);
+  const inside = /^[a-z]:/i.test(root)
+    ? file.toLowerCase().startsWith(root.toLowerCase())
+    : file.startsWith(root);
+  return inside && /\.(md|json)$/.test(file) ? file.slice(root.length) : null;
+}
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;

@@ -2,8 +2,10 @@
 kind: agent
 title: 디버거
 title_en: Debugger
-summary: 에러·실패한 테스트의 원인을 재현하고 좁혀 가는 subagent.
-summary_en: A subagent that reproduces errors and failing tests and narrows down the cause.
+summary: 에러 원인을 재현하고 좁혀가는 담당이에요
+summary_en: An assistant that hunts down a bug's cause
+detail: 별도로 일하는 subagent예요. 에러나 실패한 테스트를 받으면 먼저 재현하고, 가설을 세워 범위를 좁혀서 근본 원인을 찾은 뒤 최소한의 수정을 제안해요. 증상만 덮는 수정은 피해요.
+detail_en: A separate subagent: reproduces an error or failing test, narrows it down with hypotheses to the root cause, and proposes the smallest real fix rather than patching symptoms.
 category: 디버깅
 category_en: Debugging
 name: debugger

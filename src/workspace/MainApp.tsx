@@ -12,6 +12,7 @@ import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { MemoPage } from "./pages/MemoPage";
+import { ProjectDocsPage } from "./pages/ProjectDocsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { WorkPage } from "./pages/WorkPage";
 
@@ -27,6 +28,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
   ),
   library: () => <LibraryPage />,
   config: () => <ConfigPage />,
+  files: () => <ProjectDocsPage />,
   work: () => <WorkPage />,
   memo: () => <MemoPage />,
   settings: () => <SettingsPage />,

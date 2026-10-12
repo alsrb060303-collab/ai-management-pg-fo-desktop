@@ -2,8 +2,10 @@
 kind: agent
 title: Go 전문가
 title_en: Go expert
-summary: 동시성·성능·마이크로서비스를 다루는 Go subagent.
-summary_en: A Go subagent for concurrency, performance, and microservices.
+summary: Go 동시성·성능 작업 담당이에요
+summary_en: A Go assistant for concurrency and performance
+detail: 별도로 일하는 subagent예요. 고루틴·채널 같은 동시성, 성능 튜닝, 마이크로서비스 구조를 Go 관례에 맞게 다뤄요.
+detail_en: A separate subagent for Go concurrency (goroutines, channels), performance tuning and service design, following Go idioms.
 category: Go
 category_en: Go
 name: golang-pro

@@ -2,6 +2,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { isTauri } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Button, Card, PageHeader, Row, Segmented, Switch } from "../../components/ui";
+import { ModsCard } from "../../features/mods/ModsCard";
 import { type LocalePref, timeAgo, useLocaleStore, useT } from "../../i18n";
 import { useDockStore } from "../../store/dock";
 import { useLibraryStore } from "../../store/library";
@@ -78,6 +79,8 @@ export function SettingsPage() {
       </Card>
 
       <SyncCard />
+
+      <ModsCard />
 
       <Card title={t("settings.library")}>
         <Row

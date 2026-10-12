@@ -2,8 +2,10 @@
 kind: agent
 title: Rust 전문가
 title_en: Rust expert
-summary: 비동기·타입 시스템·시스템 프로그래밍을 맡는 Rust subagent.
-summary_en: A Rust subagent for async, the type system, and systems programming.
+summary: Rust 비동기·시스템 코드 담당이에요
+summary_en: A Rust assistant for async and systems code
+detail: 별도로 일하는 subagent예요. Tokio 같은 비동기 런타임, 소유권·타입 시스템을 활용한 설계, 시스템 수준 성능 작업을 맡아요.
+detail_en: A separate subagent for async Rust (Tokio), ownership and type-system design, and systems-level performance.
 category: Rust
 category_en: Rust
 name: rust-pro

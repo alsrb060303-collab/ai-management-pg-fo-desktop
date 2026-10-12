@@ -2,8 +2,10 @@
 kind: skill
 title: 완료 전에 검증
 title_en: Verify before calling it done
-summary: 끝났다고 말하기 전에 검증 명령을 실제로 실행하고 결과를 확인하게 해요.
-summary_en: Runs the verification commands and checks the output before saying the work is done.
+summary: '끝났다' 말하기 전에 검증 명령을 꼭 돌려요
+summary_en: Runs the checks before saying it's done
+detail: 완료·수정됨·통과라고 말하기 전에 그걸 증명하는 명령(테스트·빌드 등)을 실제로 실행하고 결과를 확인해요. 추측으로 '될 거예요'라고 하지 않아요.
+detail_en: Before claiming something is done, fixed or passing, it runs the command that proves it (tests, build) and reads the result. No 'should work' guesses.
 category: 작업 방식
 category_en: Workflow
 name: verification-before-completion

@@ -169,3 +169,60 @@
 - 공식 색 토큰 예: 배경 #FFFFFF / #F5F4ED / #FAF9F5, 다크 #30302E / #262624 / #141413, 글자 #141413 / #3D3D3A / #73726C, 테두리는 반투명. 모서리 4~12px, 기본 버튼은 거의 검정.
 - 폰트(Anthropic Sans/Serif, Styrene, Tiempos)는 독점 → OFL 대체: Hanken Grotesk·Inter, Source Serif 4, JetBrains Mono. 한글은 Pretendard(OFL).
 - 로고·"Claude" 이름·전용 폰트·공식 색 이름(Clay, Ivory 등)은 쓰지 않고, 강조색은 직접 정한다. https://www.anthropic.com/legal/trademark-guidelines
+
+## 7. Claude Code mods · 추천 mods (2026-10-12 조사: haiku, 검증: sonnet + 직접 설치 확인)
+
+- 공식 문서: https://code.claude.com/docs/en/plugins/mods/overview (터미널은 v2.1.287+, 데스크탑 앱은 v2.1.286+). 마켓플레이스 형식: https://code.claude.com/docs/en/plugin-marketplaces
+- CLI: `claude plugin marketplace add <owner/repo | 로컬 경로 | git URL>`, `claude plugin install <name>@<marketplace> --scope user`(기본 user), `claude plugin uninstall <id> --scope user`, `claude plugin list --json`(각 항목 `id`). 로컬 폴더 마켓플레이스는 설치 후에도 그 폴더에서 바로 읽는다(파일을 바꾸면 다음 세션이나 `/reload-plugins`에 반영). 같은 마켓플레이스를 다시 add해도 성공으로 끝난다.
+- plugin 이름은 `claude-`, `anthropic-`로 시작하면 `claude plugin validate`가 오류를 낸다 → 우리 mod 이름은 `branch-notes`, 마켓플레이스 `ai-management`.
+
+| mod | 하는 일 | 출처 · 설치 | 라이선스 |
+|---|---|---|---|
+| token-weather | 입력창 위 컨텍스트 사용량 예보 | `anthropics/claude-code-playground`의 `claude-code/mods` (마켓플레이스가 하위 폴더라 clone 후 로컬 add, 이름 `claude-code-playground-mods`) | Apache-2.0 (LICENSE 확인) |
+| blast-radius | 위험한 명령(rm -rf, force push) 보류 + 진행/취소 | 위와 같음 | Apache-2.0 |
+| replay-theater | `/replay`로 마지막 턴의 파일 수정 다시 보기 | 위와 같음 | Apache-2.0 |
+| claude-hud | 상태줄(컨텍스트·비용·한도). mod가 아닌 statusLine plugin, 설치 후 `/claude-hud:setup` | `jarrodwatts/claude-hud` (마켓플레이스 `claude-hud`) | MIT (LICENSE 확인) |
+
+- 제외: Git Sidebar(`davila7/claude-code-templates`, MIT)는 마켓플레이스가 아니라 `npx`로 프로젝트 `.claude/skills`에 복사하는 방식이라 넣지 않았다. 공식 `claude-plugins-official`(Apache-2.0)의 plugin들은 mod가 아니다.
+- 네 개 모두 이 저장소 작업 환경에서 격리된 설정(`CLAUDE_CONFIG_DIR`)으로 실제 add·install·list를 확인했다.
+
+## 8. 카탈로그 추가 후보 (2026-10-12 조사: haiku 3개, 검증: sonnet + 저장소 clone 후 직접 확인)
+
+기준: 공식 출처만이 아니라 **커뮤니티에서 널리 쓰이는 것**(GitHub 별·포크·이슈·최근 커밋)도 넣는다. 단 라이선스 파일이 있고(MIT/Apache-2.0/CC0), 가져올 파일 본문에 광고·추천 링크·텔레메트리·원격 스크립트가 없어야 한다. 스크립트가 있어야 동작하는 항목은 Markdown만 가져오는 원칙상 뺀다.
+
+**인기 지표** (2026-10-12 GitHub 페이지 기준, 별/포크): obra/superpowers 297.8k/26.6k · mattpocock/skills 286.3k/24.0k · anthropics/skills 180.5k/21.4k · shanraisshan/claude-code-best-practice 67.4k/6.7k · PatrickJS/awesome-cursorrules 40.9k/3.5k · wshobson/agents 40.4k/4.3k · davila7/claude-code-templates 32.6k/3.7k · VoltAgent/awesome-claude-code-subagents 25.7k/3.0k. 별:포크 비율(8~12:1)과 이슈·PR 수가 정상 범위라 부풀린 흔적은 보이지 않음. 최근 커밋(clone 확인): superpowers·mattpocock·anthropics 2026-10-09, VoltAgent 2026-10-11, cursorrules 2026-05-30.
+
+**넣은 항목** (2026-10-12 카탈로그에 추가, 31개)
+| 종류 | 항목 | 출처 · 라이선스 | 비고 |
+|---|---|---|---|
+| skill | test-driven-development (+ writing-good-tests.md), writing-plans, requesting-code-review (+ code-reviewer.md), systematic-debugging (Markdown 참고 문서만) | obra/superpowers · MIT | 본문에 외부 링크 없음 |
+| skill | grill-me, to-spec, to-tickets, handoff, domain-modeling | mattpocock/skills · MIT | 본문 깨끗. 광고(뉴스레터)는 README에만 있음. TDD는 superpowers 것 하나만 |
+| subagent | test-automator, architect-reviewer, accessibility-tester, api-designer, sql-pro, refactoring-specialist, technical-writer, devops-engineer, java-architect, kotlin-specialist, swift-expert, csharp-developer, php-pro | VoltAgent/awesome-claude-code-subagents · MIT | 본문의 JSON "context manager" 통신 규약(Claude Code 기능 아님) 삭제, 고정된 `model` 제거. code-reviewer·debugger는 내장 블록이 있어 제외 |
+| rule | Next.js App Router, FastAPI, Docker, Flutter Riverpod, Spring Boot JPA, Kotlin Ktor, Laravel, HTMX+Django | PatrickJS/awesome-cursorrules `rules/*.mdc` · CC0-1.0 | 규칙 본문 깨끗(스폰서 광고는 README에만). Cursor frontmatter(`globs`)를 `paths`로 변환 |
+
+**제외 (직접 확인한 이유)**
+- contains-studio/agents (별 12.4k): LICENSE 파일 없음, 커밋 10개 → 사용 불가.
+- obra/superpowers `brainstorming`: 선택 기능(visual companion) 서버가 primeradiant.com 로고를 불러오는 텔레메트리 포함(환경 변수로 끔). Markdown만 가져오면 기능이 깨져서 제외.
+- anthropics/skills `skill-creator`, `mcp-builder`, `webapp-testing`: Python 스크립트가 있어야 동작. `doc-coauthoring`: LICENSE.txt 없음. `brand-guidelines`: Anthropic 브랜드라 금지.
+- mattpocock `improve-codebase-architecture`(CDN 스크립트를 불러오는 HTML 보고서), `diagnosing-bugs`(셸 스크립트 템플릿).
+- centminmod/my-claude-code-setup: Z.AI 추천 코드(할인 링크)와 원격 스크립트 실행 설정.
+- TheDecipherist/claude-code-mastery: 저자가 스스로 구버전이라 밝힘, 홍보 배너, `~/.claude/settings.json` 덮어쓰기.
+- lst97/claude-code-sub-agents: 2025-08 이후 업데이트 없음, VoltAgent와 겹침. iannuttall/claude-agents: 보관(archived).
+- wshobson/commands: 보관됨. anthropics/claude-code의 `/commit` 등: All Rights Reserved → 요약·링크만 가능. 명령(slash command)은 신뢰할 만한 공개 출처가 없어 직접 만드는 쪽이 낫다.
+- davila7/claude-code-templates: 스폰서(Bright Data, Z.AI UTM)와 분석 기능 → 이전처럼 개별 파일만 골라 쓰고 새로 늘리지 않음. github/awesome-copilot: Copilot 전용 형식.
+- 제3자 카탈로그 사이트(skillselion, vibeindex 등)는 숫자가 서로 달라 출처로 쓰지 않음.
+
+## 9. 초보자용 자료 (2026-10-12 조사: haiku)
+
+**공식 기능** (https://code.claude.com/docs/en/output-styles)
+- 출력 스타일 **Explanatory**: 구현 선택과 코드베이스 패턴을 짧은 "Insight"로 설명해 준다. **Learning**: 같은 설명에 더해, 작은 부분(오류 처리, 비즈니스 로직 등)은 `TODO(human)` 표시를 남겨 사용자가 직접 짜게 한다.
+- 켜는 법: `/output-style <이름>` 또는 `/config`. `.claude/settings.local.json`에 `"outputStyle": "Explanatory"`(대소문자 구분, 오타면 조용히 기본값)로 저장된다. 사용자 스타일은 `~/.claude/output-styles` 또는 `.claude/output-styles`의 Markdown(`name`, `description`, `keep-coding-instructions`). `keep-coding-instructions: true`가 없으면 Claude Code 기본 코딩 지침이 빠진다.
+- `/init`: 프로젝트를 보고 CLAUDE.md 초안을 만든다(이미 있으면 덮어쓰지 않고 개선 제안).
+- skills 문서에 `explain-code` 예제(그림·비유로 코드 설명)가 있다. 문서 본문은 복사하지 않고 요약·링크만.
+
+**커뮤니티** (별 수는 2026-10-12 한 번 확인)
+- luongnv89/claude-howto (MIT로 표기, 별 41.8k): 초보자 과정이 있는 튜토리얼. 지침 파일이 아니라 학습 자료. README에 광고·강의 판매 없음. LICENSE 파일은 아직 직접 확인 안 함.
+- LukeRenton/explore-claude-code (MIT, 317): `.claude/` 기능을 클릭하며 배우는 예제 프로젝트.
+- 그 밖에 작은 저장소·블로그(초보자용 CLAUDE.md 템플릿)는 인지도·검증이 부족해 제외. 초보자를 위한 검증된 공개 CLAUDE.md 템플릿은 찾지 못함.
+
+**제안**: 가장 확실한 건 공식 Explanatory·Learning 스타일(라이선스 문제 없음)을 설정에서 켜게 하는 것. 그 위에 앱 자체 초보자 지침 블록(쉬운 말로 설명, 명령 실행 전 무엇을 하는지 말하고 확인 받기, 오류는 원인 한두 문장 + 해결, 삭제·덮어쓰기·push 전 확인)을 직접 써서 내장 블록으로 넣는 것.

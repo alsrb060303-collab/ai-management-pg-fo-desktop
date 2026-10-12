@@ -1,6 +1,14 @@
 import { create } from "zustand";
 
-export type Page = "home" | "composer" | "library" | "config" | "work" | "memo" | "settings";
+export type Page =
+  | "home"
+  | "composer"
+  | "library"
+  | "config"
+  | "files"
+  | "work"
+  | "memo"
+  | "settings";
 
 const COLLAPSED_KEY = "nav-collapsed";
 

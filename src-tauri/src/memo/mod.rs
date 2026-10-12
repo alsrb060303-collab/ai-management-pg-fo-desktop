@@ -131,8 +131,9 @@ async fn blocking<T: Send + 'static>(
         .map_err(|e| e.to_string())?
 }
 
-fn notify(app: &AppHandle, repo_key: String, branch: String) {
+pub(crate) fn notify(app: &AppHandle, repo_key: String, branch: String) {
     crate::sync::changed(app);
+    crate::bridge::changed();
     let _ = app.emit(MEMO_EVENT, Changed { repo_key, branch });
 }
 

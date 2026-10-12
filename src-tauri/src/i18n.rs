@@ -29,6 +29,7 @@ pub fn set_locale(app: AppHandle, locale: String) {
     let english = locale != "ko";
     if ENGLISH.swap(english, Ordering::Relaxed) != english {
         crate::tray::relabel(&app);
+        crate::bridge::changed();
     }
 }
 

@@ -121,17 +121,26 @@ pub(super) fn cached_text(
         "---\nkind: {kind}\ntitle: {}\nsummary: {}\ncategory: {}\n",
         block.title, block.summary, block.category
     );
+    if let Some(detail) = &block.detail {
+        out.push_str(&format!("detail: {}\n", clean(detail)));
+    }
     // Our own English display text, like the Korean, is kept from the bundle.
     if let Some(en) = &block.en {
         out.push_str(&format!(
             "title_en: {}\nsummary_en: {}\ncategory_en: {}\n",
             en.title, en.summary, en.category
         ));
+        if let Some(detail) = &en.detail {
+            out.push_str(&format!("detail_en: {}\n", clean(detail)));
+        }
     }
     out.push_str(&format!(
         "name: {}\ndescription: \"{description}\"\n",
         block.name
     ));
+    if block.manual {
+        out.push_str("disable-model-invocation: true\n");
+    }
     if let Some(tools) = fm.get("tools").or(block.tools.as_ref()) {
         out.push_str(&format!("tools: {tools}\n"));
     }
@@ -158,6 +167,11 @@ pub fn refresh(cache: &Path) -> RefreshResult {
         .filter_map(|(source, stem, text)| {
             let block = catalog::parse_external(source, stem, text)?;
             let (fm, _) = catalog::split(text);
+            // Pinned blocks bundle more than the upstream file (inlined
+            // companion files), so a fresh copy of that file alone would lose them.
+            if fm.get("pinned").is_some_and(|v| v == "true") {
+                return None;
+            }
             Some(Upstream {
                 source,
                 stem,

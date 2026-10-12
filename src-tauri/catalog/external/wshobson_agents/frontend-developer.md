@@ -2,8 +2,10 @@
 kind: agent
 title: 프론트엔드 개발자
 title_en: Frontend developer
-summary: React 컴포넌트·반응형 레이아웃·상태 관리를 맡는 subagent.
-summary_en: A subagent for React components, responsive layouts, and state management.
+summary: React UI·반응형 화면 개발 담당이에요
+summary_en: A frontend assistant for React UIs
+detail: 별도로 일하는 subagent예요. React 컴포넌트, 반응형 레이아웃, 상태 관리, 접근성을 맡아서 화면 작업을 대신 진행해요.
+detail_en: A separate subagent for React components, responsive layouts, state management and accessibility.
 category: React
 category_en: React
 name: frontend-developer

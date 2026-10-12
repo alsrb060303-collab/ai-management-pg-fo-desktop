@@ -2,8 +2,10 @@
 kind: rule
 title: React 규칙
 title_en: React rules
-summary: 함수 컴포넌트와 훅 규칙, 상태 최소화. .tsx/.jsx 파일에만 적용돼요.
-summary_en: Function components, the rules of hooks, minimal state. Applies to .tsx/.jsx files only.
+summary: React 파일에 함수 컴포넌트·훅 규칙을 적용해요
+summary_en: React conventions for .tsx/.jsx files
+detail: .tsx/.jsx 파일을 다룰 때만 적용돼요. 함수 컴포넌트와 훅 규칙을 지키고, 상태는 꼭 필요한 만큼만 두고, 파생 값은 계산해서 쓰게 해요.
+detail_en: Applies only to .tsx/.jsx files: function components, the rules of hooks, minimal state, and derived values computed instead of stored.
 category: React
 category_en: React
 paths:
