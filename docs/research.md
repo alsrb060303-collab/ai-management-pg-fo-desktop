@@ -185,3 +185,29 @@
 
 - 제외: Git Sidebar(`davila7/claude-code-templates`, MIT)는 마켓플레이스가 아니라 `npx`로 프로젝트 `.claude/skills`에 복사하는 방식이라 넣지 않았다. 공식 `claude-plugins-official`(Apache-2.0)의 plugin들은 mod가 아니다.
 - 네 개 모두 이 저장소 작업 환경에서 격리된 설정(`CLAUDE_CONFIG_DIR`)으로 실제 add·install·list를 확인했다.
+
+## 8. 카탈로그 추가 후보 (2026-10-12 조사: haiku 3개, 검증: sonnet + 저장소 clone 후 직접 확인)
+
+기준: 공식 출처만이 아니라 **커뮤니티에서 널리 쓰이는 것**(GitHub 별·포크·이슈·최근 커밋)도 넣는다. 단 라이선스 파일이 있고(MIT/Apache-2.0/CC0), 가져올 파일 본문에 광고·추천 링크·텔레메트리·원격 스크립트가 없어야 한다. 스크립트가 있어야 동작하는 항목은 Markdown만 가져오는 원칙상 뺀다.
+
+**인기 지표** (2026-10-12 GitHub 페이지 기준, 별/포크): obra/superpowers 297.8k/26.6k · mattpocock/skills 286.3k/24.0k · anthropics/skills 180.5k/21.4k · shanraisshan/claude-code-best-practice 67.4k/6.7k · PatrickJS/awesome-cursorrules 40.9k/3.5k · wshobson/agents 40.4k/4.3k · davila7/claude-code-templates 32.6k/3.7k · VoltAgent/awesome-claude-code-subagents 25.7k/3.0k. 별:포크 비율(8~12:1)과 이슈·PR 수가 정상 범위라 부풀린 흔적은 보이지 않음. 최근 커밋(clone 확인): superpowers·mattpocock·anthropics 2026-10-09, VoltAgent 2026-10-11, cursorrules 2026-05-30.
+
+**넣을 후보**
+| 종류 | 항목 | 출처 · 라이선스 | 비고 |
+|---|---|---|---|
+| skill | test-driven-development (+ writing-good-tests.md), writing-plans, requesting-code-review (+ code-reviewer.md), systematic-debugging (Markdown 참고 문서만) | obra/superpowers · MIT | 본문에 외부 링크 없음 |
+| skill | grill-me, to-spec, to-tickets, handoff, domain-modeling | mattpocock/skills · MIT | 본문 깨끗. 광고(뉴스레터)는 README에만 있음. TDD는 superpowers 것 하나만 |
+| subagent | test-automator, architect-reviewer, accessibility-tester, api-designer, sql-pro, refactoring-specialist, technical-writer, devops-engineer, java-architect, kotlin-specialist, swift-expert, csharp-developer, php-pro | VoltAgent/awesome-claude-code-subagents · MIT | 본문의 JSON "context manager" 통신 규약(Claude Code 기능 아님) 삭제, 고정된 `model` 제거. code-reviewer·debugger는 내장 블록이 있어 제외 |
+| rule | Next.js App Router, FastAPI, Docker, Flutter Riverpod, Spring Boot JPA, Kotlin Ktor, Laravel, HTMX+Django | PatrickJS/awesome-cursorrules `rules/*.mdc` · CC0-1.0 | 규칙 본문 깨끗(스폰서 광고는 README에만). Cursor frontmatter(`globs`)를 `paths`로 변환 |
+
+**제외 (직접 확인한 이유)**
+- contains-studio/agents (별 12.4k): LICENSE 파일 없음, 커밋 10개 → 사용 불가.
+- obra/superpowers `brainstorming`: 선택 기능(visual companion) 서버가 primeradiant.com 로고를 불러오는 텔레메트리 포함(환경 변수로 끔). Markdown만 가져오면 기능이 깨져서 제외.
+- anthropics/skills `skill-creator`, `mcp-builder`, `webapp-testing`: Python 스크립트가 있어야 동작. `doc-coauthoring`: LICENSE.txt 없음. `brand-guidelines`: Anthropic 브랜드라 금지.
+- mattpocock `improve-codebase-architecture`(CDN 스크립트를 불러오는 HTML 보고서), `diagnosing-bugs`(셸 스크립트 템플릿).
+- centminmod/my-claude-code-setup: Z.AI 추천 코드(할인 링크)와 원격 스크립트 실행 설정.
+- TheDecipherist/claude-code-mastery: 저자가 스스로 구버전이라 밝힘, 홍보 배너, `~/.claude/settings.json` 덮어쓰기.
+- lst97/claude-code-sub-agents: 2025-08 이후 업데이트 없음, VoltAgent와 겹침. iannuttall/claude-agents: 보관(archived).
+- wshobson/commands: 보관됨. anthropics/claude-code의 `/commit` 등: All Rights Reserved → 요약·링크만 가능. 명령(slash command)은 신뢰할 만한 공개 출처가 없어 직접 만드는 쪽이 낫다.
+- davila7/claude-code-templates: 스폰서(Bright Data, Z.AI UTM)와 분석 기능 → 이전처럼 개별 파일만 골라 쓰고 새로 늘리지 않음. github/awesome-copilot: Copilot 전용 형식.
+- 제3자 카탈로그 사이트(skillselion, vibeindex 등)는 숫자가 서로 달라 출처로 쓰지 않음.
