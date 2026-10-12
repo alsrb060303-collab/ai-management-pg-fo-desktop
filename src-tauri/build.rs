@@ -4,6 +4,7 @@ use std::path::Path;
 fn main() {
     embed_builtin_blocks();
     embed_external_blocks();
+    embed_external_companions();
     tauri_build::build()
 }
 
@@ -45,6 +46,70 @@ fn embed_external_blocks() {
     out.push(']');
 
     let dest = Path::new(&std::env::var("OUT_DIR").unwrap()).join("external_blocks.rs");
+    std::fs::write(dest, out).unwrap();
+}
+
+/// Embeds the Markdown files that go next to a bundled skill's SKILL.md
+/// (`catalog/external/<source>/<stem>/<relative path>.md`) as
+/// `(source, stem, relative path, text)`.
+fn embed_external_companions() {
+    fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "md") {
+                out.push(path);
+            }
+        }
+    }
+
+    let dir = Path::new("catalog/external");
+    let root = Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).to_path_buf();
+    let mut out = String::from("&[\n");
+    let mut sources: Vec<_> = std::fs::read_dir(dir)
+        .expect("catalog/external exists")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir())
+        .collect();
+    sources.sort();
+    for source in sources {
+        let name = source.file_name().unwrap().to_string_lossy().into_owned();
+        let mut stems: Vec<_> = std::fs::read_dir(&source)
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.is_dir())
+            .collect();
+        stems.sort();
+        for stem_dir in stems {
+            println!("cargo:rerun-if-changed={}", stem_dir.display());
+            let stem = stem_dir.file_name().unwrap().to_string_lossy().into_owned();
+            let mut files = Vec::new();
+            walk(&stem_dir, &mut files);
+            files.sort();
+            for path in files {
+                let rel = path
+                    .strip_prefix(&stem_dir)
+                    .unwrap()
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                let abs = root.join(&path);
+                writeln!(
+                    out,
+                    "    ({name:?}, {stem:?}, {rel:?}, include_str!({:?})),",
+                    abs.display().to_string()
+                )
+                .unwrap();
+            }
+        }
+    }
+    out.push(']');
+
+    let dest = Path::new(&std::env::var("OUT_DIR").unwrap()).join("external_files.rs");
     std::fs::write(dest, out).unwrap();
 }
 

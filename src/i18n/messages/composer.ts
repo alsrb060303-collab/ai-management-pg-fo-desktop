@@ -52,6 +52,15 @@ export const ko = {
   "composer.detail.where.agent":
     ".claude/agents에 들어가요. Claude가 일을 맡기는 별도 도우미로, 따로 대화하며 결과만 돌려줘요.",
   "composer.detail.extraFiles": "이 skill 폴더의 다른 파일 {n}개는 복사되지 않아요.",
+  "composer.detail.companions": "함께 쓰이는 참고 파일 {n}개 (필요할 때만 읽혀요)",
+  "composer.large.title": "큰 블록이에요",
+  "composer.large.body":
+    "'{title}'은(는) 본문이 약 {kb}KB예요. Claude가 이 내용을 불러올 때마다 그만큼 컨텍스트(토큰)를 써요. 그래도 넣을까요?",
+  "composer.large.files":
+    "참고 파일 {n}개(약 {kb}KB)도 함께 써져요. 이 파일들은 필요할 때만 읽혀요.",
+  "composer.large.dontShow": "다시 보지 않기",
+  "composer.large.cancel": "취소",
+  "composer.large.add": "넣기",
   "composer.detail.showText": "실제로 들어갈 내용",
   "composer.detail.add": "추가",
   "composer.preview.unconnected":
@@ -118,6 +127,30 @@ export const ko = {
 
   // Write dialog
   "composer.write.title": "프로젝트에 쓰기",
+  "composer.write.where": "쓸 곳",
+  "composer.write.mode.local": "내 컴퓨터",
+  "composer.write.mode.github": "GitHub",
+  "composer.write.gh.signIn":
+    "GitHub에 로그인하면 clone 없이 저장소에 바로 쓸 수 있어요. 작업 패널의 GitHub 탭이나 설정에서 로그인해 주세요.",
+  "composer.write.gh.repo": "저장소",
+  "composer.write.gh.branch": "브랜치",
+  "composer.write.gh.pickRepo": "저장소를 골라 주세요",
+  "composer.write.gh.hint":
+    "GitHub에 있는 파일과 비교한 결과예요. 바뀌는 파일은 커밋 하나로 올라가요. '나만' 출력은 git에 올리지 않아서 빠져요.",
+  "composer.write.gh.toPr": "새 브랜치에 커밋하고 PR 만들기",
+  "composer.write.gh.toBranch": "'{branch}'에 바로 커밋",
+  "composer.write.gh.newBranch": "새 브랜치 이름",
+  "composer.write.gh.branchTaken": "이미 있는 브랜치 이름이에요. 다른 이름을 써 주세요.",
+  "composer.write.gh.message": "커밋 메시지",
+  "composer.write.gh.defaultMessage": "문서 작성기: {name} 반영",
+  "composer.write.gh.prBody": "AI Management 문서 작성기로 '{name}'의 파일을 썼어요.",
+  "composer.write.gh.prFailed": "커밋은 올렸지만 PR을 만들지 못했어요: {reason}",
+  "composer.write.gh.commit": "{n}개 파일 커밋",
+  "composer.write.gh.committed": "{n}개 파일을 '{branch}' 브랜치에 커밋했어요.",
+  "composer.write.gh.openPr": "PR #{n} 열기",
+  "composer.write.gh.openCommit": "커밋 보기",
+  "composer.write.gh.pullHint":
+    "이 저장소를 내 컴퓨터에도 clone해 뒀다면 pull해야 바뀐 내용이 보여요.",
   "composer.write.close": "닫기",
   "composer.write.pickProject": "프로젝트를 골라 주세요",
   "composer.write.change": "바꾸기",
@@ -195,6 +228,15 @@ export const en: Messages<typeof ko> = {
   "composer.detail.where.agent":
     "Goes into .claude/agents. A separate helper Claude hands work to; it works in its own context and returns the result.",
   "composer.detail.extraFiles": "{n} other files in this skill's folder aren't copied.",
+  "composer.detail.companions": "{n} reference files come with it (read only when needed)",
+  "composer.large.title": "This is a large block",
+  "composer.large.body":
+    "'{title}' has about {kb} KB of text. Claude uses that much context (tokens) each time it loads it. Add it anyway?",
+  "composer.large.files":
+    "{n} reference files (about {kb} KB) are written too. They're read only when needed.",
+  "composer.large.dontShow": "Don't show this again",
+  "composer.large.cancel": "Cancel",
+  "composer.large.add": "Add",
   "composer.detail.showText": "What gets written",
   "composer.detail.add": "Add",
   "composer.preview.unconnected":
@@ -257,6 +299,30 @@ export const en: Messages<typeof ko> = {
   "composer.block.apply": "Apply",
 
   "composer.write.title": "Write to project",
+  "composer.write.where": "Write to",
+  "composer.write.mode.local": "This computer",
+  "composer.write.mode.github": "GitHub",
+  "composer.write.gh.signIn":
+    "Sign in to GitHub to write to a repository without cloning it. Sign in from the GitHub tab in the work panel or in Settings.",
+  "composer.write.gh.repo": "Repository",
+  "composer.write.gh.branch": "Branch",
+  "composer.write.gh.pickRepo": "Choose a repository",
+  "composer.write.gh.hint":
+    "Compared with the files on GitHub. Changed files go up in one commit. 'Just me' outputs stay out of git, so they're left out.",
+  "composer.write.gh.toPr": "Commit to a new branch and open a PR",
+  "composer.write.gh.toBranch": "Commit straight to '{branch}'",
+  "composer.write.gh.newBranch": "New branch name",
+  "composer.write.gh.branchTaken": "That branch already exists. Use another name.",
+  "composer.write.gh.message": "Commit message",
+  "composer.write.gh.defaultMessage": "Document composer: apply {name}",
+  "composer.write.gh.prBody": "Files for '{name}' written by the AI Management document composer.",
+  "composer.write.gh.prFailed": "Committed, but the PR couldn't be opened: {reason}",
+  "composer.write.gh.commit": "Commit {n} files",
+  "composer.write.gh.committed": "Committed {n} files to '{branch}'.",
+  "composer.write.gh.openPr": "Open PR #{n}",
+  "composer.write.gh.openCommit": "View commit",
+  "composer.write.gh.pullHint":
+    "If you also cloned this repository, pull to see the changes there.",
   "composer.write.close": "Close",
   "composer.write.pickProject": "Choose a project",
   "composer.write.change": "Change",

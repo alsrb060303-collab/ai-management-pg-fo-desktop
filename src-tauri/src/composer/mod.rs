@@ -8,6 +8,7 @@
 pub mod catalog;
 pub mod compile;
 pub mod refresh;
+pub mod remote;
 pub mod write;
 
 use std::fs;

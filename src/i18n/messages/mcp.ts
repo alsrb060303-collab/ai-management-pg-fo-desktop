@@ -97,6 +97,21 @@ export const ko = {
   "mcp.rec.context7": "라이브러리의 최신 문서를 찾아 넣어 줘요 (Upstash)",
   "mcp.rec.notion": "Notion 페이지 검색·편집. /mcp 에서 로그인 (Notion 운영)",
   "mcp.rec.linear": "Linear 이슈 읽기 전용. /mcp 에서 로그인 (Linear 운영)",
+  "mcp.rec.cloudflare":
+    "Cloudflare 계정의 Workers·DNS·R2 등을 다뤄요. /mcp 에서 로그인 (Cloudflare 공식)",
+  "mcp.rec.supabase":
+    "Supabase DB 조회·스키마·문서. 읽기 전용으로 넣어요(read_only=true). /mcp 에서 로그인 (Supabase 공식)",
+  "mcp.rec.stripe":
+    "Stripe 결제·고객·구독 조회와 변경. 실제 결제 데이터를 바꿀 수 있으니 테스트 계정 권장. /mcp 에서 로그인 (Stripe 공식)",
+  "mcp.rec.aws-docs": "AWS 공식 문서를 검색해 읽어 와요 (AWS Labs)",
+  "mcp.rec.postgres":
+    "PostgreSQL 쿼리·스키마·성능 분석. 읽기 전용 모드로 넣어요. DATABASE_URI 환경변수에 접속 주소를 넣어 두세요 (커뮤니티)",
+  "mcp.rec.next-devtools":
+    "실행 중인 Next.js 16+ 개발 서버의 오류·라우트를 살펴봐요. 사용 통계는 꺼서 넣어요 (Vercel 공식)",
+  "mcp.rec.atlassian":
+    "Jira 이슈와 Confluence 문서. JIRA_URL·JIRA_USERNAME·JIRA_API_TOKEN 등 환경변수가 필요해요 (커뮤니티)",
+  "mcp.rec.figma":
+    "Figma 디자인의 레이아웃·스타일을 읽어 와요. FIGMA_API_KEY 환경변수가 필요하고, 사용 통계는 꺼서 넣어요 (커뮤니티)",
 };
 
 export const en: Messages<typeof ko> = {
@@ -199,4 +214,19 @@ export const en: Messages<typeof ko> = {
   "mcp.rec.context7": "Up-to-date library docs on demand (Upstash)",
   "mcp.rec.notion": "Search and edit Notion pages. Sign in with /mcp (hosted by Notion)",
   "mcp.rec.linear": "Read Linear issues. Sign in with /mcp (hosted by Linear)",
+  "mcp.rec.cloudflare":
+    "Workers, DNS, R2 and more in your Cloudflare account. Sign in with /mcp (official, Cloudflare)",
+  "mcp.rec.supabase":
+    "Query Supabase databases, schemas and docs. Added read-only (read_only=true). Sign in with /mcp (official, Supabase)",
+  "mcp.rec.stripe":
+    "Look up and change Stripe payments, customers and subscriptions. It can change live billing data, so a test account is safer. Sign in with /mcp (official, Stripe)",
+  "mcp.rec.aws-docs": "Search and read the official AWS documentation (AWS Labs)",
+  "mcp.rec.postgres":
+    "PostgreSQL queries, schemas and performance analysis, added in read-only mode. Put the connection string in the DATABASE_URI environment variable (community)",
+  "mcp.rec.next-devtools":
+    "Errors and routes of a running Next.js 16+ dev server. Added with usage statistics off (official, Vercel)",
+  "mcp.rec.atlassian":
+    "Jira issues and Confluence pages. Needs JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN and similar environment variables (community)",
+  "mcp.rec.figma":
+    "Reads layout and styles from Figma designs. Needs the FIGMA_API_KEY environment variable; added with usage statistics off (community)",
 };

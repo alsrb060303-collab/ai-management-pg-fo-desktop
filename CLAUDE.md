@@ -50,5 +50,6 @@ Applies to everything taken from outside this repo: catalog blocks (instructions
 
 ## Subagents
 
+- Ask the user before running a workflow or spawning subagents.
 - Web research subagents (WebSearch/WebFetch): use model `haiku`.
 - Verification / fact-check subagents: use model `sonnet`.

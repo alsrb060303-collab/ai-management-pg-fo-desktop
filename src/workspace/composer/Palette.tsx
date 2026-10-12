@@ -14,6 +14,7 @@ import {
   useComposerStore,
 } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
+import { isLarge, LargeBlockDialog, largeWarningOff } from "./LargeBlockDialog";
 
 const FILTERS: { value: BlockKind | "all"; label: MessageKey }[] = [
   { value: "all", label: "composer.palette.all" },
@@ -51,7 +52,15 @@ function usePlacement() {
 
 export function Palette() {
   const catalog = useComposerStore((s) => s.catalog);
-  const addBlock = useComposerStore((s) => s.addBlock);
+  const addToCanvas = useComposerStore((s) => s.addBlock);
+  /** A large block waiting for the user's OK before it's added. */
+  const [pending, setPending] = useState<{ block: Block; at: { x: number; y: number } } | null>(
+    null,
+  );
+  const addBlock = (block: Block, at: { x: number; y: number }) => {
+    if (isLarge(block) && !largeWarningOff()) setPending({ block, at });
+    else addToCanvas(block.id, at);
+  };
   const addOutput = useComposerStore((s) => s.addOutput);
   const refreshExternal = useComposerStore((s) => s.refreshExternal);
   const t = useT();
@@ -118,7 +127,7 @@ export function Palette() {
         return;
       }
       const position = place.atPoint(ev.clientX, ev.clientY);
-      if (position) addBlock(block.id, { x: position.x - 120, y: position.y - 30 });
+      if (position) addBlock(block, { x: position.x - 120, y: position.y - 30 });
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -240,7 +249,7 @@ export function Palette() {
                         aria-label={t("composer.palette.add", { title: block.title })}
                         title={t("composer.palette.addToCanvas")}
                         onPointerDown={(e) => e.stopPropagation()}
-                        onClick={() => addBlock(block.id, place.nearCenter())}
+                        onClick={() => addBlock(block, place.nearCenter())}
                         className="mt-0.5 rounded-md p-0.5 text-text-subtle opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-text focus-visible:opacity-100"
                       >
                         <Plus size={15} />
@@ -249,7 +258,7 @@ export function Palette() {
                     {opened === block.id && (
                       <BlockDetail
                         block={block}
-                        onAdd={() => addBlock(block.id, place.nearCenter())}
+                        onAdd={() => addBlock(block, place.nearCenter())}
                       />
                     )}
                   </li>
@@ -289,6 +298,18 @@ export function Palette() {
           </div>,
           document.body,
         )}
+      {pending &&
+        createPortal(
+          <LargeBlockDialog
+            block={pending.block}
+            onAdd={() => {
+              addToCanvas(pending.block.id, pending.at);
+              setPending(null);
+            }}
+            onCancel={() => setPending(null)}
+          />,
+          document.body,
+        )}
     </aside>
   );
 }
@@ -321,6 +342,18 @@ function BlockDetail({ block, onAdd }: { block: Block; onAdd: () => void }) {
       <p className="text-text-muted">{where}</p>
       {block.extraFiles > 0 && (
         <p className="text-warning">{t("composer.detail.extraFiles", { n: block.extraFiles })}</p>
+      )}
+      {block.companions.length > 0 && (
+        <details className="text-text-muted">
+          <summary className="cursor-pointer">
+            {t("composer.detail.companions", { n: block.companions.length })}
+          </summary>
+          <ul className="mt-1 space-y-0.5 pl-3 font-mono text-[11px]">
+            {block.companions.map((path) => (
+              <li key={path}>{path}</li>
+            ))}
+          </ul>
+        </details>
       )}
       {block.origin && (
         <button

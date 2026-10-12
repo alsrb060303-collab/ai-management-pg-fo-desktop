@@ -111,6 +111,8 @@ pub fn run() {
             github::github_remote_tree,
             github::github_remote_file,
             github::github_remote_commit,
+            composer::remote::composer_plan_remote,
+            composer::remote::composer_write_remote,
             shell::view_mode,
             shell::view_switch,
         ])

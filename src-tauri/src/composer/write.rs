@@ -185,25 +185,57 @@ fn record<'a>(records: &'a [Written], project: &str, path: &str) -> Option<&'a W
 
 /// Claude Code reads AGENTS.md only while no CLAUDE.md-family file exists, so
 /// creating the first one would silently stop it loading. Import it instead.
-fn keeps_agents_md(root: &Path) -> bool {
-    root.join("AGENTS.md").is_file()
+/// The project a plan is made for: a local folder, or a GitHub branch read
+/// through the API.
+pub trait Project {
+    /// The file's text, `None` when it doesn't exist.
+    fn read(&self, path: &str) -> Result<Option<String>, String>;
+    fn is_file(&self, path: &str) -> bool;
+    /// Whether git tracks the file ("Just me" files must stay untracked).
+    fn is_tracked(&self, path: &str) -> bool;
+    /// Personal files can't be written here, with the reason.
+    fn refuses_personal(&self) -> Option<String> {
+        None
+    }
+}
+
+pub struct Local<'a>(pub &'a Path);
+
+impl Project for Local<'_> {
+    fn read(&self, path: &str) -> Result<Option<String>, String> {
+        read(&self.0.join(path))
+    }
+    fn is_file(&self, path: &str) -> bool {
+        self.0.join(path).is_file()
+    }
+    fn is_tracked(&self, path: &str) -> bool {
+        ops::is_tracked(&self.0.join(path))
+    }
+}
+
+fn keeps_agents_md(project: &dyn Project) -> bool {
+    project.is_file("AGENTS.md")
         && !["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"]
             .iter()
-            .any(|f| root.join(f).exists())
+            .any(|f| project.is_file(f))
 }
 
 /// Bare `@word` imports that resolve to a file in the project, which Claude
 /// Code would load into every session.
-fn bare_imports(root: &Path, content: &str) -> Vec<String> {
+fn bare_imports(project: &dyn Project, content: &str) -> Vec<String> {
     import_tokens(content)
         .into_iter()
-        .filter(|t| !t.contains(['/', '.']) && root.join(t).is_file())
+        .filter(|t| !t.contains(['/', '.']) && project.is_file(t))
         .collect()
 }
 
 /// What writing `file` into `root` would do.
 pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]) -> PlanItem {
-    let full = root.join(&file.path);
+    plan(&Local(root), project, file, records)
+}
+
+/// What writing `file` into `target` would do; `project` keys the records.
+pub fn plan(target: &dyn Project, project: &str, file: &OutFile, records: &[Written]) -> PlanItem {
     let content = normalize(&file.content);
     let item = |status, old: Option<String>, new: String, note: Option<String>| PlanItem {
         path: file.path.clone(),
@@ -214,11 +246,16 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
         new,
         note,
     };
-    let existing = match read(&full) {
+    if file.personal
+        && let Some(reason) = target.refuses_personal()
+    {
+        return item(Status::Blocked(reason), None, String::new(), None);
+    }
+    let existing = match target.read(&file.path) {
         Ok(text) => text,
         Err(reason) => return item(Status::Blocked(reason), None, String::new(), None),
     };
-    if file.personal && existing.is_some() && ops::is_tracked(&full) {
+    if file.personal && existing.is_some() && target.is_tracked(&file.path) {
         return item(
             Status::Blocked(crate::tr!(
                 "git에 올라간 파일이라 '나만'으로 쓸 수 없어요",
@@ -253,7 +290,7 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
 
     if file.section {
         let mut notes = Vec::new();
-        let imports = bare_imports(root, &content);
+        let imports = bare_imports(target, &content);
         if !imports.is_empty() {
             notes.push(crate::tr!(
                 "@{}는 Claude Code가 그 파일을 매번 불러와요. 의도한 게 아니면 백틱으로 감싸 주세요",
@@ -266,7 +303,7 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
             Err(reason) => return item(Status::Blocked(reason), existing, String::new(), None),
         };
         let Some(text) = existing else {
-            if keeps_agents_md(root) {
+            if keeps_agents_md(target) {
                 new = format!("@AGENTS.md\n\n{new}");
                 notes.push(crate::tr!(
                     "AGENTS.md가 계속 읽히도록 맨 위에 @AGENTS.md를 넣어요",
@@ -415,25 +452,30 @@ pub fn write_file(
     item: &PlanItem,
 ) -> ops::Result<Written> {
     ops::write_atomic(&root.join(&file.path), &item.new)?;
+    Ok(record_of(project, file, item))
+}
+
+/// The record to keep after `item` was written (locally or to GitHub).
+pub fn record_of(project: &str, file: &OutFile, item: &PlanItem) -> Written {
     if file.target == Target::Hooks {
-        return Ok(Written {
+        return Written {
             project: project.to_string(),
             path: file.path.clone(),
             hash: hash(&file.content),
             hooks: serde_json::from_str(&file.content).ok(),
-        });
+        };
     }
     let hash = if file.section {
         hash(normalize(&file.content).trim())
     } else {
         hash(&item.new)
     };
-    Ok(Written {
+    Written {
         project: project.to_string(),
         path: file.path.clone(),
         hash,
         hooks: None,
-    })
+    }
 }
 
 /// Keeps `.git/info/exclude` in line with the output's scope: personal files

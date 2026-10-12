@@ -538,6 +538,22 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                         node: output.id.clone(),
                         blocks: vec![node_id.to_string()],
                     });
+                    // A bundled skill's references go next to its SKILL.md,
+                    // at the same relative paths its body links to.
+                    if target == Target::Skills {
+                        for (rel, text) in &block.companions {
+                            files.push(OutFile {
+                                path: format!(".claude/skills/{}/{rel}", block.name),
+                                lines: text.lines().count(),
+                                content: text.to_string(),
+                                section: false,
+                                personal,
+                                target,
+                                node: output.id.clone(),
+                                blocks: vec![node_id.to_string()],
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -769,6 +785,8 @@ mod tests {
             manual: false,
             body: body.into(),
             extra_files: 0,
+            companions: Vec::new(),
+            size: 0,
             origin: None,
             frontmatter: None,
         }
@@ -822,6 +840,30 @@ mod tests {
         let f = &compile(&d, &catalog()).files[0];
         assert_eq!(f.path, "CLAUDE.local.md");
         assert_eq!(f.content, "Mine");
+    }
+
+    #[test]
+    fn a_skill_writes_its_companion_files_next_to_skill_md() {
+        let mut skill = block("builtin:guide", BlockKind::Skill, "See references/a.md");
+        skill.companions = vec![("references/a.md".into(), "# A\n")];
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "s", "type": "block", "data": {"blockId": "builtin:guide"}},
+                {"id": "S", "type": "output", "data": {"target": "skills"}}
+            ],
+            "edges": [{"source": "s", "target": "S"}]
+        }"#);
+        let out = compile(&d, &[skill]);
+        let paths: Vec<_> = out.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                ".claude/skills/guide/SKILL.md",
+                ".claude/skills/guide/references/a.md"
+            ]
+        );
+        assert_eq!(out.files[1].content, "# A\n");
+        assert_eq!(out.files[1].blocks, ["s"]);
     }
 
     #[test]

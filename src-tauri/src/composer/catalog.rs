@@ -15,6 +15,11 @@ const BUILTIN: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/builtin_blo
 /// `(source folder, file stem, text)` for every bundled third-party block.
 const EXTERNAL: &[(&str, &str, &str)] = include!(concat!(env!("OUT_DIR"), "/external_blocks.rs"));
 
+/// `(source folder, file stem, path relative to SKILL.md, text)` for the
+/// Markdown files bundled next to a third-party skill (its references).
+const EXTERNAL_FILES: &[(&str, &str, &str, &str)] =
+    include!(concat!(env!("OUT_DIR"), "/external_files.rs"));
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BlockKind {
@@ -108,12 +113,27 @@ pub struct Block {
     pub body: String,
     /// Files next to a library skill's SKILL.md, which the composer does not copy.
     pub extra_files: usize,
+    /// Markdown files a bundled skill keeps next to its SKILL.md, as
+    /// `(path relative to SKILL.md, text)`. Written along with the skill;
+    /// the UI gets only the paths.
+    #[serde(serialize_with = "companion_paths")]
+    pub companions: Vec<(String, &'static str)>,
+    /// Bytes of text the block writes (body and companion files), so the UI
+    /// can warn before a large one is added.
+    pub size: usize,
     pub origin: Option<Origin>,
     /// Library items: the original frontmatter, written unchanged so fields
     /// the composer does not model (allowed-tools, permissionMode, ...) and the
     /// item's own `name` survive.
     #[serde(skip)]
     pub frontmatter: Option<String>,
+}
+
+fn companion_paths<S: serde::Serializer>(
+    files: &[(String, &'static str)],
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    s.collect_seq(files.iter().map(|(path, _)| path))
 }
 
 impl Block {
@@ -225,6 +245,12 @@ pub(super) fn parse_external(source: &str, stem: &str, text: &str) -> Option<Blo
         license: field("license")?,
         copyright: field("copyright")?,
     });
+    block.companions = EXTERNAL_FILES
+        .iter()
+        .filter(|(s, st, _, _)| *s == source && *st == stem)
+        .map(|(_, _, rel, text)| (rel.to_string(), *text))
+        .collect();
+    block.size = block.body.len() + block.companions.iter().map(|(_, t)| t.len()).sum::<usize>();
     Some(block)
 }
 
@@ -262,8 +288,10 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         manual: fm
             .get("disable-model-invocation")
             .is_some_and(|v| v == "true"),
+        size: body.len(),
         body: adapt(fm.get("adapt").map(String::as_str), body.trim_end()),
         extra_files: 0,
+        companions: Vec::new(),
         origin: None,
         frontmatter: None,
     })
@@ -497,8 +525,10 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         manual: fm
             .get("disable-model-invocation")
             .is_some_and(|v| v == "true"),
+        size: body.trim_end().len(),
         body: body.trim_end().to_string(),
         extra_files,
+        companions: Vec::new(),
         origin: None,
         frontmatter: raw_frontmatter(&text),
     })
@@ -655,6 +685,35 @@ mod tests {
                 "{}",
                 block.id
             );
+        }
+    }
+
+    #[test]
+    fn companion_files_belong_to_a_skill_and_stay_inside_its_folder() {
+        let blocks = external(None);
+        for (source, stem, rel, text) in EXTERNAL_FILES {
+            let id = format!("external:{source}/{stem}");
+            let block = blocks
+                .iter()
+                .find(|b| b.id == id)
+                .unwrap_or_else(|| panic!("{rel} has no block {id}"));
+            assert_eq!(
+                block.kind,
+                BlockKind::Skill,
+                "{id}: only skills have folders"
+            );
+            assert!(
+                !rel.is_empty()
+                    && !rel.starts_with('/')
+                    && !rel.contains('\\')
+                    && rel
+                        .split('/')
+                        .all(|p| !p.is_empty() && p != "." && p != "..")
+                    && rel != &"SKILL.md",
+                "{id}: bad companion path {rel}"
+            );
+            assert!(!text.trim().is_empty(), "{id}/{rel} is empty");
+            assert!(block.companions.iter().any(|(r, _)| r == rel));
         }
     }
 
