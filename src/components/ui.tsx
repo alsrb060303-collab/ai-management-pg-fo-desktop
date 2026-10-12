@@ -152,7 +152,7 @@ export function Row({
   description,
   children,
 }: {
-  title: string;
+  title: ReactNode;
   description?: ReactNode;
   children?: ReactNode;
 }) {

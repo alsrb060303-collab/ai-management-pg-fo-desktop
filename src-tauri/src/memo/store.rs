@@ -66,6 +66,39 @@ pub struct BranchCounts {
     pub has_note: bool,
 }
 
+/// An item as it travels between devices.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SyncRow {
+    pub id: String,
+    pub repo_key: String,
+    pub branch: String,
+    /// "note" or "todo".
+    pub kind: String,
+    pub text: String,
+    pub done: bool,
+    pub position: f64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub deleted: bool,
+    pub device_id: String,
+}
+
+fn sync_row_from(row: &Row) -> rusqlite::Result<SyncRow> {
+    Ok(SyncRow {
+        id: row.get("id")?,
+        repo_key: row.get("repo_key")?,
+        branch: row.get("branch")?,
+        kind: row.get("kind")?,
+        text: row.get("text")?,
+        done: row.get::<_, i64>("done")? != 0,
+        position: row.get("position")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        deleted: row.get::<_, i64>("deleted")? != 0,
+        device_id: row.get("device_id")?,
+    })
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     device: String,
@@ -399,7 +432,8 @@ impl Store {
                 let notes: Vec<(String, String)> = {
                     let mut stmt = tx
                         .prepare(
-                            "SELECT id, branch FROM items WHERE repo_key = ?1 AND kind = 'note'",
+                            "SELECT id, branch FROM items
+                             WHERE repo_key = ?1 AND kind = 'note' AND deleted = 0",
                         )
                         .map_err(db_err)?;
                     stmt.query_map([&from], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -407,10 +441,10 @@ impl Store {
                         .collect::<rusqlite::Result<_>>()
                         .map_err(db_err)?
                 };
-                for (id, branch) in notes {
+                for (id, branch) in &notes {
                     tx.execute(
                         "UPDATE items SET id = ?2 WHERE id = ?1",
-                        params![id, note_id(key, &branch)],
+                        params![id, note_id(key, branch)],
                     )
                     .map_err(db_err)?;
                 }
@@ -420,6 +454,17 @@ impl Store {
                     params![from, key, now, self.device],
                 )
                 .map_err(db_err)?;
+                // A synced copy under an old note id would come back from
+                // other devices; a tombstone under the old key retires it.
+                for (id, branch) in &notes {
+                    tx.execute(
+                        "INSERT INTO items (id, repo_key, branch, kind, text, done, position,
+                                            created_at, updated_at, deleted, device_id)
+                         VALUES (?1, ?2, ?3, 'note', '', 0, 0, ?4, ?4, 1, ?5)",
+                        params![id, from, branch, now, self.device],
+                    )
+                    .map_err(db_err)?;
+                }
             }
         }
         tx.execute(
@@ -429,6 +474,128 @@ impl Store {
         )
         .map_err(db_err)?;
         tx.commit().map_err(db_err)
+    }
+
+    pub fn meta(&self, key: &str) -> Result<Option<String>> {
+        self.conn()
+            .query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0))
+            .optional()
+            .map_err(db_err)
+    }
+
+    pub fn set_meta(&self, key: &str, value: Option<&str>) -> Result<()> {
+        let conn = self.conn();
+        match value {
+            Some(v) => conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+                params![key, v],
+            ),
+            None => conn.execute("DELETE FROM meta WHERE key = ?1", [key]),
+        }
+        .map(drop)
+        .map_err(db_err)
+    }
+
+    /// Rows changed here since they were last synced (tombstones included).
+    pub fn pending(&self, limit: usize) -> Result<Vec<SyncRow>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT * FROM items WHERE synced_at IS NULL OR synced_at != updated_at
+                 ORDER BY updated_at LIMIT ?1",
+            )
+            .map_err(db_err)?;
+        stmt.query_map([limit as i64], sync_row_from)
+            .map_err(db_err)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db_err)
+    }
+
+    /// Records rows as uploaded, unless they changed again meanwhile.
+    pub fn mark_synced(&self, rows: &[(String, i64)]) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(db_err)?;
+        for (id, updated_at) in rows {
+            tx.execute(
+                "UPDATE items SET synced_at = updated_at WHERE id = ?1 AND updated_at = ?2",
+                params![id, updated_at],
+            )
+            .map_err(db_err)?;
+        }
+        tx.commit().map_err(db_err)
+    }
+
+    /// Everything needs uploading again (another account, or a reset).
+    pub fn mark_all_unsynced(&self) -> Result<()> {
+        self.conn()
+            .execute("UPDATE items SET synced_at = NULL", [])
+            .map(drop)
+            .map_err(db_err)
+    }
+
+    /// Applies rows from another device: the newer `updated_at` wins (the
+    /// device id breaks ties, the same way the server rules do). Returns the
+    /// branches that changed.
+    pub fn apply_remote(&self, rows: &[SyncRow]) -> Result<Vec<(String, String)>> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(db_err)?;
+        let mut changed: Vec<(String, String)> = Vec::new();
+        for row in rows {
+            let local: Option<(i64, String, String, String)> = tx
+                .query_row(
+                    "SELECT updated_at, device_id, repo_key, branch FROM items WHERE id = ?1",
+                    [&row.id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()
+                .map_err(db_err)?;
+            let newer = match &local {
+                None => true,
+                Some((at, device, _, _)) => {
+                    (row.updated_at, row.device_id.as_str()) > (*at, device.as_str())
+                }
+            };
+            if !newer {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO items (id, repo_key, branch, kind, text, done, position,
+                                    created_at, updated_at, deleted, device_id, synced_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?9)
+                 ON CONFLICT (id) DO UPDATE SET
+                    repo_key = excluded.repo_key, branch = excluded.branch,
+                    kind = excluded.kind, text = excluded.text, done = excluded.done,
+                    position = excluded.position, created_at = excluded.created_at,
+                    updated_at = excluded.updated_at, deleted = excluded.deleted,
+                    device_id = excluded.device_id, synced_at = excluded.synced_at",
+                params![
+                    row.id,
+                    row.repo_key,
+                    row.branch,
+                    row.kind,
+                    row.text,
+                    row.done,
+                    row.position,
+                    row.created_at,
+                    row.updated_at,
+                    row.deleted,
+                    row.device_id
+                ],
+            )
+            .map_err(db_err)?;
+            let mut touch = |key: (String, String)| {
+                if !changed.contains(&key) {
+                    changed.push(key);
+                }
+            };
+            touch((row.repo_key.clone(), row.branch.clone()));
+            if let Some((_, _, repo, branch)) = local {
+                touch((repo, branch));
+            }
+        }
+        tx.commit().map_err(db_err)?;
+        Ok(changed)
     }
 
     /// Branches of a repository that have a note or TODOs.
@@ -515,6 +682,18 @@ fn migrate(conn: &Connection) -> Result<()> {
             let _ = conn.execute_batch("ROLLBACK;");
             return Err(db_err(e));
         }
+    }
+    if version < 3 {
+        // `synced_at` is the `updated_at` last uploaded or applied from the
+        // server; a row whose two differ is waiting to be uploaded. No
+        // mutation needs to know about sync.
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE items ADD COLUMN synced_at INTEGER;
+             PRAGMA user_version = 3;
+             COMMIT;",
+        )
+        .map_err(db_err)?;
     }
     Ok(())
 }
@@ -721,6 +900,76 @@ mod tests {
              PRAGMA user_version = 1;",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn local_changes_wait_for_upload_and_remote_ones_do_not() {
+        let s = Store::in_memory().unwrap();
+        let t = s.add_todo("r", "main", "a").unwrap();
+        s.set_note("r", "main", "n").unwrap();
+        let pending = s.pending(10).unwrap();
+        assert_eq!(pending.len(), 2);
+
+        let marks: Vec<_> = pending
+            .iter()
+            .map(|r| (r.id.clone(), r.updated_at))
+            .collect();
+        s.mark_synced(&marks).unwrap();
+        assert!(s.pending(10).unwrap().is_empty());
+
+        // An edit after the upload is pending again.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        s.update_todo(&t.id, None, Some(true)).unwrap();
+        assert_eq!(s.pending(10).unwrap().len(), 1);
+
+        // A row from another device is applied as synced.
+        let mut remote = s.pending(10).unwrap()[0].clone();
+        remote.id = "other".into();
+        remote.device_id = "d2".into();
+        let changed = s.apply_remote(&[remote]).unwrap();
+        assert_eq!(changed, [("r".to_string(), "main".to_string())]);
+        assert_eq!(s.pending(10).unwrap().len(), 1);
+        assert_eq!(s.branch("r", "main").unwrap().todos.len(), 2);
+    }
+
+    #[test]
+    fn the_newer_edit_wins_either_way() {
+        let s = Store::in_memory().unwrap();
+        let t = s.add_todo("r", "main", "local").unwrap();
+        let mut remote = s.pending(1).unwrap().remove(0);
+        remote.device_id = "zz".into();
+
+        // Older remote: ignored.
+        remote.updated_at = t.updated_at - 1;
+        remote.text = "old".into();
+        assert!(s.apply_remote(&[remote.clone()]).unwrap().is_empty());
+        assert_eq!(s.branch("r", "main").unwrap().todos[0].text, "local");
+
+        // Newer remote, moved to another branch: both branches change.
+        remote.updated_at = t.updated_at + 1;
+        remote.text = "new".into();
+        remote.branch = "dev".into();
+        let changed = s.apply_remote(&[remote]).unwrap();
+        assert_eq!(changed.len(), 2);
+        assert_eq!(s.branch("r", "dev").unwrap().todos[0].text, "new");
+        assert!(s.pending(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_renamed_note_leaves_a_tombstone_for_other_devices() {
+        let s = Store::in_memory().unwrap();
+        s.set_note("path:/r", "main", "n").unwrap();
+        let old = note_id("path:/r", "main");
+        s.follow_repo("path:/r", "github.com/me/r").unwrap();
+        let pending = s.pending(10).unwrap();
+        let tomb = pending.iter().find(|r| r.id == old).unwrap();
+        assert!(tomb.deleted);
+        assert!(
+            pending
+                .iter()
+                .any(|r| r.id == note_id("github.com/me/r", "main") && !r.deleted)
+        );
+        assert_eq!(s.branch("github.com/me/r", "main").unwrap().note, "n");
     }
 
     #[test]

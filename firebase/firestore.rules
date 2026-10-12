@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// Memo sync (Phase 8b). Each account reads and writes only its own items,
+// and only after the owner added it to the allow list: a document
+// `allowed/{uid}` created by hand in the Firebase console (Phase 8c will let
+// payments fill this list). The newer `updatedAt` wins; the device id breaks
+// ties, matching the app's own merge.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function allowed() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/allowed/$(request.auth.uid));
+    }
+
+    match /allowed/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+
+    match /users/{userId}/items/{itemId} {
+      function valid(d) {
+        return d.keys().hasOnly(['repoKey', 'branch', 'kind', 'text', 'done', 'position',
+                                 'createdAt', 'updatedAt', 'deleted', 'deviceId', 'syncedAt'])
+          && d.repoKey is string && d.repoKey.size() <= 1000
+          && d.branch is string && d.branch.size() <= 1000
+          && d.kind in ['note', 'todo']
+          && d.text is string && d.text.size() <= 200000
+          && d.done is bool && d.deleted is bool
+          && d.position is number
+          && d.createdAt is int && d.updatedAt is int
+          && d.deviceId is string && d.deviceId.size() <= 100
+          && d.syncedAt == request.time;
+      }
+
+      function newer(d) {
+        return resource == null
+          || d.updatedAt > resource.data.updatedAt
+          || (d.updatedAt == resource.data.updatedAt && d.deviceId >= resource.data.deviceId);
+      }
+
+      allow read: if allowed() && request.auth.uid == userId;
+      allow create, update: if allowed() && request.auth.uid == userId
+        && valid(request.resource.data) && newer(request.resource.data);
+      allow delete: if false;
+    }
+  }
+}

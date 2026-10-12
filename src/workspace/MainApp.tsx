@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
 import { restoreProject } from "../store/project";
+import { useSyncStore } from "../store/sync";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { saveBeforeLeaving } from "./leave";
 import { NavSidebar } from "./NavSidebar";
@@ -38,6 +39,7 @@ export default function MainApp() {
   useEffect(() => {
     void useComposerStore.getState().loadDocs();
     restoreProject();
+    void useSyncStore.getState().init();
   }, []);
 
   // The window is destroyed on close (also when switching to the sidebar from

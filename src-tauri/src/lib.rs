@@ -7,6 +7,7 @@ mod i18n;
 mod library;
 mod memo;
 mod shell;
+mod sync;
 mod tray;
 mod work;
 
@@ -68,6 +69,9 @@ pub fn run() {
             work::work_prune_worktrees,
             work::work_git_version,
             i18n::set_locale,
+            sync::sync_status,
+            sync::sync_now,
+            sync::sync_set_enabled,
             github::github_status,
             github::github_login_start,
             github::github_login_cancel,
@@ -85,6 +89,7 @@ pub fn run() {
             composer::Composer::manage(handle)?;
             memo::Memo::manage(handle)?;
             github::GitHub::manage(handle);
+            sync::Sync::manage(handle);
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);
