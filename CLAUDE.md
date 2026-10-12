@@ -36,6 +36,18 @@ Run `pnpm lint`, `pnpm build`, and the cargo checks before committing.
 - Create windows only from async commands or `tauri::async_runtime::spawn` (sync handlers deadlock on Windows).
 - UI strings are Korean for now; English i18n comes before the public release.
 
+## Third-party content and licenses
+
+Applies to everything taken from outside this repo: catalog blocks (instructions, rules, skills, subagents), recommended mods/plugins, npm/cargo dependencies, fonts, icons and other assets.
+
+- Add it only if its license allows modifying, redistributing, distributing derivative works, and commercial use. OK: MIT, Apache-2.0, BSD, ISC, Zlib, Unlicense, CC0. Dependencies only: MPL-2.0 (unmodified), LGPL (dynamically linked or with a permissive alternative). Fonts: OFL-1.1 (bundled, not sold on their own).
+- Exclude: no license, GPL/AGPL, CC BY-NC/ND/SA, "source-available" or custom terms. Ask the user when unsure.
+- Check the license of the exact files you take, at a pinned commit: a folder can be licensed differently from its repo root (e.g. anthropics/skills).
+- Also read the content and exclude ads, referral links, telemetry, remote scripts, and archived or unmaintained repos.
+- Record provenance: catalog blocks keep `license`/`copyright`/`source_*` frontmatter, the LICENSE text goes in `src-tauri/catalog/external/<source>/`, and the project goes in `THIRD_PARTY_NOTICES.md`. Note any change from the original there.
+- Recommended mods are installed by the user from their own source, not bundled, but get the same license and content check (`docs/research.md` §7).
+- Never use another project's trademark (e.g. "Claude", "Anthropic") as the product's name or branding.
+
 ## Subagents
 
 - Web research subagents (WebSearch/WebFetch): use model `haiku`.
