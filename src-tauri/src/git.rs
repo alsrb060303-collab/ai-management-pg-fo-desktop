@@ -38,7 +38,23 @@ pub fn inside_git(dir: &Path) -> bool {
 
 /// Runs git and returns raw stdout (for `-z` output).
 pub fn run_raw(dir: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    let output = command(dir).args(args).output().map_err(|e| {
+    run_env_raw(dir, args, &[])
+}
+
+/// Like `run`, with extra environment variables (an auth header for one
+/// network command).
+pub fn run_env(dir: &Path, args: &[&str], env: &[(String, String)]) -> Result<String> {
+    let out = run_env_raw(dir, args, env)?;
+    Ok(String::from_utf8_lossy(&out).trim_end().to_string())
+}
+
+fn run_env_raw(dir: &Path, args: &[&str], env: &[(String, String)]) -> Result<Vec<u8>> {
+    let mut cmd = command(dir);
+    cmd.args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let output = cmd.output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             crate::tr!(
                 "git을 찾을 수 없어요. Git을 설치한 뒤 다시 시도해 주세요",

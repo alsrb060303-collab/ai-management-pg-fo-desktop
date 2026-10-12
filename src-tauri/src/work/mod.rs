@@ -1,6 +1,6 @@
 //! The work panel: the open project's branch, changed files, local branches
-//! and worktrees, and the branch and worktree operations it offers. Commits
-//! and pushes stay with Claude Code and the terminal.
+//! and worktrees, and the branch and worktree operations it offers, plus
+//! committing, pushing and pulling (with the GitHub sign-in when there is one).
 
 mod ops;
 mod read;
@@ -106,6 +106,23 @@ pub async fn work_remove_worktree(
 #[tauri::command]
 pub async fn work_prune_worktrees(project: String) -> Result<(), String> {
     blocking(project, ops::prune_worktrees).await
+}
+
+#[tauri::command]
+pub async fn work_commit(project: String, message: String, all: bool) -> Result<String, String> {
+    blocking(project, move |root| ops::commit(root, &message, all)).await
+}
+
+#[tauri::command]
+pub async fn work_push(app: tauri::AppHandle, project: String) -> Result<(), String> {
+    let auth = crate::github::git_auth(&app);
+    blocking(project, move |root| ops::push(root, &auth)).await
+}
+
+#[tauri::command]
+pub async fn work_pull(app: tauri::AppHandle, project: String) -> Result<(), String> {
+    let auth = crate::github::git_auth(&app);
+    blocking(project, move |root| ops::pull(root, &auth)).await
 }
 
 /// The installed git's version (`git version 2.47.0.windows.1`), or `None`

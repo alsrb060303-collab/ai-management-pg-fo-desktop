@@ -14,6 +14,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { timeAgo, useT } from "../../i18n";
+import { useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { useRemoteStore } from "../../store/remote";
 import {
@@ -171,6 +172,7 @@ function HeadBar({ compact }: { compact: boolean }) {
         </span>
       )}
       {!head.commit && <span className="text-xs text-text-subtle">{t("work.noCommits")}</span>}
+      <SyncButtons compact={compact} />
       <IconButton
         label={t("work.refresh")}
         disabled={busy}
@@ -180,6 +182,50 @@ function HeadBar({ compact }: { compact: boolean }) {
         <RefreshCw size={14} />
       </IconButton>
     </div>
+  );
+}
+
+/** Push (and set the upstream the first time) and fast-forward pull. */
+function SyncButtons({ compact }: { compact: boolean }) {
+  const t = useT();
+  const { overview, busy, run } = useWorkStore();
+  const reloadGitHub = useGitHubStore((s) => s.load);
+  if (!overview?.head.branch || !overview.head.commit || !overview.hasRemote) return null;
+  const { ahead, behind, upstream } = overview.head;
+  const canPush = ahead > 0 || !upstream;
+  const button =
+    "flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-[11px] hover:border-border-strong disabled:opacity-50";
+  return (
+    <span className="flex shrink-0 items-center gap-1">
+      {behind > 0 && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void run("work_pull", {})}
+          title={t("work.pull.title")}
+          className={button}
+        >
+          <ArrowDown size={11} />
+          {!compact && t("work.pull")}
+        </button>
+      )}
+      {canPush && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            if (await run("work_push", {})) {
+              void reloadGitHub(useGitHubStore.getState().project);
+            }
+          }}
+          title={upstream ? t("work.push.title") : t("work.push.first")}
+          className={button}
+        >
+          <ArrowUp size={11} />
+          {!compact && t("work.push")}
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -273,7 +319,55 @@ function Changes({ compact }: { compact: boolean }) {
           )}
         </ul>
       )}
+      {changeCount > 0 && overview.operation === null && <CommitBox />}
     </Section>
+  );
+}
+
+/** A message and "Commit": every change, or only the staged ones. */
+function CommitBox() {
+  const t = useT();
+  const { overview, busy, run } = useWorkStore();
+  const [message, setMessage] = useState("");
+  const someStaged = overview?.changes.some((c) => c.staged) ?? false;
+  const [all, setAll] = useState(true);
+  if (!overview) return null;
+  const onlyStaged = someStaged && !all;
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (await run("work_commit", { message, all: !onlyStaged })) setMessage("");
+      }}
+      className="mt-2 space-y-1.5"
+    >
+      <textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.currentTarget.form?.requestSubmit();
+        }}
+        placeholder={t("work.commit.message")}
+        rows={2}
+        className="w-full min-w-0 resize-y rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong"
+      />
+      <div className="flex items-center gap-2 text-xs">
+        {someStaged && (
+          <label className="flex items-center gap-1.5 text-text-muted">
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+            {t("work.commit.all")}
+          </label>
+        )}
+        <button
+          type="submit"
+          disabled={busy || !message.trim()}
+          title="Ctrl+Enter"
+          className="ml-auto rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
+        >
+          {t(onlyStaged ? "work.commit.staged" : "work.commit")}
+        </button>
+      </div>
+    </form>
   );
 }
 

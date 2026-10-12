@@ -3,8 +3,7 @@ import type { Messages } from "./types";
 export const ko = {
   // Work page
   "work.title": "작업",
-  "work.description":
-    "브랜치와 worktree를 만들고 바꾸고, 커밋하지 않은 변경을 확인해요. 커밋과 푸시는 Claude Code나 터미널에서 해요.",
+  "work.description": "브랜치와 worktree를 만들고 바꾸고, 변경을 확인하고 커밋·push·pull 해요.",
 
   // Work panel: shared
   "work.noProject": "프로젝트 폴더를 고르면 브랜치와 worktree를 여기서 다뤄요.",
@@ -145,6 +144,15 @@ export const ko = {
     "처음 올릴 때 GitHub 로그인 창이 뜨면 로그인하면 돼요 (Git for Windows에 들어 있는 Git Credential Manager).",
 
   // GitHub section
+  "work.commit.message": "커밋 메시지",
+  "work.commit": "커밋",
+  "work.commit.staged": "스테이징한 것만 커밋",
+  "work.commit.all": "모든 변경 포함",
+  "work.push": "Push",
+  "work.push.title": "이 브랜치의 커밋을 원격에 올려요",
+  "work.push.first": "이 브랜치를 원격(origin)에 처음 올려요",
+  "work.pull": "Pull",
+  "work.pull.title": "원격의 새 커밋을 받아와요 (병합 없이 앞으로 감기만)",
   "work.repos.title": "내 GitHub 저장소",
   "work.repos.search": "저장소 검색",
   "work.repos.none": "저장소가 없어요.",
@@ -209,7 +217,7 @@ export const en: Messages<typeof ko> = {
   // Work page
   "work.title": "Work",
   "work.description":
-    "Create and switch branches and worktrees, and review uncommitted changes. Commit and push from Claude Code or the terminal.",
+    "Create and switch branches and worktrees, review changes, and commit, push and pull.",
 
   // Work panel: shared
   "work.noProject": "Choose a project folder to manage its branches and worktrees here.",
@@ -353,6 +361,15 @@ export const en: Messages<typeof ko> = {
     "If a GitHub sign-in window opens on your first push, just sign in (it's Git Credential Manager, included with Git for Windows).",
 
   // GitHub section
+  "work.commit.message": "Commit message",
+  "work.commit": "Commit",
+  "work.commit.staged": "Commit staged only",
+  "work.commit.all": "Include all changes",
+  "work.push": "Push",
+  "work.push.title": "Send this branch's commits to the remote",
+  "work.push.first": "Push this branch to the remote (origin) for the first time",
+  "work.pull": "Pull",
+  "work.pull.title": "Bring in the remote's new commits (fast-forward only)",
   "work.repos.title": "My GitHub repositories",
   "work.repos.search": "Search repositories",
   "work.repos.none": "No repositories.",

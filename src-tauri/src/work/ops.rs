@@ -415,6 +415,59 @@ pub fn diff(
     Ok(clean_diff(&raw))
 }
 
+/// Commits with `message`: every change (`all`, like `git add -A`) or only
+/// what is staged. Returns the new commit's short hash.
+pub fn commit(root: &Path, message: &str, all: bool) -> git::Result<String> {
+    if message.trim().is_empty() {
+        return Err(crate::tr!(
+            "커밋 메시지를 입력해 주세요",
+            "Enter a commit message"
+        ));
+    }
+    if all {
+        git::run(root, &["add", "-A"])?;
+    }
+    if git::run(root, &["diff", "--cached", "--quiet"]).is_ok() {
+        return Err(crate::tr!(
+            "커밋할 변경이 없어요",
+            "There's nothing to commit"
+        ));
+    }
+    git::run(root, &["commit", "-m", message.trim()])?;
+    git::run(root, &["rev-parse", "--short", "HEAD"])
+}
+
+fn current_branch(root: &Path) -> git::Result<String> {
+    git::run(root, &["symbolic-ref", "--quiet", "--short", "HEAD"]).map_err(|_| {
+        crate::tr!(
+            "브랜치를 체크아웃한 상태에서 할 수 있어요",
+            "Check out a branch first"
+        )
+    })
+}
+
+/// Pushes the current branch, setting its upstream on `origin` the first time.
+pub fn push(root: &Path, auth: &[(String, String)]) -> git::Result<()> {
+    let branch = current_branch(root)?;
+    let has_upstream = git::run(
+        root,
+        &["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )
+    .is_ok();
+    if has_upstream {
+        git::run_env(root, &["push"], auth)?;
+    } else {
+        git::run_env(root, &["push", "-u", "origin", "--", &branch], auth)?;
+    }
+    Ok(())
+}
+
+/// Brings in the upstream's commits, only when no merge is needed.
+pub fn pull(root: &Path, auth: &[(String, String)]) -> git::Result<()> {
+    current_branch(root)?;
+    git::run_env(root, &["pull", "--ff-only"], auth).map(drop)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,5 +637,47 @@ mod tests {
         let d = diff(root, "a.txt", None, false).unwrap();
         assert!(d.text.contains("+x"), "{}", d.text);
         assert!(add_worktree(root, "t", None).is_err());
+    }
+    #[test]
+    fn commits_push_and_pull_through_a_remote() {
+        let (tmp, root) = repo();
+        git(&root, &["config", "user.email", "t@t"]);
+        git(&root, &["config", "user.name", "t"]);
+        let remote = tmp.path().join("remote.git");
+        git(
+            tmp.path(),
+            &["init", "-q", "--bare", "-b", "main", "remote.git"],
+        );
+        git(
+            &root,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+
+        // Nothing to commit, no message: refused.
+        assert!(commit(&root, "x", true).is_err());
+        std::fs::write(root.join("a.txt"), "changed\n").unwrap();
+        assert!(commit(&root, "  ", true).is_err());
+        // Only staged, with nothing staged: refused; everything: committed.
+        assert!(commit(&root, "x", false).is_err());
+        let hash = commit(&root, "Change a", true).unwrap();
+        assert!(!hash.is_empty());
+
+        // The first push sets the upstream.
+        push(&root, &[]).unwrap();
+        let upstream = git::run(&root, &["rev-parse", "--abbrev-ref", "@{u}"]).unwrap();
+        assert_eq!(upstream, "origin/main");
+
+        // Another clone pushes; pull fast-forwards.
+        let other = tmp.path().join("other");
+        git(
+            tmp.path(),
+            &["clone", "-q", remote.to_str().unwrap(), "other"],
+        );
+        std::fs::write(other.join("b.txt"), "b").unwrap();
+        git(&other, &["add", "."]);
+        git(&other, &["commit", "-q", "-m", "b"]);
+        git(&other, &["push", "-q"]);
+        pull(&root, &[]).unwrap();
+        assert!(root.join("b.txt").exists());
     }
 }

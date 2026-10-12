@@ -499,36 +499,40 @@ fn clone_into(token: &str, slug: &str, parent: &Path) -> Result<String, String> 
             "'{path}' already exists. Choose another location"
         ));
     }
+    let url = format!("https://github.com/{slug}.git");
+    let target_arg = target.to_string_lossy();
+    crate::git::run_env(
+        parent,
+        &["clone", "--", &url, &target_arg],
+        &git_auth_env(token),
+    )
+    .map_err(|detail| crate::tr!("clone하지 못했어요: {detail}", "Couldn't clone: {detail}"))?;
+    Ok(path)
+}
+
+/// Environment that hands git the sign-in token for github.com over HTTPS,
+/// for one command only (nothing is written to any git config).
+pub(crate) fn git_auth_env(token: &str) -> Vec<(String, String)> {
     let header = format!(
         "AUTHORIZATION: basic {}",
         base64(format!("x-access-token:{token}").as_bytes())
     );
-    let output = crate::git::command(parent)
-        .args(["clone", "--"])
-        .arg(format!("https://github.com/{slug}.git"))
-        .arg(&target)
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader")
-        .env("GIT_CONFIG_VALUE_0", header)
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                crate::tr!(
-                    "git을 찾을 수 없어요. Git을 설치한 뒤 다시 시도해 주세요",
-                    "Couldn't find git. Install Git and try again"
-                )
-            } else {
-                crate::tr!("git을 실행하지 못했어요: {e}", "Couldn't run git: {e}")
-            }
-        })?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(crate::tr!(
-            "clone하지 못했어요: {detail}",
-            "Couldn't clone: {detail}"
-        ));
-    }
-    Ok(path)
+    vec![
+        ("GIT_CONFIG_COUNT".into(), "1".into()),
+        (
+            "GIT_CONFIG_KEY_0".into(),
+            "http.https://github.com/.extraheader".into(),
+        ),
+        ("GIT_CONFIG_VALUE_0".into(), header),
+    ]
+}
+
+/// The auth environment when signed in to GitHub, else nothing (git then
+/// uses the user's own credentials).
+pub(crate) fn git_auth(app: &AppHandle) -> Vec<(String, String)> {
+    current_token(app)
+        .map(|t| git_auth_env(&t))
+        .unwrap_or_default()
 }
 
 fn base64(bytes: &[u8]) -> String {
