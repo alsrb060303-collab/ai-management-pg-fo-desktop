@@ -7,6 +7,10 @@
 //! - Whole files (rules, skills, agents): written when new, or when the file
 //!   still has the content we last wrote.
 //!
+//! - Hooks (settings.json): the file is read, the hooks we wrote last time
+//!   are taken out, ours are added, and every other key is kept. Since hooks
+//!   run commands, each change needs the user's confirmation.
+//!
 //! Anything the user changed since our last write, or a file we did not write,
 //! is only overwritten after the user confirms that path.
 
@@ -18,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::catalog::normalize;
-use super::compile::{OutFile, import_tokens};
+use super::compile::{OutFile, Target, add_hook, import_tokens};
 use crate::library::ops;
 
 pub const BEGIN: &str = "<!-- ai-management:begin (managed by AI Management; edits here are replaced on the next write) -->";
@@ -32,6 +36,10 @@ pub struct Written {
     pub project: String,
     pub path: String,
     pub hash: String,
+    /// Hooks outputs: the `{"hooks": ...}` we merged in, so the next write
+    /// can take exactly those out again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hooks: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -44,13 +52,15 @@ pub enum Status {
     Modified,
     /// Exists, but we did not write it.
     Exists,
+    /// Adds or changes hook commands, which Claude Code runs by itself.
+    Commands,
     /// Cannot be written; the reason says why.
     Blocked(String),
 }
 
 impl Status {
     pub fn needs_confirm(&self) -> bool {
-        matches!(self, Status::Modified | Status::Exists)
+        matches!(self, Status::Modified | Status::Exists | Status::Commands)
     }
 }
 
@@ -221,6 +231,26 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
     }
     let last = record(records, project, &file.path);
 
+    if file.target == Target::Hooks {
+        let previous = last.and_then(|r| r.hooks.as_ref());
+        return match merge_hooks(existing.as_deref(), previous, &file.content) {
+            Err(reason) => item(Status::Blocked(reason), existing, String::new(), None),
+            Ok(None) => {
+                let text = existing.unwrap_or_default();
+                item(Status::Unchanged, Some(text.clone()), text, None)
+            }
+            Ok(Some(new)) => item(
+                Status::Commands,
+                existing,
+                new,
+                Some(crate::tr!(
+                    "Claude Code가 이 명령을 직접 실행해요. 내용을 확인해 주세요",
+                    "Claude Code runs these commands by itself. Check them first"
+                )),
+            ),
+        };
+    }
+
     if file.section {
         let mut notes = Vec::new();
         let imports = bare_imports(root, &content);
@@ -278,6 +308,100 @@ pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]
     item(status, Some(text), content, None)
 }
 
+/// The settings file with `ours` in place of `previous`, or `None` when
+/// nothing would change. Other keys and the user's own hooks are kept.
+fn merge_hooks(
+    existing: Option<&str>,
+    previous: Option<&serde_json::Value>,
+    ours: &str,
+) -> Result<Option<String>, String> {
+    use serde_json::{Map, Value};
+    let not_json = || {
+        crate::tr!(
+            "설정 파일이 올바른 JSON 객체가 아니라 건드리지 않았어요",
+            "Left untouched: the settings file isn't a valid JSON object"
+        )
+    };
+    let base: Value = match existing {
+        Some(text) if !text.trim().is_empty() => {
+            serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|_| not_json())?
+        }
+        _ => Value::Object(Map::new()),
+    };
+    let Value::Object(mut settings) = base.clone() else {
+        return Err(not_json());
+    };
+    let mut hooks = match settings.remove("hooks") {
+        None => Map::new(),
+        Some(Value::Object(h)) => h,
+        Some(_) => return Err(not_json()),
+    };
+
+    // Take out what we wrote last time; the user's own entries stay.
+    let entries = |v: Option<&Value>| -> Vec<(String, Option<String>, Value)> {
+        let mut out = Vec::new();
+        let Some(events) = v.and_then(|v| v.get("hooks")).and_then(Value::as_object) else {
+            return out;
+        };
+        for (event, groups) in events {
+            for group in groups.as_array().into_iter().flatten() {
+                let matcher = group
+                    .get("matcher")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                for hook in group
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    out.push((event.clone(), matcher.clone(), hook.clone()));
+                }
+            }
+        }
+        out
+    };
+    for (event, matcher, hook) in entries(previous) {
+        let Some(groups) = hooks.get_mut(&event).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for group in groups.iter_mut() {
+            if group.get("matcher").and_then(Value::as_str) != matcher.as_deref() {
+                continue;
+            }
+            if let Some(list) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                list.retain(|h| h != &hook);
+            }
+        }
+        groups.retain(|g| {
+            g.get("hooks")
+                .and_then(Value::as_array)
+                .is_none_or(|l| !l.is_empty())
+        });
+        if groups.is_empty() {
+            hooks.remove(&event);
+        }
+    }
+    let ours: Value = serde_json::from_str(ours).map_err(|e| e.to_string())?;
+    for (event, matcher, hook) in entries(Some(&ours)) {
+        if let Some(command) = hook.get("command").and_then(Value::as_str) {
+            add_hook(&mut hooks, &event, matcher.as_deref(), command);
+        }
+    }
+    if !hooks.is_empty() {
+        settings.insert("hooks".into(), Value::Object(hooks));
+    }
+    let merged = Value::Object(settings);
+    if existing.is_some() && merged == base {
+        return Ok(None);
+    }
+    let text = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())? + "\n";
+    Ok(Some(match existing {
+        Some(old) if old.contains("\r\n") => text.replace('\n', "\r\n"),
+        _ => text,
+    }))
+}
+
 fn join_notes(notes: Vec<String>) -> Option<String> {
     (!notes.is_empty()).then(|| notes.join(" · "))
 }
@@ -291,6 +415,14 @@ pub fn write_file(
     item: &PlanItem,
 ) -> ops::Result<Written> {
     ops::write_atomic(&root.join(&file.path), &item.new)?;
+    if file.target == Target::Hooks {
+        return Ok(Written {
+            project: project.to_string(),
+            path: file.path.clone(),
+            hash: hash(&file.content),
+            hooks: serde_json::from_str(&file.content).ok(),
+        });
+    }
     let hash = if file.section {
         hash(normalize(&file.content).trim())
     } else {
@@ -300,6 +432,7 @@ pub fn write_file(
         project: project.to_string(),
         path: file.path.clone(),
         hash,
+        hooks: None,
     })
 }
 
@@ -497,6 +630,58 @@ mod tests {
         f.personal = false;
         sync_exclude(root, &f).unwrap();
         assert!(!exclude().contains("/.claude/rules/a.md"));
+    }
+
+    #[test]
+    fn hooks_merge_into_settings_and_replace_only_ours() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join(".claude")).unwrap();
+        let path = root.join(".claude/settings.json");
+        fs::write(
+            &path,
+            r#"{"model": "opus", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "mine"}]}]}}"#,
+        )
+        .unwrap();
+        let hooks = |cmd: &str| OutFile {
+            target: Target::Hooks,
+            ..file(
+                ".claude/settings.json",
+                &format!(
+                    r#"{{"hooks": {{"Stop": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}]}}}}"#
+                ),
+                false,
+            )
+        };
+        let mut records = Vec::new();
+        let item = write(root, &hooks("ours 1"), &mut records);
+        assert_eq!(item.status, Status::Commands);
+        assert!(item.status.needs_confirm());
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(v["model"], "opus");
+        assert_eq!(
+            v["hooks"]["Stop"][0]["hooks"],
+            serde_json::json!([{"type": "command", "command": "mine"}, {"type": "command", "command": "ours 1"}])
+        );
+        assert_eq!(
+            plan_file(root, "p", &hooks("ours 1"), &records).status,
+            Status::Unchanged
+        );
+
+        write(root, &hooks("ours 2"), &mut records);
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            v["hooks"]["Stop"][0]["hooks"],
+            serde_json::json!([{"type": "command", "command": "mine"}, {"type": "command", "command": "ours 2"}])
+        );
+
+        fs::write(&path, "{ not json").unwrap();
+        assert!(matches!(
+            plan_file(root, "p", &hooks("ours 3"), &records).status,
+            Status::Blocked(_)
+        ));
     }
 
     #[test]

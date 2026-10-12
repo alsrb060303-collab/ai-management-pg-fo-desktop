@@ -116,6 +116,8 @@ pub(super) fn cached_text(
         catalog::BlockKind::Rule => "rule",
         catalog::BlockKind::Skill => "skill",
         catalog::BlockKind::Agent => "agent",
+        // Hooks are only built in, never fetched from upstream.
+        catalog::BlockKind::Hook => return None,
     };
     let mut out = format!(
         "---\nkind: {kind}\ntitle: {}\nsummary: {}\ncategory: {}\n",
