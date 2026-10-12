@@ -181,6 +181,23 @@ impl Api<'_> {
             .ok_or_else(|| status_error(404, &Value::Null))
     }
 
+    /// A DELETE that answers with no content.
+    pub fn delete(&self, path: &str) -> Result<()> {
+        let url = format!("{}{path}", self.base);
+        let (status, body) = read(
+            self.agent
+                .delete(&url)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("Authorization", &format!("Bearer {}", self.token))
+                .call(),
+        )?;
+        if status >= 400 {
+            return Err(status_error(status, &body));
+        }
+        Ok(())
+    }
+
     pub fn post<T: DeserializeOwned>(&self, path: &str, json: &Value) -> Result<T> {
         let url = format!("{}{path}", self.base);
         let (status, body) = read(

@@ -187,6 +187,11 @@ fn enc(s: &str) -> String {
         .collect()
 }
 
+/// Like `enc`, but keeps the slashes of a ref path (`git/refs/heads/a/b`).
+fn enc_path(s: &str) -> String {
+    s.split('/').map(enc).collect::<Vec<_>>().join("/")
+}
+
 fn checks(api: &Api, slug: &str, git_ref: &str) -> Result<Option<Checks>> {
     let r = enc(git_ref);
     // Up to 500 runs: big matrices spill past the first page.
@@ -338,6 +343,230 @@ pub fn create_pull(
     Ok(raw.into_pull().0)
 }
 
+/// A repository the signed-in account can work on.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoSummary {
+    /// `owner/repo`.
+    pub slug: String,
+    pub description: Option<String>,
+    pub private: bool,
+    pub fork: bool,
+    pub default_branch: String,
+    pub url: String,
+    pub pushed_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawRepoSummary {
+    full_name: String,
+    description: Option<String>,
+    #[serde(default)]
+    private: bool,
+    #[serde(default)]
+    fork: bool,
+    default_branch: String,
+    html_url: String,
+    pushed_at: Option<String>,
+    #[serde(default)]
+    archived: bool,
+}
+
+/// The account's repositories (own, collaborator and organization ones),
+/// recently pushed first. Archived ones are left out.
+pub fn list_repos(api: &Api) -> Result<Vec<RepoSummary>> {
+    let mut repos = Vec::new();
+    for page in 1..=3 {
+        let batch: Vec<RawRepoSummary> = api.get(&format!(
+            "/user/repos?affiliation=owner,collaborator,organization_member&sort=pushed&per_page=100&page={page}"
+        ))?;
+        let full = batch.len() == 100;
+        repos.extend(
+            batch
+                .into_iter()
+                .filter(|r| !r.archived)
+                .map(|r| RepoSummary {
+                    slug: r.full_name,
+                    description: r.description.filter(|d| !d.trim().is_empty()),
+                    private: r.private,
+                    fork: r.fork,
+                    default_branch: r.default_branch,
+                    url: r.html_url,
+                    pushed_at: r.pushed_at,
+                }),
+        );
+        if !full {
+            break;
+        }
+    }
+    Ok(repos)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteBranch {
+    pub name: String,
+    pub protected: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Commit {
+    pub sha: String,
+    /// The first line of the message.
+    pub subject: String,
+    pub author: String,
+    pub date: String,
+    pub url: String,
+}
+
+/// A repository seen on GitHub only (not cloned): its branches, the chosen
+/// branch's recent commits, PR and checks, and open PRs and issues.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteView {
+    /// `owner/repo` as asked (the view's own slug is the upstream for a fork).
+    pub origin: String,
+    pub branch: String,
+    pub branches: Vec<RemoteBranch>,
+    pub commits: Vec<Commit>,
+    pub view: RepoView,
+}
+
+#[derive(Deserialize)]
+struct RawBranch {
+    name: String,
+    #[serde(default)]
+    protected: bool,
+}
+
+#[derive(Deserialize)]
+struct RawCommitPerson {
+    name: Option<String>,
+    date: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawCommitDetail {
+    message: String,
+    author: Option<RawCommitPerson>,
+}
+
+#[derive(Deserialize)]
+struct RawCommit {
+    sha: String,
+    html_url: String,
+    commit: RawCommitDetail,
+    author: Option<RawUser>,
+}
+
+/// `branch` defaults to the repository's default branch.
+pub fn remote_view(api: &Api, slug: &str, branch: Option<&str>) -> Result<RemoteView> {
+    let repo: RawRepo = api.get(&format!("/repos/{slug}"))?;
+    let branch = branch
+        .map(str::to_string)
+        .unwrap_or_else(|| repo.default_branch.clone());
+    let mut branches = Vec::new();
+    for page in 1..=3 {
+        let batch: Vec<RawBranch> =
+            api.get(&format!("/repos/{slug}/branches?per_page=100&page={page}"))?;
+        let full = batch.len() == 100;
+        branches.extend(batch.into_iter().map(|b| RemoteBranch {
+            name: b.name,
+            protected: b.protected,
+        }));
+        if !full {
+            break;
+        }
+    }
+    // The default branch first, the rest by name.
+    branches.sort_by(|a, b| {
+        (a.name != repo.default_branch, &a.name).cmp(&(b.name != repo.default_branch, &b.name))
+    });
+    let commits: Vec<RawCommit> = api
+        .get_opt(&format!(
+            "/repos/{slug}/commits?sha={}&per_page=15",
+            enc(&branch)
+        ))?
+        // An empty repository has no commits (409) or branch (404).
+        .unwrap_or_default();
+    let commits = commits
+        .into_iter()
+        .map(|c| {
+            let author = c.commit.author.as_ref();
+            Commit {
+                sha: c.sha.chars().take(7).collect(),
+                subject: c
+                    .commit
+                    .message
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .to_string(),
+                author: c
+                    .author
+                    .map(|u| u.login)
+                    .or_else(|| author.and_then(|a| a.name.clone()))
+                    .unwrap_or_default(),
+                date: author.and_then(|a| a.date.clone()).unwrap_or_default(),
+                url: c.html_url,
+            }
+        })
+        .collect();
+    let view = repo_view(api, slug, Some(&branch))?;
+    Ok(RemoteView {
+        origin: repo.full_name,
+        branch,
+        branches,
+        commits,
+        view,
+    })
+}
+
+#[derive(Deserialize)]
+struct RawGitRef {
+    object: RawGitObject,
+}
+
+#[derive(Deserialize)]
+struct RawGitObject {
+    sha: String,
+}
+
+/// Creates `name` on GitHub at the tip of `from`.
+pub fn create_branch(api: &Api, slug: &str, name: &str, from: &str) -> Result<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(crate::tr!("브랜치 이름을 입력해 주세요", "Enter a branch name").into());
+    }
+    let from_ref: RawGitRef = api
+        .get_opt(&format!("/repos/{slug}/git/ref/heads/{}", enc_path(from)))?
+        .ok_or_else(|| {
+            crate::tr!(
+                "'{from}' 브랜치를 GitHub에서 찾지 못했어요",
+                "Couldn't find branch '{from}' on GitHub"
+            )
+        })?;
+    let _: serde_json::Value = api.post(
+        &format!("/repos/{slug}/git/refs"),
+        &json!({ "ref": format!("refs/heads/{name}"), "sha": from_ref.object.sha }),
+    )?;
+    Ok(())
+}
+
+/// Deletes branch `name` on GitHub (never the default branch).
+pub fn delete_branch(api: &Api, slug: &str, name: &str) -> Result<()> {
+    let repo: RawRepo = api.get(&format!("/repos/{slug}"))?;
+    if repo.default_branch == name {
+        return Err(crate::tr!(
+            "기본 브랜치는 지울 수 없어요",
+            "The default branch can't be deleted"
+        )
+        .into());
+    }
+    api.delete(&format!("/repos/{slug}/git/refs/heads/{}", enc_path(name)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,5 +688,108 @@ mod tests {
             String::from(create_pull(&api, "o/r", "feat", "main", "Title", "", false).unwrap_err());
         assert!(err.contains("push"), "{err}");
         assert!(create_pull(&api, "o/r", "feat", "main", " ", "", false).is_err());
+    }
+
+    #[test]
+    fn list_repos_skips_archived_ones() {
+        let (base, seen) = serve(vec![(
+            200,
+            r#"[{"full_name":"me/a","description":"","private":true,"fork":false,"default_branch":"main","html_url":"ha","pushed_at":"p"},{"full_name":"me/old","default_branch":"main","html_url":"ho","archived":true}]"#,
+        )]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let repos = list_repos(&api).unwrap();
+        assert_eq!(repos.len(), 1);
+        assert_eq!(repos[0].slug, "me/a");
+        assert!(repos[0].private);
+        assert_eq!(repos[0].description, None);
+        assert!(seen.lock().unwrap()[0].contains("/user/repos?affiliation="));
+    }
+
+    #[test]
+    fn remote_view_lists_branches_default_first_and_commits() {
+        let (base, seen) = serve(vec![
+            (
+                200,
+                r#"{"full_name":"me/r","html_url":"h","default_branch":"main"}"#,
+            ),
+            (
+                200,
+                r#"[{"name":"a-feature"},{"name":"main","protected":true},{"name":"b/fix"}]"#,
+            ),
+            (
+                200,
+                r#"[{"sha":"0123456789","html_url":"c1","commit":{"message":"Fix it\n\nbody","author":{"name":"Me","date":"2026-10-11T00:00:00Z"}},"author":{"login":"me"}}]"#,
+            ),
+            // repo_view: repo, pulls, issues, branch, branch PRs, checks, statuses
+            (
+                200,
+                r#"{"full_name":"me/r","html_url":"h","default_branch":"main"}"#,
+            ),
+            (200, "[]"),
+            (200, "[]"),
+            (200, r#"{"name":"main"}"#),
+            (200, "[]"),
+            (200, r#"{"total_count":0,"check_runs":[]}"#),
+            (200, r#"{"statuses":[]}"#),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = remote_view(&api, "me/r", None).unwrap();
+        assert_eq!(remote.branch, "main");
+        let names: Vec<_> = remote.branches.iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(names, ["main", "a-feature", "b/fix"]);
+        assert!(remote.branches[0].protected);
+        assert_eq!(remote.commits[0].sha, "0123456");
+        assert_eq!(remote.commits[0].subject, "Fix it");
+        assert_eq!(remote.commits[0].author, "me");
+        assert!(remote.view.pushed);
+        assert!(seen.lock().unwrap()[2].contains("/commits?sha=main"));
+    }
+
+    #[test]
+    fn branches_are_created_from_a_tip_and_deleted_by_ref() {
+        let (base, seen) = serve(vec![
+            (200, r#"{"object":{"sha":"abc"}}"#),
+            (201, r#"{"ref":"refs/heads/feat/x"}"#),
+            (
+                200,
+                r#"{"full_name":"me/r","html_url":"h","default_branch":"main"}"#,
+            ),
+            (204, ""),
+            (
+                200,
+                r#"{"full_name":"me/r","html_url":"h","default_branch":"main"}"#,
+            ),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        create_branch(&api, "me/r", " feat/x ", "dev/1").unwrap();
+        delete_branch(&api, "me/r", "feat/x").unwrap();
+        assert!(delete_branch(&api, "me/r", "main").is_err());
+        let seen = seen.lock().unwrap();
+        assert!(seen[0].contains("/git/ref/heads/dev/1"), "{}", seen[0]);
+        assert!(
+            seen[1].contains("refs/heads/feat/x") && seen[1].contains("abc"),
+            "{}",
+            seen[1]
+        );
+        assert!(
+            seen[3].starts_with("DELETE /repos/me/r/git/refs/heads/feat/x"),
+            "{}",
+            seen[3]
+        );
     }
 }

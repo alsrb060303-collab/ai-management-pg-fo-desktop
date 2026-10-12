@@ -15,6 +15,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { timeAgo, useT } from "../../i18n";
 import { useProjectStore } from "../../store/project";
+import { useRemoteStore } from "../../store/remote";
 import {
   type Branch,
   type Change,
@@ -25,6 +26,7 @@ import {
 } from "../../store/work";
 import { GitHubSection } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
+import { RemoteRepo, RepoPicker } from "./RemoteRepo";
 
 /** How often the state is re-read while the panel is visible. */
 const POLL_MS = 4000;
@@ -44,6 +46,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
   const choose = useProjectStore((s) => s.choose);
   const { overview, notGit, gitMissing, loading, error, load, refresh, dismissError } =
     useWorkStore();
+  const remote = useRemoteStore((s) => s.slug);
 
   useEffect(() => {
     void load(project);
@@ -63,9 +66,20 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
     };
   }, [refresh]);
 
+  // A repository picked from GitHub that has no clone here.
+  if (remote) {
+    return (
+      <div className={compact ? "space-y-4" : "space-y-6"}>
+        <RepoPicker compact={compact} />
+        <RemoteRepo compact={compact} />
+      </div>
+    );
+  }
+
   if (!project) {
     return (
       <div className="space-y-3 text-sm">
+        <RepoPicker compact={compact} />
         <p className="text-text-muted">{t("work.noProject")}</p>
         <button
           type="button"
@@ -74,12 +88,14 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
         >
           {t("work.chooseFolder")}
         </button>
+        <GitHubSection compact={compact} />
       </div>
     );
   }
 
   return (
     <div className={compact ? "space-y-4" : "space-y-6"}>
+      <RepoPicker compact={compact} />
       {error && (
         <div className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
           <p className="selectable min-w-0 flex-1 whitespace-pre-wrap break-words">{error}</p>
@@ -107,6 +123,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
           compact={compact}
         />
       )}
+      {!overview && <GitHubSection compact={compact} />}
       {overview && (
         <>
           <HeadBar compact={compact} />

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useT } from "../../i18n";
-import { type Checks, type Pull, useGitHubStore } from "../../store/github";
+import { type Checks, type Issue, type Pull, useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { useWorkStore } from "../../store/work";
 import { Command, rich } from "./GitSetupGuide";
@@ -21,7 +21,7 @@ import { Command, rich } from "./GitSetupGuide";
 /** GitHub is polled far less often than local git (5,000 requests an hour). */
 const POLL_MS = 60_000;
 
-const open = (url: string) => {
+export const open = (url: string) => {
   if (isTauri()) void openUrl(url);
   else window.open(url, "_blank");
 };
@@ -62,9 +62,10 @@ export function GitHubSection({ compact }: { compact: boolean }) {
     };
   }, [load]);
 
-  // No client ID in this build, or the project has no remote (the setup
-  // guide covers that).
-  if (!status?.configured || !overview?.hasRemote) return null;
+  // No client ID in this build. Signed out, the sign-in shows for any
+  // project; signed in, a project without a remote has nothing to show (the
+  // setup guide covers adding one).
+  if (!status?.configured || (signedIn && !overview?.hasRemote)) return null;
 
   return (
     <section className={`space-y-2 ${compact ? "text-xs" : "text-sm"}`}>
@@ -82,7 +83,7 @@ export function GitHubSection({ compact }: { compact: boolean }) {
         <>
           <CurrentBranch compact={compact} />
           <PullList pulls={view.pulls} />
-          <IssueList />
+          <IssueList issues={view.issues} />
         </>
       ) : (
         !loading && <p className="text-xs text-text-subtle">{t("work.github.notGitHub")}</p>
@@ -131,7 +132,7 @@ function Header({ compact }: { compact: boolean }) {
   );
 }
 
-function SignIn() {
+export function SignIn() {
   const t = useT();
   const { login, loginError, startLogin, cancelLogin } = useGitHubStore();
   const [copied, setCopied] = useState(false);
@@ -195,7 +196,7 @@ const STATE: Record<Pull["state"], string> = {
   closed: "bg-danger/15 text-danger",
 };
 
-function PullBadge({ pull }: { pull: Pull }) {
+export function PullBadge({ pull }: { pull: Pull }) {
   const t = useT();
   const s =
     pull.draft && pull.state === "open"
@@ -208,7 +209,7 @@ function PullBadge({ pull }: { pull: Pull }) {
   );
 }
 
-function ChecksSummary({ checks }: { checks: Checks | null }) {
+export function ChecksSummary({ checks }: { checks: Checks | null }) {
   const t = useT();
   if (!checks) return <span className="text-[11px] text-text-subtle">{t("work.github.noCi")}</span>;
   const parts: ReactNode[] = [];
@@ -311,7 +312,7 @@ function CurrentBranch({ compact }: { compact: boolean }) {
   );
 }
 
-const inputClass =
+export const inputClass =
   "w-full min-w-0 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong";
 
 function NewPull({ compact, onDone }: { compact: boolean; onDone: () => void }) {
@@ -409,7 +410,7 @@ function NewPull({ compact, onDone }: { compact: boolean; onDone: () => void }) 
   );
 }
 
-function Collapsible({
+export function Collapsible({
   title,
   count,
   children,
@@ -473,7 +474,7 @@ function Row({
   );
 }
 
-function PullList({ pulls }: { pulls: Pull[] }) {
+export function PullList({ pulls }: { pulls: Pull[] }) {
   const t = useT();
   return (
     <Collapsible title={t("work.github.openPulls")} count={pulls.length}>
@@ -492,9 +493,8 @@ function PullList({ pulls }: { pulls: Pull[] }) {
   );
 }
 
-function IssueList() {
+export function IssueList({ issues }: { issues: Issue[] }) {
   const t = useT();
-  const issues = useGitHubStore((s) => s.view?.issues ?? []);
   return (
     <Collapsible title={t("work.github.openIssues")} count={issues.length}>
       {issues.map((i) => (

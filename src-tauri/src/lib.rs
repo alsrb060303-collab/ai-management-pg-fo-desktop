@@ -78,6 +78,13 @@ pub fn run() {
             github::github_logout,
             github::github_repo,
             github::github_create_pr,
+            github::github_repos,
+            github::github_local_clones,
+            github::github_remote,
+            github::github_remote_create_branch,
+            github::github_remote_delete_branch,
+            github::github_remote_create_pr,
+            github::github_clone,
             shell::view_mode,
             shell::view_switch,
         ])
