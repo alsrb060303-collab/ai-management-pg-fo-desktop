@@ -40,6 +40,7 @@
   --c-kind-rule: #2f6fb8;
   --c-kind-skill: #3b8547;
   --c-kind-agent: #8357c2;
+  --c-merged: #8250df;
   --c-kind-hook: #9a7a12;
 }
 
@@ -73,6 +74,7 @@
   --c-kind-rule: #6fa3e0;
   --c-kind-skill: #74b77f;
   --c-kind-agent: #b08ce6;
+  --c-merged: #b08cf5;
   --c-kind-hook: #d6b74e;
 }
 
@@ -108,6 +110,7 @@
   --color-primary-fg: var(--c-primary-fg);
   --color-success: var(--c-success);
   --color-info: var(--c-info);
+  --color-merged: var(--c-merged);
   --color-warning: var(--c-warning);
   --color-danger: var(--c-danger);
   --color-danger-soft: var(--c-danger-soft);

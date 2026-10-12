@@ -55,6 +55,30 @@ export interface Worktree {
   changes: number | null;
 }
 
+export interface RefLabel {
+  name: string;
+  kind: "local" | "remote" | "tag";
+}
+
+export interface Commit {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  time: number;
+  merge: boolean;
+  /** On the remote already. */
+  pushed: boolean;
+  refs: RefLabel[];
+}
+
+/** The checked-out branch against the repository's main branch. */
+export interface Base {
+  name: string;
+  ahead: number;
+  behind: number;
+}
+
 export interface Overview {
   root: string;
   mainRoot: string;
@@ -65,6 +89,11 @@ export interface Overview {
   hasRemote: boolean;
   branches: Branch[];
   worktrees: Worktree[];
+  /** Recent history of the checked-out branch, newest first. */
+  log: Commit[];
+  /** Commits not on the remote yet. */
+  unpushed: number;
+  base: Base | null;
 }
 
 export interface Diff {

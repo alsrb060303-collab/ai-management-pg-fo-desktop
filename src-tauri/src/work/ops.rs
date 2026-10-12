@@ -661,9 +661,31 @@ mod tests {
         assert!(commit(&root, "x", false).is_err());
         let hash = commit(&root, "Change a", true).unwrap();
         assert!(!hash.is_empty());
+        // Nothing is on the remote yet.
+        let before = super::super::read::overview(&root, false).unwrap();
+        assert_eq!(before.unpushed as usize, before.log.len());
+        assert_eq!(before.log[0].subject, "Change a");
+        assert!(!before.log[0].pushed);
 
         // The first push sets the upstream.
         push(&root, &[]).unwrap();
+        let after = super::super::read::overview(&root, false).unwrap();
+        assert_eq!(after.unpushed, 0);
+        assert!(after.log.iter().all(|c| c.pushed));
+        assert!(after.base.is_none(), "main is its own base");
+
+        // A feature branch is measured against origin/main.
+        git(&root, &["switch", "-q", "-c", "feat"]);
+        std::fs::write(root.join("c.txt"), "c").unwrap();
+        commit(&root, "Add c", true).unwrap();
+        let feat = super::super::read::overview(&root, false).unwrap();
+        let base = feat.base.unwrap();
+        assert_eq!(
+            (base.name.as_str(), base.ahead, base.behind),
+            ("origin/main", 1, 0)
+        );
+        assert_eq!(feat.unpushed, 1);
+        git(&root, &["switch", "-q", "main"]);
         let upstream = git::run(&root, &["rev-parse", "--abbrev-ref", "@{u}"]).unwrap();
         assert_eq!(upstream, "origin/main");
 

@@ -1,17 +1,7 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import {
-  ArrowDown,
-  ArrowUp,
-  FolderOpen,
-  FolderTree,
-  GitBranch,
-  Plus,
-  RefreshCw,
-  Trash2,
-  X,
-} from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, FolderOpen, FolderTree, Plus, Trash2, X } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
@@ -25,9 +15,12 @@ import {
   useWorkStore,
   type Worktree,
 } from "../../store/work";
-import { GitHubSection } from "./GitHubSection";
+import { FlowCard } from "./FlowCard";
+import { GitHubSection, PullBadge, useGitHubSync } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
+import { History } from "./History";
 import { RemoteRepo, RepoPicker } from "./RemoteRepo";
+import { useWorkUi, type WorkTab } from "./ui";
 
 /** How often the state is re-read while the panel is visible. */
 const POLL_MS = 4000;
@@ -48,6 +41,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
   const { overview, notGit, gitMissing, loading, error, load, refresh, dismissError } =
     useWorkStore();
   const remote = useRemoteStore((s) => s.slug);
+  useGitHubSync();
 
   useEffect(() => {
     void load(project);
@@ -127,7 +121,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
       {!overview && <GitHubSection compact={compact} />}
       {overview && (
         <>
-          <HeadBar compact={compact} />
+          <FlowCard compact={compact} />
           {(!overview.head.commit || !overview.hasRemote) && (
             <GitSetupGuide
               key={`${project}:${overview.head.commit ? "noRemote" : "noCommit"}`}
@@ -139,93 +133,84 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
               compact={compact}
             />
           )}
-          <GitHubSection compact={compact} />
-          <Changes compact={compact} />
-          <Branches compact={compact} />
-          <Worktrees compact={compact} />
+          <Tabs compact={compact} />
         </>
       )}
     </div>
   );
 }
 
-/** Operations with a label; others show git's own name. */
-const OPERATIONS = ["rebase", "merge", "cherry-pick", "revert", "bisect"] as const;
-type Operation = (typeof OPERATIONS)[number];
-const isOperation = (op: string): op is Operation => (OPERATIONS as readonly string[]).includes(op);
-
-function HeadBar({ compact }: { compact: boolean }) {
+/** Changes, history, branches, worktrees and GitHub, one at a time. */
+function Tabs({ compact }: { compact: boolean }) {
   const t = useT();
-  const { overview, busy, refresh } = useWorkStore();
+  const overview = useWorkStore((s) => s.overview);
+  const { status, view } = useGitHubStore();
+  const { tab, setTab } = useWorkUi();
   if (!overview) return null;
-  const { head, operation } = overview;
+  const github = !!status?.configured && (!status.account || overview.hasRemote);
+  const tabs: { key: WorkTab; label: string; count?: number; dot?: boolean }[] = [
+    {
+      key: "changes",
+      label: t("work.tab.changes"),
+      count: overview.changeCount || undefined,
+      dot: overview.changeCount > 0,
+    },
+    { key: "history", label: t("work.tab.history"), count: overview.unpushed || undefined },
+    { key: "branches", label: t("work.tab.branches"), count: overview.branches.length },
+    { key: "worktrees", label: t("work.tab.worktrees"), count: overview.worktrees.length },
+    ...(github
+      ? [
+          {
+            key: "github" as const,
+            label: t("work.tab.github"),
+            count: view?.pulls.length || undefined,
+          },
+        ]
+      : []),
+  ];
+  const shown = tabs.some((x) => x.key === tab) ? tab : "changes";
   return (
-    <div className="flex items-center gap-2">
-      <GitBranch size={compact ? 15 : 17} className="shrink-0 text-text-subtle" />
-      <span className={`min-w-0 truncate font-semibold ${compact ? "text-sm" : "text-base"}`}>
-        {head.branch ?? t("work.detached", { commit: head.commit ?? "" })}
-      </span>
-      <Track ahead={head.ahead} behind={head.behind} />
-      {operation && (
-        <span className="shrink-0 rounded-full bg-warning/15 px-2 py-px text-[11px] text-warning">
-          {isOperation(operation) ? t(`work.op.${operation}`) : operation}
-        </span>
-      )}
-      {!head.commit && <span className="text-xs text-text-subtle">{t("work.noCommits")}</span>}
-      <SyncButtons compact={compact} />
-      <IconButton
-        label={t("work.refresh")}
-        disabled={busy}
-        onClick={() => void refresh(true)}
-        className="ml-auto size-7"
+    <div className="space-y-3">
+      <div
+        role="tablist"
+        className={`flex gap-0.5 rounded-lg bg-sunken p-0.5 ${compact ? "flex-wrap" : ""}`}
       >
-        <RefreshCw size={14} />
-      </IconButton>
+        {tabs.map((x) => (
+          <button
+            key={x.key}
+            type="button"
+            role="tab"
+            aria-selected={shown === x.key}
+            onClick={() => setTab(x.key)}
+            className={`flex shrink-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 py-1 ${
+              compact ? "text-[11px]" : "text-xs"
+            } ${
+              shown === x.key
+                ? "bg-surface-raised font-semibold text-text shadow-card"
+                : "text-text-muted hover:text-text"
+            }`}
+          >
+            {x.label}
+            {x.count !== undefined && (
+              <span
+                className={`rounded-full px-1 text-[10px] tabular-nums ${
+                  x.dot ? "bg-accent-soft text-accent" : "text-text-subtle"
+                }`}
+              >
+                {x.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel">
+        {shown === "changes" && <Changes compact={compact} />}
+        {shown === "history" && <History compact={compact} />}
+        {shown === "branches" && <Branches compact={compact} />}
+        {shown === "worktrees" && <Worktrees compact={compact} />}
+        {shown === "github" && <GitHubSection compact={compact} />}
+      </div>
     </div>
-  );
-}
-
-/** Push (and set the upstream the first time) and fast-forward pull. */
-function SyncButtons({ compact }: { compact: boolean }) {
-  const t = useT();
-  const { overview, busy, run } = useWorkStore();
-  const reloadGitHub = useGitHubStore((s) => s.load);
-  if (!overview?.head.branch || !overview.head.commit || !overview.hasRemote) return null;
-  const { ahead, behind, upstream } = overview.head;
-  const canPush = ahead > 0 || !upstream;
-  const button =
-    "flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-[11px] hover:border-border-strong disabled:opacity-50";
-  return (
-    <span className="flex shrink-0 items-center gap-1">
-      {behind > 0 && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void run("work_pull", {})}
-          title={t("work.pull.title")}
-          className={button}
-        >
-          <ArrowDown size={11} />
-          {!compact && t("work.pull")}
-        </button>
-      )}
-      {canPush && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            if (await run("work_push", {})) {
-              void reloadGitHub(useGitHubStore.getState().project);
-            }
-          }}
-          title={upstream ? t("work.push.title") : t("work.push.first")}
-          className={button}
-        >
-          <ArrowUp size={11} />
-          {!compact && t("work.push")}
-        </button>
-      )}
-    </span>
   );
 }
 
@@ -279,15 +264,15 @@ function Section({
 }
 
 /** Labels are `work.kind.<kind>`. */
-const KIND: Record<ChangeKind, { letter: string; color: string }> = {
-  modified: { letter: "M", color: "text-warning" },
-  added: { letter: "A", color: "text-success" },
-  deleted: { letter: "D", color: "text-danger" },
-  renamed: { letter: "R", color: "text-info" },
-  copied: { letter: "C", color: "text-info" },
-  typeChanged: { letter: "T", color: "text-warning" },
-  untracked: { letter: "U", color: "text-success" },
-  conflicted: { letter: "!", color: "text-danger" },
+const KIND: Record<ChangeKind, string> = {
+  modified: "bg-warning/15 text-warning",
+  added: "bg-success/15 text-success",
+  deleted: "bg-danger/15 text-danger",
+  renamed: "bg-info/15 text-info",
+  copied: "bg-info/15 text-info",
+  typeChanged: "bg-warning/15 text-warning",
+  untracked: "bg-success/15 text-success",
+  conflicted: "bg-danger text-surface",
 };
 
 function Changes({ compact }: { compact: boolean }) {
@@ -295,32 +280,51 @@ function Changes({ compact }: { compact: boolean }) {
   const { overview, selected, diff, select } = useWorkStore();
   if (!overview) return null;
   const { changes, changeCount } = overview;
+  if (changeCount === 0)
+    return <p className="text-xs text-text-subtle">{t("work.changes.none")}</p>;
+  const someStaged = changes.some((c) => c.staged);
+  const groups = someStaged
+    ? [
+        { key: "in", title: t("work.changes.inCommit"), items: changes.filter((c) => c.staged) },
+        {
+          key: "out",
+          title: t("work.changes.notInCommit"),
+          items: changes.filter((c) => !c.staged),
+        },
+      ].filter((g) => g.items.length)
+    : [{ key: "all", title: null, items: changes }];
   return (
-    <Section title={t("work.changes")} count={changeCount}>
-      {changeCount === 0 ? (
-        <p className="text-xs text-text-subtle">{t("work.changes.none")}</p>
-      ) : (
-        <ul className="space-y-px">
-          {changes.map((c) => (
-            <li key={`${c.kind}:${c.path}`}>
-              <ChangeRow
-                change={c}
-                compact={compact}
-                open={selected?.path === c.path}
-                onClick={() => void select(c)}
-              />
-              {selected?.path === c.path && <DiffView diff={diff} compact={compact} />}
-            </li>
-          ))}
-          {changeCount > changes.length && (
-            <li className="px-2 pt-1 text-[11px] text-text-subtle">
-              {t("work.changes.more", { n: changeCount - changes.length })}
-            </li>
+    <div>
+      {groups.map((g) => (
+        <div key={g.key} className="mb-2">
+          {g.title && (
+            <h4 className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold text-text-muted">
+              {g.title}
+              <span className="font-normal text-text-subtle">{g.items.length}</span>
+            </h4>
           )}
-        </ul>
+          <ul className="space-y-px">
+            {g.items.map((c) => (
+              <li key={`${c.kind}:${c.path}`}>
+                <ChangeRow
+                  change={c}
+                  compact={compact}
+                  open={selected?.path === c.path}
+                  onClick={() => void select(c)}
+                />
+                {selected?.path === c.path && <DiffView diff={diff} compact={compact} />}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {changeCount > changes.length && (
+        <p className="px-2 pb-1 text-[11px] text-text-subtle">
+          {t("work.changes.more", { n: changeCount - changes.length })}
+        </p>
       )}
-      {changeCount > 0 && overview.operation === null && <CommitBox />}
-    </Section>
+      {overview.operation === null && <CommitBox />}
+    </div>
   );
 }
 
@@ -331,8 +335,14 @@ function CommitBox() {
   const [message, setMessage] = useState("");
   const someStaged = overview?.changes.some((c) => c.staged) ?? false;
   const [all, setAll] = useState(true);
+  const commitFocus = useWorkUi((s) => s.commitFocus);
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (commitFocus) box.current?.focus();
+  }, [commitFocus]);
   if (!overview) return null;
   const onlyStaged = someStaged && !all;
+  const stagedCount = overview.changes.filter((c) => c.staged).length;
   return (
     <form
       onSubmit={async (e) => {
@@ -342,6 +352,7 @@ function CommitBox() {
       className="mt-2 space-y-1.5"
     >
       <textarea
+        ref={box}
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
@@ -364,7 +375,9 @@ function CommitBox() {
           title="Ctrl+Enter"
           className="ml-auto rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
         >
-          {t(onlyStaged ? "work.commit.staged" : "work.commit")}
+          {onlyStaged
+            ? t("work.commit.stagedN", { n: stagedCount })
+            : t("work.commit.allN", { n: overview.changeCount })}
         </button>
       </div>
     </form>
@@ -399,7 +412,11 @@ function ChangeRow({
         compact ? "text-[11px]" : "text-xs"
       } ${open ? "bg-active" : "hover:bg-hover"}`}
     >
-      <span className={`w-3 shrink-0 text-center font-semibold ${kind.color}`}>{kind.letter}</span>
+      <span
+        className={`w-14 shrink-0 truncate rounded px-1 py-px text-center font-sans text-[10px] font-medium ${kind}`}
+      >
+        {label}
+      </span>
       <span className="min-w-0 flex-1 truncate">
         <span className="text-text-subtle">{dir}</span>
         {name}
@@ -463,10 +480,13 @@ function DiffView({ diff, compact }: { diff: Diff | null; compact: boolean }) {
 function Branches({ compact }: { compact: boolean }) {
   const t = useT();
   const { overview, busy, run, checkBranch } = useWorkStore();
+  const view = useGitHubStore((s) => s.view);
   const [adding, setAdding] = useState(false);
   const [all, setAll] = useState(false);
   if (!overview) return null;
   const { branches } = overview;
+  const pullOf = (b: Branch) =>
+    (b.current && view?.current) || view?.pulls.find((p) => p.head === b.name) || null;
   const shown = all ? branches : branches.slice(0, BRANCH_LIMIT);
 
   const remove = async (b: Branch) => {
@@ -519,15 +539,24 @@ function Branches({ compact }: { compact: boolean }) {
         {shown.map((b) => (
           <li
             key={b.name}
-            className={`group flex h-7 items-center gap-2 rounded-md px-2 hover:bg-hover ${
-              compact ? "text-xs" : "text-sm"
-            }`}
+            className={`group flex h-7 items-center gap-2 rounded-md px-2 ${
+              b.current ? "bg-accent-soft" : "hover:bg-hover"
+            } ${compact ? "text-xs" : "text-sm"}`}
             title={`${b.commit} ${b.subject}${
               b.upstream ? `\n${t("work.branch.upstream", { upstream: b.upstream })}` : ""
             }${b.worktree && !b.current ? `\n${t("work.branch.worktree", { path: b.worktree })}` : ""}`}
           >
+            <span
+              className={`size-2 shrink-0 rounded-full ${
+                b.current ? "bg-accent" : "border border-border-strong"
+              }`}
+            />
             <span className={`min-w-0 truncate ${b.current ? "font-semibold" : ""}`}>{b.name}</span>
             {b.current && <Badge>{t("work.branch.current")}</Badge>}
+            {(() => {
+              const pull = pullOf(b);
+              return pull && <PullBadge pull={pull} number />;
+            })()}
             {b.worktree && !b.current && <Badge>worktree</Badge>}
             <Track ahead={b.ahead} behind={b.behind} gone={b.gone} />
             {!compact && (

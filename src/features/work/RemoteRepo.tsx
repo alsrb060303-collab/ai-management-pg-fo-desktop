@@ -27,6 +27,7 @@ import {
   open,
   PullBadge,
   PullList,
+  pullStyle,
 } from "./GitHubSection";
 import { RemoteFiles } from "./RemoteFiles";
 
@@ -166,6 +167,14 @@ export function RepoPicker({ compact }: { compact: boolean }) {
 export function RemoteRepo({ compact }: { compact: boolean }) {
   const t = useT();
   const { slug, data, loading, busy, error, close, load, dismissError } = useRemoteStore();
+  const signedIn = useGitHubStore((s) => !!s.status?.account);
+
+  // A repository restored from the last run loads once GitHub is signed in.
+  useEffect(() => {
+    const state = useRemoteStore.getState();
+    if (slug && signedIn && !state.data && !state.loading) void load();
+  }, [slug, signedIn, load]);
+
   if (!slug) return null;
 
   return (
@@ -399,7 +408,10 @@ function BranchDetail({ data, compact }: { data: RemoteView; compact: boolean })
           className="flex w-full items-center gap-2 text-left"
           title={`${current.head} → ${current.base}`}
         >
-          <GitPullRequest size={15} className="shrink-0 text-text-subtle" />
+          {(() => {
+            const { Icon, text } = pullStyle(current);
+            return <Icon size={15} className={`shrink-0 ${text}`} />;
+          })()}
           <span className="min-w-0 flex-1 truncate">
             <span className="text-text-subtle">#{current.number}</span> {current.title}
           </span>

@@ -12,6 +12,8 @@ use crate::git;
 const MAX_CHANGES: usize = 1000;
 /// Worktrees whose changes are counted (each costs a `git status`).
 const MAX_COUNTED_WORKTREES: usize = 20;
+/// Commits shown in the history.
+const LOG_LIMIT: usize = 40;
 /// Folder Claude Code (and this app) creates worktrees in.
 pub const WORKTREES_DIR: &str = ".claude/worktrees";
 
@@ -92,6 +94,50 @@ pub struct Worktree {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum RefKind {
+    Local,
+    Remote,
+    Tag,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefLabel {
+    /// Short name: `main`, `origin/main`, `v1.0`.
+    pub name: String,
+    pub kind: RefKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Commit {
+    pub hash: String,
+    pub short: String,
+    pub subject: String,
+    pub author: String,
+    /// Committer time, seconds since the epoch.
+    pub time: i64,
+    /// Has more than one parent.
+    pub merge: bool,
+    /// On the remote (the upstream, or any remote branch without one).
+    pub pushed: bool,
+    pub refs: Vec<RefLabel>,
+}
+
+/// How the checked-out branch relates to the repository's main branch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Base {
+    /// `main`, or `origin/main` when only the remote one exists.
+    pub name: String,
+    /// Commits on this branch that the base lacks.
+    pub ahead: u32,
+    /// Commits on the base that this branch lacks.
+    pub behind: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Overview {
     /// Root of the open project's worktree.
     pub root: String,
@@ -107,6 +153,12 @@ pub struct Overview {
     pub has_remote: bool,
     pub branches: Vec<Branch>,
     pub worktrees: Vec<Worktree>,
+    /// The checked-out branch's recent history (first parents only).
+    pub log: Vec<Commit>,
+    /// Commits not on the remote yet.
+    pub unpushed: u32,
+    /// `None` on the main branch itself, or when there is none.
+    pub base: Option<Base>,
 }
 
 /// Compares paths from git (`C:/a/b`) with OS paths (`\\?\C:\a\b`).
@@ -341,6 +393,116 @@ fn operation(git_dir: &Path) -> Option<String> {
     .map(|(_, name)| name.to_string())
 }
 
+const LOG_FORMAT: &str = "--format=%H%x1f%h%x1f%P%x1f%an%x1f%ct%x1f%D%x1f%s%x1e";
+
+/// `HEAD -> refs/heads/main, refs/remotes/origin/main, tag: refs/tags/v1`.
+fn parse_refs(decoration: &str) -> Vec<RefLabel> {
+    decoration
+        .split(", ")
+        .filter_map(|d| {
+            let d = d.strip_prefix("HEAD -> ").unwrap_or(d);
+            let d = d.strip_prefix("tag: ").unwrap_or(d);
+            if let Some(name) = d.strip_prefix("refs/heads/") {
+                Some(RefLabel {
+                    name: name.into(),
+                    kind: RefKind::Local,
+                })
+            } else if let Some(name) = d.strip_prefix("refs/remotes/") {
+                (!name.ends_with("/HEAD")).then(|| RefLabel {
+                    name: name.into(),
+                    kind: RefKind::Remote,
+                })
+            } else {
+                d.strip_prefix("refs/tags/").map(|name| RefLabel {
+                    name: name.into(),
+                    kind: RefKind::Tag,
+                })
+            }
+        })
+        .collect()
+}
+
+fn parse_log(out: &str, unpushed: &[&str]) -> Vec<Commit> {
+    out.split('\x1e')
+        .filter_map(|record| {
+            let mut f = record.trim_start_matches('\n').split('\x1f');
+            let hash = f.next().filter(|h| !h.is_empty())?.to_string();
+            let short = f.next()?.to_string();
+            let merge = f.next()?.split_whitespace().count() > 1;
+            let author = f.next()?.to_string();
+            let time = f.next()?.parse().unwrap_or(0);
+            let refs = parse_refs(f.next()?);
+            let subject = f.next().unwrap_or_default().to_string();
+            Some(Commit {
+                pushed: !unpushed.contains(&hash.as_str()),
+                hash,
+                short,
+                subject,
+                author,
+                time,
+                merge,
+                refs,
+            })
+        })
+        .collect()
+}
+
+/// What "not pushed" is measured against: the upstream, or every remote branch.
+fn remote_side(head: &Head) -> Vec<&'static str> {
+    if head.upstream.is_some() {
+        vec!["@{upstream}"]
+    } else {
+        vec!["--remotes"]
+    }
+}
+
+/// The branch the repository treats as main: `origin/HEAD`, else `main`/`master`.
+fn base(root: &Path, head: &Head) -> Option<Base> {
+    let current = head.branch.as_deref()?;
+    let name = git::run(
+        root,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .ok()
+    .and_then(|r| r.strip_prefix("origin/").map(str::to_string))
+    .or_else(|| {
+        ["main", "master"]
+            .into_iter()
+            .map(str::to_string)
+            .find(|b| {
+                git::run(root, &["rev-parse", "--verify", "--quiet", b]).is_ok()
+                    || git::run(
+                        root,
+                        &["rev-parse", "--verify", "--quiet", &format!("origin/{b}")],
+                    )
+                    .is_ok()
+            })
+    })?;
+    if name == current {
+        return None;
+    }
+    // The remote one is what a pull request compares against.
+    let reference = [format!("origin/{name}"), name.clone()]
+        .into_iter()
+        .find(|r| git::run(root, &["rev-parse", "--verify", "--quiet", r]).is_ok())?;
+    let counts = git::run(
+        root,
+        &[
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("HEAD...{reference}"),
+        ],
+    )
+    .ok()?;
+    let mut n = counts.split_whitespace().map(|c| c.parse().unwrap_or(0));
+    Some(Base {
+        name: reference,
+        ahead: n.next()?,
+        behind: n.next()?,
+    })
+}
+
 /// Number of changed files in another worktree.
 fn count_changes(path: &str) -> Option<u32> {
     let raw = git::run_raw(Path::new(path), &["status", "--porcelain=v2", "-z"]).ok()?;
@@ -405,6 +567,34 @@ pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
         }
     }
 
+    let (log, unpushed, base) = if head.commit.is_some() {
+        let mut args = vec!["rev-list", "HEAD", "--not"];
+        args.extend(remote_side(&head));
+        let out = if has_remote {
+            git::run(root, &args).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let unpushed: Vec<&str> = out.lines().collect();
+        let count = unpushed.len() as u32;
+        let limit = format!("-n{LOG_LIMIT}");
+        let raw = git::run(
+            root,
+            &[
+                "log",
+                &limit,
+                "--first-parent",
+                "--decorate=full",
+                LOG_FORMAT,
+                "HEAD",
+            ],
+        )
+        .unwrap_or_default();
+        (parse_log(&raw, &unpushed), count, base(root, &head))
+    } else {
+        (Vec::new(), 0, None)
+    };
+
     Ok(Overview {
         root: root_str,
         main_root: first,
@@ -415,6 +605,9 @@ pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
         has_remote,
         branches,
         worktrees,
+        log,
+        unpushed,
+        base,
     })
 }
 
@@ -507,6 +700,31 @@ worktree /gone\0HEAD 3333333333\0detached\0prunable gitdir file points to non-ex
                 ("/gone", None, false, false, false, false, true),
             ]
         );
+    }
+
+    #[test]
+    fn log_is_parsed_with_refs_and_pushed_state() {
+        let raw = "aaaa\x1fa\x1fp1\x1fMe\x1f10\x1fHEAD -> refs/heads/feat, refs/remotes/origin/HEAD, tag: refs/tags/v1\x1fAdd x\x1e\n\
+bbbb\x1fb\x1fp1 p2\x1fYou\x1f5\x1frefs/remotes/origin/main\x1fMerge y\x1e\n";
+        let log = parse_log(raw, &["aaaa"]);
+        assert_eq!(log.len(), 2);
+        assert_eq!(log[0].subject, "Add x");
+        assert!(!log[0].pushed && !log[0].merge);
+        assert_eq!(
+            log[0].refs,
+            [
+                RefLabel {
+                    name: "feat".into(),
+                    kind: RefKind::Local
+                },
+                RefLabel {
+                    name: "v1".into(),
+                    kind: RefKind::Tag
+                },
+            ]
+        );
+        assert!(log[1].pushed && log[1].merge);
+        assert_eq!(log[1].refs[0].kind, RefKind::Remote);
     }
 
     #[test]
