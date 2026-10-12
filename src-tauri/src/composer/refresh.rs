@@ -138,6 +138,9 @@ pub(super) fn cached_text(
         "name: {}\ndescription: \"{description}\"\n",
         block.name
     ));
+    if block.manual {
+        out.push_str("disable-model-invocation: true\n");
+    }
     if let Some(tools) = fm.get("tools").or(block.tools.as_ref()) {
         out.push_str(&format!("tools: {tools}\n"));
     }
@@ -164,6 +167,11 @@ pub fn refresh(cache: &Path) -> RefreshResult {
         .filter_map(|(source, stem, text)| {
             let block = catalog::parse_external(source, stem, text)?;
             let (fm, _) = catalog::split(text);
+            // Pinned blocks bundle more than the upstream file (inlined
+            // companion files), so a fresh copy of that file alone would lose them.
+            if fm.get("pinned").is_some_and(|v| v == "true") {
+                return None;
+            }
             Some(Upstream {
                 source,
                 stem,

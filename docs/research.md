@@ -192,7 +192,7 @@
 
 **인기 지표** (2026-10-12 GitHub 페이지 기준, 별/포크): obra/superpowers 297.8k/26.6k · mattpocock/skills 286.3k/24.0k · anthropics/skills 180.5k/21.4k · shanraisshan/claude-code-best-practice 67.4k/6.7k · PatrickJS/awesome-cursorrules 40.9k/3.5k · wshobson/agents 40.4k/4.3k · davila7/claude-code-templates 32.6k/3.7k · VoltAgent/awesome-claude-code-subagents 25.7k/3.0k. 별:포크 비율(8~12:1)과 이슈·PR 수가 정상 범위라 부풀린 흔적은 보이지 않음. 최근 커밋(clone 확인): superpowers·mattpocock·anthropics 2026-10-09, VoltAgent 2026-10-11, cursorrules 2026-05-30.
 
-**넣을 후보**
+**넣은 항목** (2026-10-12 카탈로그에 추가, 31개)
 | 종류 | 항목 | 출처 · 라이선스 | 비고 |
 |---|---|---|---|
 | skill | test-driven-development (+ writing-good-tests.md), writing-plans, requesting-code-review (+ code-reviewer.md), systematic-debugging (Markdown 참고 문서만) | obra/superpowers · MIT | 본문에 외부 링크 없음 |
@@ -211,3 +211,18 @@
 - wshobson/commands: 보관됨. anthropics/claude-code의 `/commit` 등: All Rights Reserved → 요약·링크만 가능. 명령(slash command)은 신뢰할 만한 공개 출처가 없어 직접 만드는 쪽이 낫다.
 - davila7/claude-code-templates: 스폰서(Bright Data, Z.AI UTM)와 분석 기능 → 이전처럼 개별 파일만 골라 쓰고 새로 늘리지 않음. github/awesome-copilot: Copilot 전용 형식.
 - 제3자 카탈로그 사이트(skillselion, vibeindex 등)는 숫자가 서로 달라 출처로 쓰지 않음.
+
+## 9. 초보자용 자료 (2026-10-12 조사: haiku)
+
+**공식 기능** (https://code.claude.com/docs/en/output-styles)
+- 출력 스타일 **Explanatory**: 구현 선택과 코드베이스 패턴을 짧은 "Insight"로 설명해 준다. **Learning**: 같은 설명에 더해, 작은 부분(오류 처리, 비즈니스 로직 등)은 `TODO(human)` 표시를 남겨 사용자가 직접 짜게 한다.
+- 켜는 법: `/output-style <이름>` 또는 `/config`. `.claude/settings.local.json`에 `"outputStyle": "Explanatory"`(대소문자 구분, 오타면 조용히 기본값)로 저장된다. 사용자 스타일은 `~/.claude/output-styles` 또는 `.claude/output-styles`의 Markdown(`name`, `description`, `keep-coding-instructions`). `keep-coding-instructions: true`가 없으면 Claude Code 기본 코딩 지침이 빠진다.
+- `/init`: 프로젝트를 보고 CLAUDE.md 초안을 만든다(이미 있으면 덮어쓰지 않고 개선 제안).
+- skills 문서에 `explain-code` 예제(그림·비유로 코드 설명)가 있다. 문서 본문은 복사하지 않고 요약·링크만.
+
+**커뮤니티** (별 수는 2026-10-12 한 번 확인)
+- luongnv89/claude-howto (MIT로 표기, 별 41.8k): 초보자 과정이 있는 튜토리얼. 지침 파일이 아니라 학습 자료. README에 광고·강의 판매 없음. LICENSE 파일은 아직 직접 확인 안 함.
+- LukeRenton/explore-claude-code (MIT, 317): `.claude/` 기능을 클릭하며 배우는 예제 프로젝트.
+- 그 밖에 작은 저장소·블로그(초보자용 CLAUDE.md 템플릿)는 인지도·검증이 부족해 제외. 초보자를 위한 검증된 공개 CLAUDE.md 템플릿은 찾지 못함.
+
+**제안**: 가장 확실한 건 공식 Explanatory·Learning 스타일(라이선스 문제 없음)을 설정에서 켜게 하는 것. 그 위에 앱 자체 초보자 지침 블록(쉬운 말로 설명, 명령 실행 전 무엇을 하는지 말하고 확인 받기, 오류는 원인 한두 문장 + 해결, 삭제·덮어쓰기·push 전 확인)을 직접 써서 내장 블록으로 넣는 것.

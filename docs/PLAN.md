@@ -213,3 +213,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - mod와 앱은 파일로만 주고받는다: 앱이 `<앱 데이터>/bridge/state.json`에 메모·할 일·PR 요약을 쓰고(30초마다 heartbeat), mod는 `bridge/inbox/*.json`에 요청을 남긴다. DB에 쓰는 건 앱 하나라 동기화(8b)와 꼬이지 않는다. 앱이 꺼져 있으면 다음 실행 때 반영.
 - mod 설치는 사용자 `claude` 명령으로: 앱이 mod 파일을 `<앱 데이터>/claude-mod`(로컬 마켓플레이스 `ai-management`)에 쓰고 `claude plugin marketplace add` + `install branch-notes@ai-management --scope user`. Claude Code 설정·로그인 정보는 앱이 직접 읽거나 쓰지 않는다.
 - 추천 mods는 저장소와 LICENSE를 확인한 것만 넣는다(`docs/research.md` 7).
+
+**나중에 추가할 후보 (2026-10-12)**
+- anthropics/skills `skill-creator` (Apache-2.0): skill을 만들고 평가·개선하는 skill. Python 스크립트(평가 루프, 설명 개선, 패키징)가 있어야 제대로 동작해서 Markdown만 가져오는 지금 카탈로그 방식으로는 넣지 않았다. 스크립트까지 설치하는 방식(예: mods처럼 마켓플레이스로 설치)을 지원할 때 넣는다. 출처: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+- 초보자 모드: Claude Code 내장 출력 스타일 Explanatory·Learning을 설정 화면에서 켜는 기능(`.claude/settings.local.json`의 `outputStyle`, read-merge-write), 초보자용 지침 블록(`docs/research.md` 9).

@@ -93,6 +93,10 @@ pub struct Block {
     pub paths: Vec<String>,
     pub tools: Option<String>,
     pub model: Option<String>,
+    /// A skill only the user starts (`/name`): written with
+    /// `disable-model-invocation: true` so Claude doesn't pull it in itself.
+    #[serde(default)]
+    pub manual: bool,
     pub body: String,
     /// Files next to a library skill's SKILL.md, which the composer does not copy.
     pub extra_files: usize,
@@ -244,11 +248,127 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         paths: list(fm.get("paths")),
         tools: fm.get("tools").cloned(),
         model: fm.get("model").cloned(),
-        body: body.trim_end().to_string(),
+        manual: fm
+            .get("disable-model-invocation")
+            .is_some_and(|v| v == "true"),
+        body: adapt(fm.get("adapt").map(String::as_str), body.trim_end()),
         extra_files: 0,
         origin: None,
         frontmatter: None,
     })
+}
+
+/// Cleans an upstream body the app adapts (`adapt` frontmatter), the same
+/// way for the bundled copy and a refreshed one:
+/// - `voltagent`: drops the "Communication Protocol" section, JSON status
+///   payloads, "query context manager" steps, delivery notifications and
+///   the list of other agents to work with (VoltAgent's own multi-agent
+///   protocol, which Claude Code doesn't have).
+/// - `mattpocock`: replaces the pointer to `/setup-matt-pocock-skills` (a
+///   skill the catalog doesn't carry) with asking the user where to publish.
+/// - `cursorrules`: drops "save this file as .cursorrules" notes.
+pub(crate) fn adapt(kind: Option<&str>, body: &str) -> String {
+    match kind {
+        Some("voltagent") => adapt_voltagent(body),
+        Some("mattpocock") => body
+            .lines()
+            .map(|l| {
+                if l.contains("/setup-matt-pocock-skills") {
+                    "If it hasn't been, ask the user where to publish: a GitHub issue, a Markdown file in the repository, or just here in the chat."
+                } else {
+                    l
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Some("cursorrules") => body
+            .lines()
+            .filter(|l| !l.to_lowercase().contains("save this file as .cursorrules"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string(),
+        _ => body.to_string(),
+    }
+}
+
+fn adapt_voltagent(body: &str) -> String {
+    let lines: Vec<&str> = body.lines().collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let lower = line.to_lowercase();
+        // The protocol section, up to the next `## ` heading.
+        if line.trim() == "## Communication Protocol" {
+            i += 1;
+            while i < lines.len() && !lines[i].starts_with("## ") {
+                i += 1;
+            }
+            continue;
+        }
+        // A JSON payload and the label line just before it.
+        if line.trim_start().starts_with("```json") {
+            if out.last().is_some_and(|l| l.trim_end().ends_with(':')) {
+                out.pop();
+            }
+            i += 1;
+            while i < lines.len() && !lines[i].trim_start().starts_with("```") {
+                i += 1;
+            }
+            i += 1;
+            continue;
+        }
+        if lower.contains("context manager") || lower.contains("context-manager") {
+            i += 1;
+            continue;
+        }
+        // "Delivery notification:" and its quoted example.
+        if line.trim() == "Delivery notification:" {
+            i += 1;
+            if i < lines.len() && lines[i].trim_start().starts_with('"') {
+                i += 1;
+            }
+            continue;
+        }
+        // "Integration with other agents:" and its list.
+        if line.trim() == "Integration with other agents:" {
+            i += 1;
+            while i < lines.len() && lines[i].trim_start().starts_with("- ") {
+                i += 1;
+            }
+            continue;
+        }
+        out.push(line.to_string());
+        i += 1;
+    }
+    // Renumber "N. " lists the dropped steps left gaps in.
+    let mut n = 0;
+    for line in out.iter_mut() {
+        let digits = line.chars().take_while(|c| c.is_ascii_digit()).count();
+        if digits > 0 && line[digits..].starts_with(". ") {
+            n += 1;
+            *line = format!("{n}{}", &line[digits..]);
+        } else if !line.trim().is_empty() {
+            n = 0;
+        }
+    }
+    // No runs of blank lines left behind.
+    let mut text = String::new();
+    let mut blank = 0;
+    for line in out {
+        if line.trim().is_empty() {
+            blank += 1;
+            if blank > 1 {
+                continue;
+            }
+        } else {
+            blank = 0;
+        }
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text.trim().to_string()
 }
 
 pub fn builtin() -> Vec<Block> {
@@ -275,6 +395,8 @@ pub fn external(cache: Option<&Path>) -> Vec<Block> {
         .iter()
         .filter_map(|(source, stem, text)| {
             let bundled = parse_external(source, stem, text)?;
+            let (fm, _) = split(text);
+            let adapt_kind = fm.get("adapt").cloned();
             let cached = cache
                 .and_then(|dir| std::fs::read_to_string(cache_path(dir, source, stem)).ok())
                 .and_then(|t| parse_external(source, stem, &t))
@@ -283,6 +405,7 @@ pub fn external(cache: Option<&Path>) -> Vec<Block> {
             // the bundled ones, also for copies cached by an older version.
             Some(match cached {
                 Some(cached) => Block {
+                    body: adapt(adapt_kind.as_deref(), &cached.body),
                     title: bundled.title,
                     summary: bundled.summary,
                     category: bundled.category,
@@ -358,6 +481,9 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         paths: Vec::new(),
         tools: fm.get("tools").cloned(),
         model: fm.get("model").cloned(),
+        manual: fm
+            .get("disable-model-invocation")
+            .is_some_and(|v| v == "true"),
         body: body.trim_end().to_string(),
         extra_files,
         origin: None,
@@ -465,7 +591,7 @@ mod tests {
         for block in &blocks {
             let origin = block.origin.as_ref().unwrap();
             assert!(
-                ["MIT", "Apache-2.0"].contains(&origin.license.as_str()),
+                ["MIT", "Apache-2.0", "CC0-1.0"].contains(&origin.license.as_str()),
                 "{}",
                 block.id
             );
@@ -580,5 +706,37 @@ mod tests {
                 block.summary
             );
         }
+    }
+
+    #[test]
+    fn adapted_upstream_text_drops_what_claude_code_does_not_have() {
+        let blocks = external(None);
+        let by = |name: &str| blocks.iter().find(|b| b.name == name).unwrap();
+        for b in blocks.iter().filter(|b| b.id.contains("voltagent")) {
+            let body = b.body.to_lowercase();
+            assert!(!body.contains("requesting_agent"), "{}", b.id);
+            assert!(!body.contains("context manager"), "{}", b.id);
+            assert!(!body.contains("communication protocol"), "{}", b.id);
+            assert!(!body.contains("```json"), "{}", b.id);
+            assert!(b.model.is_none(), "{}", b.id);
+            assert!(body.starts_with("you are"), "{}", b.id);
+        }
+        assert!(by("sql-pro").body.contains("1. Review existing"));
+        for b in blocks.iter().filter(|b| b.id.contains("cursorrules")) {
+            assert_eq!(b.kind, BlockKind::Rule);
+            assert!(
+                !b.paths.is_empty() && !b.paths.contains(&"**/*".to_string()),
+                "{}",
+                b.id
+            );
+            assert!(!b.body.contains(".cursorrules and place"), "{}", b.id);
+        }
+        assert!(!by("to-spec").body.contains("setup-matt-pocock-skills"));
+        assert!(by("grill-me").manual && !by("writing-plans").manual);
+        assert!(
+            by("test-driven-development")
+                .body
+                .contains("writing-good-tests.md")
+        );
     }
 }
