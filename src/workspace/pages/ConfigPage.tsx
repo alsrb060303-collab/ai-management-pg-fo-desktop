@@ -11,6 +11,7 @@ export function ConfigPage() {
     <div className="mx-auto max-w-3xl px-8 py-10">
       <PageHeader title={t("docs.view.map")} description={t("docs.mapPage.description")} />
       <ConfigMapPanel
+        onManageMcp={() => useWorkspaceStore.getState().go("mcp")}
         onEdit={async (rel) => {
           const docs = useProjectDocsStore.getState();
           await docs.load(useProjectStore.getState().current);

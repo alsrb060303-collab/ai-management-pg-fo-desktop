@@ -106,6 +106,80 @@ fn claude(args: &[&str]) -> Result<String> {
     }
 }
 
+/// Runs `claude` in `dir` with `args`, giving up after `timeout`: stdout and
+/// whether it exited successfully, or why it couldn't run. MCP health checks
+/// can wait on a server that never answers, hence the limit.
+pub(crate) fn claude_in(
+    dir: &std::path::Path,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> Result<(bool, String, String)> {
+    use std::io::Read;
+    let path = find_claude().ok_or_else(|| {
+        crate::tr!(
+            "Claude Code(claude 명령)를 찾지 못했어요. 설치한 뒤 다시 시도해 주세요",
+            "Couldn't find Claude Code (the claude command). Install it and try again"
+        )
+    })?;
+    let mut cmd = Command::new(&path);
+    cmd.args(args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1")
+        .env("NO_COLOR", "1");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let mut child = cmd.spawn().map_err(|e| {
+        crate::tr!(
+            "claude를 실행하지 못했어요: {e}",
+            "Couldn't run claude: {e}"
+        )
+    })?;
+    // Read both pipes on threads so a full pipe never blocks the child.
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    let out = std::thread::spawn(move || {
+        let mut s = String::new();
+        if let Some(p) = stdout.as_mut() {
+            let _ = p.read_to_string(&mut s);
+        }
+        s
+    });
+    let err = std::thread::spawn(move || {
+        let mut s = String::new();
+        if let Some(p) = stderr.as_mut() {
+            let _ = p.read_to_string(&mut s);
+        }
+        s
+    });
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if start.elapsed() < timeout => {
+                std::thread::sleep(std::time::Duration::from_millis(50))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(crate::tr!(
+                    "claude가 {}초 안에 끝나지 않았어요",
+                    "claude didn't finish within {} seconds",
+                    timeout.as_secs()
+                ));
+            }
+        }
+    };
+    let stdout = out.join().unwrap_or_default();
+    let stderr = err.join().unwrap_or_default();
+    Ok((status.success(), stdout, stderr))
+}
+
 /// `2.1.296 (Claude Code)` → (2, 1, 296).
 fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
     let word = text.split_whitespace().next()?;

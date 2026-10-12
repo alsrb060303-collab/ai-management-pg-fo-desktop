@@ -387,9 +387,11 @@ mod tests {
         let result = refresh(tmp.path());
         println!("{result:#?}");
         assert!(result.failed.is_empty(), "{:?}", result.failed);
-        assert_eq!(
-            result.updated.len() + result.unchanged,
-            catalog::bundled_external().len()
-        );
+        // Pinned blocks (adapted or with companion files) are never fetched.
+        let fetched = catalog::bundled_external()
+            .iter()
+            .filter(|(_, _, text)| !text.contains("\npinned: true\n"))
+            .count();
+        assert_eq!(result.updated.len() + result.unchanged, fetched);
     }
 }

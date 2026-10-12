@@ -3,6 +3,7 @@ import { create } from "zustand";
 import * as common from "./messages/common";
 import * as composer from "./messages/composer";
 import * as docs from "./messages/docs";
+import * as mcp from "./messages/mcp";
 import * as memo from "./messages/memo";
 import * as settings from "./messages/settings";
 import * as shell from "./messages/shell";
@@ -22,6 +23,7 @@ const KO = {
   ...settings.ko,
   ...composer.ko,
   ...docs.ko,
+  ...mcp.ko,
   ...work.ko,
   ...memo.ko,
 };
@@ -32,6 +34,7 @@ const EN: Record<MessageKey, string> = {
   ...settings.en,
   ...composer.en,
   ...docs.en,
+  ...mcp.en,
   ...work.en,
   ...memo.en,
 };

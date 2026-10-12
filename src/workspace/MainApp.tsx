@@ -11,6 +11,7 @@ import { NavSidebar } from "./NavSidebar";
 import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
+import { McpPage } from "./pages/McpPage";
 import { MemoPage } from "./pages/MemoPage";
 import { ProjectDocsPage } from "./pages/ProjectDocsPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -29,6 +30,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
   library: () => <LibraryPage />,
   config: () => <ConfigPage />,
   files: () => <ProjectDocsPage />,
+  mcp: () => <McpPage />,
   work: () => <WorkPage />,
   memo: () => <MemoPage />,
   settings: () => <SettingsPage />,

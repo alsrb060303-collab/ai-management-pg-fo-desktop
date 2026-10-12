@@ -246,3 +246,28 @@
 | [musistudio/claude-code-router](https://github.com/musistudio/claude-code-router) (~38k★) | MIT | 다른 모델로 라우팅(범위 밖) |
 
 AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는다.
+
+## 11. MCP 서버 관리 (2026-10-12 조사: haiku, 검증: sonnet, claude 2.1.296으로 직접 확인)
+
+**설정 위치와 방식** (code.claude.com/docs/en/mcp, `claude mcp --help`)
+- 범위: project = 프로젝트 루트 `.mcp.json`(git 공유), local = `~/.claude.json`의 `projects[<경로>].mcpServers`, user = `~/.claude.json`의 `mcpServers`. 이름이 겹치면 local > project > user 순서로 쓴다. 이 밖에 플러그인과 claude.ai 커넥터 서버가 있다.
+- `~/.claude.json`에는 `oauthAccount` 같은 계정 정보도 있어서 앱은 이 파일을 열지 않는다. local과 user 범위는 `claude mcp list/get/add/remove`로만 읽고 쓴다.
+- 항목 형식: stdio `{type, command, args, env}`, http·sse `{type, url, headers}`, ws `{type, url}`. `type`이 없으면 command가 있을 때 stdio로 본다. 값 안의 `${VAR}`, `${VAR:-기본값}`은 Claude Code가 불러올 때 펼친다.
+- `claude mcp list`: JSON 출력이 없다. 한 줄 형식은 `이름: 명령|URL (HTTP) - 상태`이고, 연결 상태를 실제로 확인한다(✓ Connected, × Failed to connect, ⏸ Pending approval). 빈 줄 뒤에는 "MCP config diagnostics"가 나온다. `disabledMcpjsonServers`에 있는 project 서버는 목록에서 빠진다. 종료 코드는 항상 0이다.
+- `claude mcp get <이름>`: `Scope:`, `Status:`, `Type:`, `Command:`, `Args:`(공백으로 이어 붙임), `Environment:`(4칸 들여쓰기 `K=V`), `URL:`, `Headers:`를 보여준다. 값은 가리지 않는다. ws 서버는 Type과 URL이 빠진다. 없는 이름이면 종료 코드 1이다.
+- `claude mcp add <이름> [옵션] -- <명령|URL> [인자…]`: `-e`/`-H`는 뒤의 값을 여러 개 받는다(variadic). 그래서 이름을 맨 앞에 쓴다. 이미 있는 이름이나 잘못된 이름이면 종료 코드 1이다. `add-json`은 ws도 받는다.
+- 프로젝트 승인: 설정의 `enableAllProjectMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers`가 정한다. disabled는 바로 적용되지만, enabled는 폴더를 신뢰한 뒤에만 적용된다. `/mcp`의 켜기/끄기(local·user 서버)는 `~/.claude.json`에 저장돼서 앱이 바꾸지 않는다.
+- Windows에서 npx 서버를 `cmd /c`로 감싸야 하는지는 확인하지 못했다(문서마다 다름). 추천 서버는 Windows에서 `cmd /c npx …`로 넣는다.
+
+**추천 서버** (앱은 설정만 쓰고 서버 코드를 포함하지 않음, 원본 저장소에서 라이선스 확인)
+| 서버 | 출처 | 라이선스 | 비고 |
+|---|---|---|---|
+| filesystem, memory | modelcontextprotocol/servers | MIT (새 기여분 Apache-2.0) | npx |
+| git, fetch, time | modelcontextprotocol/servers | MIT | uvx (uv 필요) |
+| github | github/github-mcp-server | MIT | 원격 `https://api.githubcopilot.com/mcp/`, 토큰은 `${GITHUB_PAT}` |
+| playwright | microsoft/playwright-mcp | Apache-2.0 | `--isolated` |
+| chrome-devtools | ChromeDevTools/chrome-devtools-mcp | Apache-2.0 | 사용 통계·CrUX 전송 끄는 옵션 포함 |
+| context7 | upstash/context7 | MIT(클라이언트) | 원격 `https://mcp.context7.com/mcp` |
+| notion, linear | 업체 운영 | 해당 없음 | 공개 URL만 씀, `/mcp`로 로그인 |
+
+- 제외: Sentry(코드 라이선스 FSL, 소스만 공개), Supabase·Cloudflare(이번에는 보류), sequential-thinking(효용이 애매함), 예전 Notion npm 서버(지원 중단).

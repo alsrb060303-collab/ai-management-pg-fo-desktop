@@ -102,7 +102,14 @@ const STATE_STYLES: Record<ConfigState, { label: MessageKey; className: string }
   notLoaded: { label: "docs.state.notLoaded", className: "text-text-muted" },
 };
 
-export function ConfigMapPanel({ onEdit }: { onEdit?: (rel: string) => void } = {}) {
+export function ConfigMapPanel({
+  onEdit,
+  onManageMcp,
+}: {
+  onEdit?: (rel: string) => void;
+  /** Opens the MCP page (main window only). */
+  onManageMcp?: () => void;
+} = {}) {
   const t = useT();
   const { current, recent, map, loading, error, choose, select, refresh } = useProjectStore();
   const loadLibrary = useLibraryStore((s) => s.load);
@@ -147,6 +154,15 @@ export function ConfigMapPanel({ onEdit }: { onEdit?: (rel: string) => void } = 
                 <span className="min-w-0 truncate font-normal text-text-muted">
                   {t(section.hint)}
                 </span>
+                {section.kind === "mcp" && onManageMcp && (
+                  <button
+                    type="button"
+                    className={`ml-auto font-normal ${smallButton}`}
+                    onClick={onManageMcp}
+                  >
+                    {t("docs.map.manageMcp")}
+                  </button>
+                )}
               </h3>
               <ul className="space-y-1.5">
                 {items.map((item) => (

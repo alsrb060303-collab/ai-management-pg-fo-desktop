@@ -7,6 +7,7 @@ mod git;
 mod github;
 mod i18n;
 mod library;
+mod mcp;
 mod memo;
 mod project_docs;
 mod shell;
@@ -36,6 +37,12 @@ pub fn run() {
             dock::dock_set_pinned,
             dock::sidebar_hide,
             claude_config::claude_config_scan,
+            mcp::mcp_list,
+            mcp::mcp_save,
+            mcp::mcp_remove,
+            mcp::mcp_set_enabled,
+            mcp::mcp_parse,
+            mcp::mcp_recommended,
             project_docs::project_docs_list,
             project_docs::project_doc_read,
             project_docs::project_doc_write,

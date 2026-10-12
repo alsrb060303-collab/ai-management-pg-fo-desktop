@@ -219,7 +219,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - 비슷한 앱 조사(`docs/research.md` 10)에서 나온 후보. 효과가 크고 기존 기능과 잘 맞는 순서:
   1. **권한 편집기**: settings.json의 `permissions` allow/ask/deny를 범위별로 보고 고치기(read-merge-write). 설정 지도와 연결.
   2. **사용량·비용 보기**: `~/.claude`의 세션 기록(JSONL)을 읽어 모델·프로젝트별 토큰, 5시간 창. 로그인 정보 파일은 읽지 않는다.
-  3. **MCP 관리**: `.mcp.json`·설정의 MCP 서버 보기·추가(JSON이나 `claude mcp add` 명령 붙여넣기).
+  3. ~~**MCP 관리**~~ → 2026-10-12 구현(MCP 서버 페이지, `docs/research.md` 11).
   4. **프로필**: skills·agents·hooks·MCP 묶음을 이름 붙여 저장하고 프로젝트에 한 번에 적용.
   5. **설정 점검**: 깨진 JSON, 없는 hook 경로, 가려진 규칙을 설정 지도에 표시.
   6. 세션 기록 탐색, 슬래시 명령 편집기, 상태줄 빌더, 가져오기·내보내기.
