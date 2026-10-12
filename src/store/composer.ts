@@ -15,8 +15,8 @@ import { onLocaleApplied, t, useLocaleStore } from "../i18n";
 import type { Mode } from "./library";
 
 // Mirrors src-tauri/src/composer.
-export type BlockKind = "instruction" | "rule" | "skill" | "agent";
-export type Target = "claudeMd" | "rules" | "skills" | "agents";
+export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
+export type Target = "claudeMd" | "rules" | "skills" | "agents" | "custom" | "hooks";
 
 export interface Block {
   id: string;
@@ -32,6 +32,9 @@ export interface Block {
   paths: string[];
   tools: string | null;
   model: string | null;
+  /** Hooks: the Claude Code event and matcher; the body is the command. */
+  event?: string | null;
+  matcher?: string | null;
   body: string;
   extraFiles: number;
   /** English title, summary and category, when the block has them. */
@@ -71,8 +74,25 @@ export interface DocMeta {
   updatedAt: number;
 }
 
-export type BlockData = { blockId: string; body?: string };
-export type OutputData = { target: Target; scope: Mode; order: string[] };
+export type BlockData = {
+  blockId: string;
+  body?: string;
+  /** Switched off on the canvas: left out of every output. */
+  disabled?: boolean;
+  /** Subagents: a model alias (`MODELS`); absent means the block's own. */
+  model?: string;
+  /** Hooks: event and matcher replacing the block's. */
+  event?: string;
+  matcher?: string;
+};
+export type OutputData = {
+  target: Target;
+  scope: Mode;
+  order: string[];
+  /** Custom outputs: the file's path and the user's own text. */
+  path?: string;
+  text?: string;
+};
 export type BlockNode = Node<BlockData, "block">;
 export type OutputNode = Node<OutputData, "output">;
 export type ComposerNode = BlockNode | OutputNode;
@@ -92,7 +112,54 @@ export const ACCEPTS: Record<Target, BlockKind[]> = {
   rules: ["rule", "instruction"],
   skills: ["skill"],
   agents: ["agent"],
+  custom: ["instruction", "rule"],
+  hooks: ["hook"],
 };
+
+/** Subagent model aliases (`MODEL_ALIASES` in compile.rs) and their current model. */
+export const MODELS: { alias: string; label: string }[] = [
+  { alias: "fable", label: "Fable 5.1" },
+  { alias: "opus", label: "Opus 5.5" },
+  { alias: "sonnet", label: "Sonnet 5.5" },
+  { alias: "haiku", label: "Haiku 5.5" },
+];
+
+/** Hook events offered first; the rest of `HOOK_EVENTS` in compile.rs follow. */
+export const HOOK_EVENTS = [
+  "PreToolUse",
+  "PostToolUse",
+  "UserPromptSubmit",
+  "Stop",
+  "SubagentStop",
+  "SessionStart",
+  "SessionEnd",
+  "Notification",
+  "PreCompact",
+  "PostToolUseFailure",
+  "PermissionRequest",
+  "SubagentStart",
+  "PostCompact",
+  "FileChanged",
+  "CwdChanged",
+  "InstructionsLoaded",
+  "ConfigChange",
+  "TaskCreated",
+  "TaskCompleted",
+];
+
+/** Events whose matcher Claude Code ignores (`EVENTS_WITHOUT_MATCHER`). */
+export const EVENTS_WITHOUT_MATCHER = new Set([
+  "UserPromptSubmit",
+  "PostToolBatch",
+  "Stop",
+  "TeammateIdle",
+  "TaskCreated",
+  "TaskCompleted",
+  "WorktreeCreate",
+  "WorktreeRemove",
+  "MessageDisplay",
+  "CwdChanged",
+]);
 
 export const CLAUDE_MD_LINE_BUDGET = 200;
 const HISTORY_LIMIT = 100;
@@ -132,6 +199,9 @@ interface ComposerState {
   addBlock: (blockId: string, position: XYPosition) => void;
   addOutput: (target: Target, position: XYPosition) => void;
   setBody: (nodeId: string, body: string | undefined) => void;
+  /** Merges into a block node's data; `undefined` values remove the key. */
+  setBlockData: (nodeId: string, patch: Partial<Omit<BlockData, "blockId">>) => void;
+  setOutputData: (nodeId: string, patch: Partial<Pick<OutputData, "path" | "text">>) => void;
   setScope: (nodeId: string, scope: Mode) => void;
   reorder: (nodeId: string, from: number, to: number) => void;
   undo: () => void;
@@ -153,6 +223,7 @@ const PREVIEW_TARGET: Record<BlockKind, Target> = {
   rule: "rules",
   skill: "skills",
   agent: "agents",
+  hook: "hooks",
 };
 
 function newId(prefix: string): string {
@@ -555,6 +626,27 @@ export const useComposerStore = create<ComposerState>((set, get) => {
         ...doc,
         nodes: doc.nodes.map((n) =>
           n.id === nodeId && n.type === "block" ? { ...n, data: { ...n.data, body } } : n,
+        ),
+      })),
+
+    setBlockData: (nodeId, patch) =>
+      update((doc) => ({
+        ...doc,
+        nodes: doc.nodes.map((n) => {
+          if (n.id !== nodeId || n.type !== "block") return n;
+          const data: BlockData = { ...n.data, ...patch };
+          for (const key of Object.keys(patch) as (keyof typeof patch)[]) {
+            if (patch[key] === undefined) delete data[key];
+          }
+          return { ...n, data };
+        }),
+      })),
+
+    setOutputData: (nodeId, patch) =>
+      update((doc) => ({
+        ...doc,
+        nodes: doc.nodes.map((n) =>
+          n.id === nodeId && n.type === "output" ? { ...n, data: { ...n.data, ...patch } } : n,
         ),
       })),
 

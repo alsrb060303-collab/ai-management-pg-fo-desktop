@@ -6,6 +6,10 @@
 //! - rules: one `.claude/rules/<name>.md` per block
 //! - skills: `.claude/skills/<name>/SKILL.md`
 //! - agents: `.claude/agents/<name>.md`
+//! - custom: a managed section in a file at a path the user types, holding
+//!   the user's own text and the connected instruction and rule blocks
+//! - hooks: the `hooks` of `.claude/settings.json` (or `settings.local.json`),
+//!   merged into the file by `write`
 
 use std::collections::{HashMap, HashSet};
 
@@ -16,6 +20,61 @@ use crate::library::{Mode, check_id};
 
 /// CLAUDE.md guidance: longer files are followed less reliably.
 pub const CLAUDE_MD_LINE_BUDGET: usize = 200;
+
+/// Model aliases a subagent's `model` can be set to. Claude Code resolves
+/// each to the newest model of that family.
+pub const MODEL_ALIASES: &[&str] = &["fable", "opus", "sonnet", "haiku"];
+
+/// Claude Code hook events (code.claude.com/docs/en/hooks, 2026-10).
+pub const HOOK_EVENTS: &[&str] = &[
+    "SessionStart",
+    "Setup",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "UserPromptExpansion",
+    "Stop",
+    "StopFailure",
+    "PreToolUse",
+    "PermissionRequest",
+    "PermissionDenied",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PostToolBatch",
+    "SubagentStart",
+    "SubagentStop",
+    "TaskCreated",
+    "TaskCompleted",
+    "TeammateIdle",
+    "PreCompact",
+    "PostCompact",
+    "PreModelSwitch",
+    "PostModelSwitch",
+    "ConfigChange",
+    "InstructionsLoaded",
+    "CwdChanged",
+    "DirectoryAdded",
+    "FileChanged",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "Notification",
+    "MessageDisplay",
+    "Elicitation",
+    "ElicitationResult",
+];
+
+/// Events whose `matcher` Claude Code ignores; it is left out for them.
+const EVENTS_WITHOUT_MATCHER: &[&str] = &[
+    "UserPromptSubmit",
+    "PostToolBatch",
+    "Stop",
+    "TeammateIdle",
+    "TaskCreated",
+    "TaskCompleted",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "MessageDisplay",
+    "CwdChanged",
+];
 
 /// The graph as saved by the frontend. Only the fields compilation needs are
 /// read; React Flow's own fields are ignored.
@@ -43,12 +102,24 @@ pub struct NodeData {
     pub block_id: Option<String>,
     /// Block nodes: the user's edited text, replacing the catalog body.
     pub body: Option<String>,
+    /// Block nodes switched off on the canvas: left out of every output.
+    #[serde(default)]
+    pub disabled: bool,
+    /// Subagent block nodes: a model alias replacing the block's own model.
+    pub model: Option<String>,
+    /// Hook block nodes: the event and matcher, replacing the block's.
+    pub event: Option<String>,
+    pub matcher: Option<String>,
     /// Output nodes.
     pub target: Option<Target>,
     pub scope: Option<Mode>,
     /// Output nodes: block node ids in document order.
     #[serde(default)]
     pub order: Vec<String>,
+    /// Custom output nodes: the file's path in the project, and the user's
+    /// own text put before the connected blocks.
+    pub path: Option<String>,
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,17 +135,77 @@ pub enum Target {
     Rules,
     Skills,
     Agents,
+    Custom,
+    Hooks,
 }
 
 impl Target {
     pub fn accepts(self, kind: BlockKind) -> bool {
         match self {
             Target::ClaudeMd => kind == BlockKind::Instruction,
-            Target::Rules => matches!(kind, BlockKind::Rule | BlockKind::Instruction),
+            Target::Rules | Target::Custom => {
+                matches!(kind, BlockKind::Rule | BlockKind::Instruction)
+            }
             Target::Skills => kind == BlockKind::Skill,
             Target::Agents => kind == BlockKind::Agent,
+            Target::Hooks => kind == BlockKind::Hook,
         }
     }
+}
+
+/// A custom output's path, `/`-separated, or why it can't be used. Only text
+/// files the managed section's HTML comments suit: Markdown, `.txt`, or
+/// files without an extension (`.cursorrules`).
+pub fn custom_path(raw: &str) -> Result<String, String> {
+    let path = raw.trim().replace('\\', "/");
+    if path.is_empty() {
+        return Err(crate::tr!("파일 경로를 입력해 주세요", "Enter a file path"));
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    let escapes = path.starts_with('/')
+        || path.contains(':')
+        || parts
+            .iter()
+            .any(|p| p.is_empty() || *p == "." || *p == "..");
+    if escapes || parts[0].eq_ignore_ascii_case(".git") {
+        return Err(crate::tr!(
+            "프로젝트 안의 상대 경로만 쓸 수 있어요: {path}",
+            "Only a relative path inside the project works: {path}"
+        ));
+    }
+    let name = parts[parts.len() - 1];
+    let ext = name
+        .rfind('.')
+        .filter(|&i| i > 0)
+        .map(|i| name[i + 1..].to_ascii_lowercase());
+    if !matches!(
+        ext.as_deref(),
+        None | Some("md" | "mdc" | "markdown" | "txt")
+    ) {
+        return Err(crate::tr!(
+            "Markdown(.md)이나 .txt 파일만 쓸 수 있어요: {path}",
+            "Only Markdown (.md) or .txt files work: {path}"
+        ));
+    }
+    Ok(path)
+}
+
+/// The text of section outputs (CLAUDE.md, custom): blocks in order, third-
+/// party ones credited in an HTML comment (which Claude Code strips).
+fn section_text(resolved: &[(&str, &Block, String)]) -> String {
+    resolved
+        .iter()
+        .map(|(_, block, body)| match &block.origin {
+            Some(o) => format!(
+                "<!-- Source: {} ({}, {}) -->\n{body}",
+                o.url(),
+                o.license,
+                o.copyright
+            ),
+            None => body.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -154,6 +285,9 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             let Some(node) = nodes.get(node_id) else {
                 continue;
             };
+            if node.data.disabled {
+                continue;
+            }
             let Some(block_id) = node.data.block_id.as_deref() else {
                 continue;
             };
@@ -208,27 +342,21 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             resolved.push((node_id, block, body.to_string()));
         }
 
+        let own_text = output
+            .data
+            .text
+            .as_deref()
+            .map(normalize)
+            .filter(|t| target == Target::Custom && !t.trim().is_empty());
         // An empty output shows its own hint on the canvas.
-        if resolved.is_empty() {
+        if resolved.is_empty() && own_text.is_none() {
             continue;
         }
 
         let mut files = Vec::new();
         match target {
             Target::ClaudeMd => {
-                let content = resolved
-                    .iter()
-                    .map(|(_, block, body)| match &block.origin {
-                        Some(o) => format!(
-                            "<!-- Source: {} ({}, {}) -->\n{body}",
-                            o.url(),
-                            o.license,
-                            o.copyright
-                        ),
-                        None => body.clone(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n\n");
+                let content = section_text(&resolved);
                 let lines = content.lines().count();
                 if lines > CLAUDE_MD_LINE_BUDGET {
                     warn(
@@ -256,6 +384,90 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     blocks: resolved.iter().map(|(id, ..)| id.to_string()).collect(),
                 });
             }
+            Target::Custom => match custom_path(output.data.path.as_deref().unwrap_or("")) {
+                Err(reason) => warn(&mut out, &output.id, reason),
+                Ok(path) => {
+                    let blocks = section_text(&resolved);
+                    let content = match &own_text {
+                        Some(text) if blocks.is_empty() => text.trim().to_string(),
+                        Some(text) => format!("{}\n\n{blocks}", text.trim()),
+                        None => blocks,
+                    };
+                    files.push(OutFile {
+                        path,
+                        lines: content.lines().count(),
+                        content,
+                        section: true,
+                        personal,
+                        target,
+                        node: output.id.clone(),
+                        blocks: resolved.iter().map(|(id, ..)| id.to_string()).collect(),
+                    });
+                }
+            },
+            Target::Hooks => {
+                let mut used = Vec::new();
+                let mut hooks = serde_json::Map::new();
+                for (node_id, block, body) in &resolved {
+                    let data = nodes.get(node_id).map(|n| &n.data);
+                    let event = data
+                        .and_then(|d| d.event.as_deref())
+                        .or(block.event.as_deref())
+                        .unwrap_or("")
+                        .trim();
+                    if !HOOK_EVENTS.contains(&event) {
+                        warn(
+                            &mut out,
+                            node_id,
+                            crate::tr!(
+                                "'{}'의 이벤트를 골라 주세요",
+                                "Pick an event for '{}'",
+                                block.display_title()
+                            ),
+                        );
+                        continue;
+                    }
+                    if body.trim().is_empty() {
+                        warn(
+                            &mut out,
+                            node_id,
+                            crate::tr!(
+                                "'{}'의 실행할 명령이 비어 있어요",
+                                "'{}' has no command to run",
+                                block.display_title()
+                            ),
+                        );
+                        continue;
+                    }
+                    let matcher = data
+                        .and_then(|d| d.matcher.as_deref())
+                        .or(block.matcher.as_deref())
+                        .map(str::trim)
+                        .filter(|m| !m.is_empty() && !EVENTS_WITHOUT_MATCHER.contains(&event));
+                    add_hook(&mut hooks, event, matcher, body.trim());
+                    used.push(node_id.to_string());
+                }
+                if !used.is_empty() {
+                    let content =
+                        serde_json::to_string_pretty(&serde_json::json!({ "hooks": hooks }))
+                            .unwrap_or_default();
+                    let path = if personal {
+                        ".claude/settings.local.json"
+                    } else {
+                        ".claude/settings.json"
+                    };
+                    files.push(OutFile {
+                        path: path.into(),
+                        lines: content.lines().count(),
+                        content,
+                        section: false,
+                        personal,
+                        target,
+                        node: output.id.clone(),
+                        blocks: used,
+                    });
+                }
+            }
             Target::Rules | Target::Skills | Target::Agents => {
                 for (node_id, block, body) in &resolved {
                     if check_id(&block.name).is_err() {
@@ -279,10 +491,30 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                             format!(".claude/skills/{}/SKILL.md", block.name),
                             skill_file(block, body),
                         ),
-                        _ => (
-                            format!(".claude/agents/{}.md", block.name),
-                            agent_file(block, body),
-                        ),
+                        _ => {
+                            let model = nodes
+                                .get(node_id)
+                                .and_then(|n| n.data.model.as_deref())
+                                .filter(|m| !m.is_empty());
+                            if let Some(m) = model.filter(|m| !MODEL_ALIASES.contains(m)) {
+                                warn(
+                                    &mut out,
+                                    node_id,
+                                    crate::tr!(
+                                        "알 수 없는 모델이라 무시했어요: {m}",
+                                        "Ignored an unknown model: {m}"
+                                    ),
+                                );
+                            }
+                            (
+                                format!(".claude/agents/{}.md", block.name),
+                                agent_file(
+                                    block,
+                                    body,
+                                    model.filter(|m| MODEL_ALIASES.contains(m)),
+                                ),
+                            )
+                        }
                     };
                     if block.extra_files > 0 {
                         warn(
@@ -384,8 +616,69 @@ fn credit_comment(block: &Block) -> String {
         .unwrap_or_default()
 }
 
-fn agent_file(block: &Block, body: &str) -> String {
+/// Adds one command hook under `event` (and `matcher`), next to the others
+/// with the same matcher, as settings.json lays them out.
+pub(super) fn add_hook(
+    hooks: &mut serde_json::Map<String, serde_json::Value>,
+    event: &str,
+    matcher: Option<&str>,
+    command: &str,
+) {
+    use serde_json::{Value, json};
+    let groups = hooks
+        .entry(event.to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(groups) = groups.as_array_mut() else {
+        return;
+    };
+    let same = |g: &Value| g.get("matcher").and_then(Value::as_str) == matcher;
+    let index = match groups.iter().position(same) {
+        Some(i) => i,
+        None => {
+            let mut group = serde_json::Map::new();
+            if let Some(m) = matcher {
+                group.insert("matcher".into(), json!(m));
+            }
+            group.insert("hooks".into(), json!([]));
+            groups.push(Value::Object(group));
+            groups.len() - 1
+        }
+    };
+    let hook = json!({ "type": "command", "command": command });
+    if let Some(list) = groups[index].get_mut("hooks").and_then(Value::as_array_mut)
+        && !list.contains(&hook)
+    {
+        list.push(hook);
+    }
+}
+
+/// Frontmatter with its top-level `model:` line set to `model`, or the line
+/// added at the end when it has none.
+fn set_model(frontmatter: &str, model: &str) -> String {
+    let mut found = false;
+    let mut lines: Vec<String> = frontmatter
+        .lines()
+        .map(|line| {
+            if !found && line.starts_with("model:") {
+                found = true;
+                format!("model: {model}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    if !found {
+        lines.push(format!("model: {model}"));
+    }
+    lines.join("\n")
+}
+
+fn agent_file(block: &Block, body: &str, model: Option<&str>) -> String {
     if let Some(raw) = &block.frontmatter {
+        let raw = match model {
+            Some(m) => set_model(raw, m),
+            None => raw.clone(),
+        };
         return format!("---\n{raw}\n---\n\n{body}\n");
     }
     let description = block.description.as_deref().unwrap_or(&block.summary);
@@ -398,7 +691,7 @@ fn agent_file(block: &Block, body: &str) -> String {
     if let Some(tools) = block.tools.as_deref().filter(|t| !t.is_empty()) {
         fm.push_str(&format!("tools: {tools}\n"));
     }
-    if let Some(model) = block.model.as_deref().filter(|m| !m.is_empty()) {
+    if let Some(model) = model.or(block.model.as_deref()).filter(|m| !m.is_empty()) {
         fm.push_str(&format!("model: {model}\n"));
     }
     format!("{fm}---\n\n{body}\n")
@@ -471,6 +764,8 @@ mod tests {
             paths: Vec::new(),
             tools: Some("Read, Grep".into()),
             model: None,
+            event: None,
+            matcher: None,
             manual: false,
             body: body.into(),
             extra_files: 0,
@@ -624,7 +919,7 @@ mod tests {
                 "---\nname: x\ndescription: \"Does: things\"\nlicense: MIT\nmetadata:\n  source: \"{url}\"\n  copyright: \"Copyright (c) 2025 X\"\n---\n\nSteps\n"
             )
         );
-        assert!(agent_file(&agent, "You help.").starts_with(&format!(
+        assert!(agent_file(&agent, "You help.", None).starts_with(&format!(
             "---\n# Source: {url} (MIT, Copyright (c) 2025 X)\nname: y\n"
         )));
     }
@@ -635,9 +930,121 @@ mod tests {
         agent.frontmatter =
             Some("name: code-reviewer\ndescription: x\npermissionMode: plan".into());
         assert_eq!(
-            agent_file(&agent, "Review."),
+            agent_file(&agent, "Review.", None),
             "---\nname: code-reviewer\ndescription: x\npermissionMode: plan\n---\n\nReview.\n"
         );
+    }
+
+    #[test]
+    fn a_chosen_model_replaces_or_adds_the_model_line() {
+        let mut agent = block("library:agent:r", BlockKind::Agent, "Review.");
+        agent.frontmatter = Some("name: r\nmodel: sonnet\ndescription: x".into());
+        assert_eq!(
+            agent_file(&agent, "Review.", Some("opus")),
+            "---\nname: r\nmodel: opus\ndescription: x\n---\n\nReview.\n"
+        );
+        agent.frontmatter = Some("name: r\ndescription: x".into());
+        assert!(
+            agent_file(&agent, "Review.", Some("haiku"))
+                .contains("description: x\nmodel: haiku\n---")
+        );
+
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "x", "type": "block", "data": {"blockId": "builtin:reviewer", "model": "fable"}},
+                {"id": "y", "type": "block", "data": {"blockId": "builtin:reviewer", "model": "gpt"}},
+                {"id": "o", "type": "output", "data": {"target": "agents"}},
+                {"id": "p", "type": "output", "data": {"target": "agents", "scope": "personal"}}
+            ],
+            "edges": [{"source": "x", "target": "o"}, {"source": "y", "target": "p"}]
+        }"#);
+        let out = compile(&d, &catalog());
+        assert!(out.files[0].content.contains("\nmodel: fable\n"));
+        assert_eq!(out.warnings.len(), 2, "{:?}", out.warnings); // unknown model + same path twice
+    }
+
+    #[test]
+    fn custom_outputs_hold_the_users_text_then_blocks() {
+        let d = doc(r##"{
+            "nodes": [
+                {"id": "x", "type": "block", "data": {"blockId": "builtin:a"}},
+                {"id": "o", "type": "output", "data": {"target": "custom", "path": "docs\\AGENTS.md", "text": "# Mine\r\n"}},
+                {"id": "e", "type": "output", "data": {"target": "custom", "path": "", "text": "x"}}
+            ],
+            "edges": [{"source": "x", "target": "o"}]
+        }"##);
+        let out = compile(&d, &catalog());
+        assert_eq!(out.files.len(), 1);
+        let f = &out.files[0];
+        assert_eq!(f.path, "docs/AGENTS.md");
+        assert!(f.section);
+        assert_eq!(f.content, "# Mine\n\n## A\n- one");
+        assert_eq!(out.warnings.len(), 1);
+        for bad in [
+            "../x.md",
+            "/etc/x.md",
+            "C:/x.md",
+            ".git/config",
+            "a//b.md",
+            ".claude/settings.json",
+        ] {
+            assert!(custom_path(bad).is_err(), "{bad}");
+        }
+        for good in ["AGENTS.md", ".cursorrules", "docs/notes.txt", "GEMINI.md"] {
+            assert!(custom_path(good).is_ok(), "{good}");
+        }
+    }
+
+    #[test]
+    fn hook_blocks_become_settings_hooks() {
+        let mut fmt = block("builtin:fmt", BlockKind::Hook, "pnpm format");
+        fmt.event = Some("PostToolUse".into());
+        fmt.matcher = Some("Edit|Write".into());
+        let mut stop = block("builtin:stop", BlockKind::Hook, "pnpm lint");
+        stop.event = Some("Stop".into());
+        stop.matcher = Some("ignored".into());
+        let blank = block("builtin:blank", BlockKind::Hook, "");
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "a", "type": "block", "data": {"blockId": "builtin:fmt"}},
+                {"id": "b", "type": "block", "data": {"blockId": "builtin:stop"}},
+                {"id": "c", "type": "block", "data": {"blockId": "builtin:blank", "event": "PreToolUse", "body": "echo hi"}},
+                {"id": "d", "type": "block", "data": {"blockId": "builtin:blank", "event": "Nope", "body": "x"}},
+                {"id": "o", "type": "output", "data": {"target": "hooks", "scope": "personal"}}
+            ],
+            "edges": [{"source": "a", "target": "o"}, {"source": "b", "target": "o"},
+                      {"source": "c", "target": "o"}, {"source": "d", "target": "o"}]
+        }"#);
+        let out = compile(&d, &[fmt, stop, blank]);
+        let f = &out.files[0];
+        assert_eq!(f.path, ".claude/settings.local.json");
+        assert_eq!(f.blocks, ["a", "b", "c"]);
+        let v: serde_json::Value = serde_json::from_str(&f.content).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({"hooks": {
+                "PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "pnpm format"}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": "pnpm lint"}]}],
+                "PreToolUse": [{"hooks": [{"type": "command", "command": "echo hi"}]}]
+            }})
+        );
+        // "d": the same block twice, and an unknown event.
+        assert!(!out.warnings.is_empty());
+    }
+
+    #[test]
+    fn switched_off_blocks_are_left_out() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "x", "type": "block", "data": {"blockId": "builtin:a", "disabled": true}},
+                {"id": "y", "type": "block", "data": {"blockId": "builtin:b"}},
+                {"id": "o", "type": "output", "data": {"target": "claudeMd"}}
+            ],
+            "edges": [{"source": "x", "target": "o"}, {"source": "y", "target": "o"}]
+        }"#);
+        let out = compile(&d, &catalog());
+        assert_eq!(out.files[0].content, "## B");
+        assert_eq!(out.files[0].blocks, ["y"]);
     }
 
     #[test]

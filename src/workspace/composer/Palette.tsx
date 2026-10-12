@@ -20,9 +20,10 @@ const FILTERS: { value: BlockKind | "all"; label: MessageKey }[] = [
   { value: "rule", label: "composer.kind.rule" },
   { value: "skill", label: "composer.kind.skill" },
   { value: "agent", label: "composer.palette.agent" },
+  { value: "hook", label: "composer.palette.hook" },
 ];
 
-const KIND_ORDER: BlockKind[] = ["instruction", "rule", "skill", "agent"];
+const KIND_ORDER: BlockKind[] = ["instruction", "rule", "skill", "agent", "hook"];
 
 /** Adds nodes where the user drops them, or left of center on click (outputs sit in the middle). */
 function usePlacement() {
@@ -139,7 +140,7 @@ export function Palette() {
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-text-subtle"
           />
         </label>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -292,6 +293,7 @@ const KIND_WHERE: Record<BlockKind, MessageKey> = {
   rule: "composer.detail.where.rule",
   skill: "composer.detail.where.skill",
   agent: "composer.detail.where.agent",
+  hook: "composer.detail.where.hook",
 };
 
 const openLink = (url: string) => {

@@ -7,7 +7,7 @@ Claude Code로 작업할 때 **터미널 옆에 붙어서** 문서·git 작업·
 ## 기능
 
 **문서**
-- **문서 작성기**: 지침·규칙·skill·subagent 블록을 캔버스에서 이어 붙여 `CLAUDE.md`, `.claude/rules`, `.claude/skills`, `.claude/agents` 파일을 만든다. 블록을 누르면 설명과 실제로 들어갈 내용이 보이고, 블록이나 출력을 더블클릭하면 그 파일을 미리 본다.
+- **문서 작성기**: 지침·규칙·skill·subagent 블록을 캔버스에서 이어 붙여 `CLAUDE.md`, `.claude/rules`, `.claude/skills`, `.claude/agents` 파일을 만든다. 블록을 누르면 설명과 실제로 들어갈 내용이 보이고, 블록이나 출력을 더블클릭하면 그 파일을 미리 본다. hook 블록은 `.claude/settings.json`의 hooks에 합쳐 넣고(명령 확인 후), '직접 입력' 출력은 원하는 경로(예: AGENTS.md)에 내 글과 블록을 쓴다. 블록마다 켜기/끄기 스위치가 있고, subagent는 모델(자동·Fable·Opus·Sonnet·Haiku)을 고를 수 있다.
 - **블록 카탈로그**: 내장 블록과, 라이선스를 확인한 공개 저장소 항목(obra/superpowers, mattpocock/skills, anthropics/skills, wshobson/agents, VoltAgent subagents, awesome-cursorrules). 출처·커밋·라이선스가 함께 기록된다([`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 - **설정 지도**: 프로젝트에서 Claude Code가 실제로 읽는 지침·규칙·skill·subagent·명령·MCP·설정을 범위(개인/프로젝트/로컬)와 상태(사용 중/조건부/꺼짐 등)와 함께 보여준다.
 - **프로젝트 문서**: 폴더를 연결하면 CLAUDE.md(하위 폴더 포함)·AGENTS.md·rules·skills·agents·commands·설정 파일을 자동으로 찾아 앱 안에서 읽고 고친다. 밖에서 파일이 바뀌면 알려준다.

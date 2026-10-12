@@ -226,3 +226,23 @@
 - 그 밖에 작은 저장소·블로그(초보자용 CLAUDE.md 템플릿)는 인지도·검증이 부족해 제외. 초보자를 위한 검증된 공개 CLAUDE.md 템플릿은 찾지 못함.
 
 **제안**: 가장 확실한 건 공식 Explanatory·Learning 스타일(라이선스 문제 없음)을 설정에서 켜게 하는 것. 그 위에 앱 자체 초보자 지침 블록(쉬운 말로 설명, 명령 실행 전 무엇을 하는지 말하고 확인 받기, 오류는 원인 한두 문장 + 해결, 삭제·덮어쓰기·push 전 확인)을 직접 써서 내장 블록으로 넣는 것.
+
+## 10. Agent Skills Hub · 비슷한 앱 (2026-10-12 조사: haiku, 저장소 clone 후 직접 확인)
+
+**Agent Skills Hub (https://agentskillshub.dev/)**
+- skill·MCP 모음 사이트. 유료 보안 인증($99)과 후원 광고를 팔고, skill별 출처 저장소·라이선스를 보여주지 않는다. 별 개수도 GitHub와 다르다(obra/superpowers 142k vs 실제 약 298k). 그래서 사이트 자체는 출처로 쓰지 않고, 거기 올라온 skill의 **원본 저장소**를 직접 확인했다.
+- 추가: mattpocock/skills(MIT, 커밋 `49dd158`)의 research, retro, writing-for-agents, triage, improve-codebase-architecture, teach. 모두 Markdown만 있고, 광고·추천인 링크·외부 스크립트 실행은 없다. improve-codebase-architecture의 HTML 보고서는 Tailwind·Mermaid를 CDN에서 불러온다(설명에 적음).
+- 제외: mattpocock `pr`(다른 저장소 skill을 참고했다고 적혀 있고 그쪽 라이선스 미확인), obra `writing-skills`(681줄 + Anthropic 문서 사본 `anthropic-best-practices.md`), obra `brainstorming`(이전 조사대로 제외), 스크립트가 있어야 하는 skill(subagent-driven-development, executing-plans, webapp-testing, mcp-builder, skill-creator 등), anthropics docx/pdf/pptx/xlsx(소스만 공개, 오픈소스 아님), doc-coauthoring(라이선스 없음).
+
+**비슷한 앱** (별 개수는 조사 당시 대략값)
+| 앱 | 라이선스 | 특징 |
+|---|---|---|
+| [tylergraydev/claude-code-tool-manager](https://github.com/tylergraydev/claude-code-tool-manager) (~380★) | MIT | Tauri 2 + Svelte. MCP 관리·테스트, 슬래시 명령·skills·subagents·hooks 편집, 프로필(묶음 전환), 상태줄 빌더, 사용량·비용 통계, 세션 기록 탐색, 프로젝트별 할당 |
+| [winfunc/opcode](https://github.com/winfunc/opcode) (~22k★) | AGPL-3.0 | 세션 이어하기·검색, 체크포인트·타임라인, 사용량, MCP 관리 |
+| [ryoppippi/ccusage](https://github.com/ryoppippi/ccusage) (~19k★) | MIT | 사용량·비용 리포트(일·주·월·세션, 5시간 창) |
+| [siteboon/claudecodeui](https://github.com/siteboon/claudecodeui) (~14k★) | AGPL-3.0 | 웹·모바일 UI, 파일 탐색·편집, git |
+| [smtg-ai/claude-squad](https://github.com/smtg-ai/claude-squad) (~8.6k★) | AGPL-3.0 | worktree마다 에이전트 여러 개, 적용 전 검토 |
+| [davila7/claude-code-templates](https://github.com/davila7/claude-code-templates) (~33k★) | MIT | agents·commands·hooks·MCP 설치, 설정 점검 |
+| [musistudio/claude-code-router](https://github.com/musistudio/claude-code-router) (~38k★) | MIT | 다른 모델로 라우팅(범위 밖) |
+
+AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는다.

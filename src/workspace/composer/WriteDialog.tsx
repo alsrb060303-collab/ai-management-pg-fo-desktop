@@ -9,7 +9,7 @@ import { useProjectStore } from "../../store/project";
 
 // Mirrors `PlanItem` / `Status` in src-tauri/src/composer/write.rs.
 type Status =
-  | { kind: "new" | "update" | "unchanged" | "modified" | "exists" }
+  | { kind: "new" | "update" | "unchanged" | "modified" | "exists" | "commands" }
   | { kind: "blocked"; reason: string };
 
 interface PlanItem {
@@ -34,10 +34,12 @@ const STATUS: Record<Status["kind"], { label: MessageKey; className: string }> =
   unchanged: { label: "composer.write.status.unchanged", className: "text-text-subtle" },
   modified: { label: "composer.write.status.modified", className: "text-warning" },
   exists: { label: "composer.write.status.exists", className: "text-warning" },
+  commands: { label: "composer.write.status.commands", className: "text-warning" },
   blocked: { label: "composer.write.status.blocked", className: "text-danger" },
 };
 
-const needsConfirm = (s: Status) => s.kind === "modified" || s.kind === "exists";
+const needsConfirm = (s: Status) =>
+  s.kind === "modified" || s.kind === "exists" || s.kind === "commands";
 
 export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }) {
   const { current, choose, refresh } = useProjectStore();
@@ -191,7 +193,9 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
                         />
                         {item.status.kind === "modified"
                           ? t("composer.write.overwriteModified")
-                          : t("composer.write.overwriteForeign")}
+                          : item.status.kind === "commands"
+                            ? t("composer.write.confirmCommands")
+                            : t("composer.write.overwriteForeign")}
                       </label>
                     )}
                     {expanded && <Diff old={item.old ?? ""} next={item.new} />}

@@ -24,6 +24,8 @@ pub enum BlockKind {
     Rule,
     Skill,
     Agent,
+    /// A command Claude Code runs on an event, written into settings.json.
+    Hook,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -93,6 +95,12 @@ pub struct Block {
     pub paths: Vec<String>,
     pub tools: Option<String>,
     pub model: Option<String>,
+    /// Hooks: the Claude Code event and, for events that take one, the
+    /// matcher. The body is the shell command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<String>,
     /// A skill only the user starts (`/name`): written with
     /// `disable-model-invocation: true` so Claude doesn't pull it in itself.
     #[serde(default)]
@@ -227,6 +235,7 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         "rule" => BlockKind::Rule,
         "skill" => BlockKind::Skill,
         "agent" => BlockKind::Agent,
+        "hook" => BlockKind::Hook,
         _ => return None,
     };
     Some(Block {
@@ -248,6 +257,8 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         paths: list(fm.get("paths")),
         tools: fm.get("tools").cloned(),
         model: fm.get("model").cloned(),
+        event: fm.get("event").cloned(),
+        matcher: fm.get("matcher").cloned(),
         manual: fm
             .get("disable-model-invocation")
             .is_some_and(|v| v == "true"),
@@ -481,6 +492,8 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         paths: Vec::new(),
         tools: fm.get("tools").cloned(),
         model: fm.get("model").cloned(),
+        event: None,
+        matcher: None,
         manual: fm
             .get("disable-model-invocation")
             .is_some_and(|v| v == "true"),
@@ -547,11 +560,21 @@ mod tests {
                 block.id
             );
             assert_has_english(block);
+            // The custom hook starts empty: the user writes the command.
             assert!(
-                !block.body.is_empty() && !block.body.starts_with("---"),
+                (!block.body.is_empty() || block.id == "builtin:hook-custom")
+                    && !block.body.starts_with("---"),
                 "{}",
                 block.id
             );
+            if block.kind == BlockKind::Hook {
+                let event = block.event.as_deref().unwrap_or("");
+                assert!(
+                    super::super::compile::HOOK_EVENTS.contains(&event),
+                    "{}",
+                    block.id
+                );
+            }
             assert!(
                 crate::library::check_id(&block.name).is_ok(),
                 "{}",
