@@ -15,10 +15,11 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 use crate::memo::{MEMO_EVENT, Memo, Store};
 use firebase::{Client, Config, Cursor, Endpoints, Error, Session};
 
-/// The Firebase web app's public settings. Empty until the project exists;
-/// `AIM_FIREBASE_API_KEY` / `AIM_FIREBASE_PROJECT` override them.
-const API_KEY: &str = "";
-const PROJECT_ID: &str = "";
+/// The Firebase web app's public settings (safe to ship; access is guarded
+/// by the security rules). `AIM_FIREBASE_API_KEY` / `AIM_FIREBASE_PROJECT`
+/// override them.
+const API_KEY: &str = "AIzaSyCVMgGo7nbOod5D2MgKc8YmavULPhv9pYc";
+const PROJECT_ID: &str = "ai-manager-7d33c";
 
 pub const STATUS_EVENT: &str = "sync-status";
 /// How often to look for changes from other devices while the app runs.
