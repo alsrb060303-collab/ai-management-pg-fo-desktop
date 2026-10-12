@@ -1,4 +1,6 @@
+mod bridge;
 mod claude_config;
+mod claude_mod;
 mod composer;
 mod dock;
 mod git;
@@ -77,6 +79,11 @@ pub fn run() {
             work::work_pull,
             work::work_git_version,
             i18n::set_locale,
+            bridge::bridge_github,
+            claude_mod::claude_mod_status,
+            claude_mod::claude_mod_install,
+            claude_mod::claude_mod_install_recommended,
+            claude_mod::claude_mod_uninstall,
             sync::sync_status,
             sync::sync_now,
             sync::sync_set_enabled,
@@ -108,6 +115,7 @@ pub fn run() {
             memo::Memo::manage(handle)?;
             github::GitHub::manage(handle);
             sync::Sync::manage(handle);
+            bridge::manage(handle);
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);

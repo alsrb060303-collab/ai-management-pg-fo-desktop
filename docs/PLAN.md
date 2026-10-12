@@ -187,6 +187,8 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [~] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
 - [~] **Phase 9b. GitHub 저장소 선택** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` J): 로그인 안 했으면 프로젝트와 상관없이 로그인 버튼, 내 저장소 목록에서 고르기(clone 있으면 로컬로 열기, 없으면 GitHub 보기: 브랜치·커밋·CI·PR·이슈, 브랜치 만들기/삭제, PR 만들기, clone해서 작업하기)
 - [~] **Phase 9c. 프로젝트 문서 편집** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` K): 연결한 폴더의 CLAUDE.md(하위 폴더 포함)·rules·skills·agents·commands·설정 파일 자동 감지, 앱 안 편집기로 읽고 고쳐서 바로 저장, 밖에서 바뀌면 알림, 새 문서·삭제
+- [~] **Phase 9d. GitHub 직접 수정 · 커밋/push** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` L): clone 없이 GitHub 파일을 열어 고치고 여러 파일을 한 커밋으로(브랜치 또는 새 브랜치), 로컬 작업 탭에서 커밋·push·pull
+- [~] **Phase 11. Claude Code mod 연동** (구현 완료, Windows + Claude Code 2.1.287+ 테스트 대기: `docs/testing/phase4-windows.md` M): 브랜치 메모 mod(입력창 위 한 줄, /notes 패널, /todo · /memo, Claude에게 메모 전달), 설정에서 설치/제거, 추천 mods 설치
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크
@@ -199,8 +201,15 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | 도킹 PoC: owner 지정, 포커스, DPI, 관리자 권한 터미널 | 실제 Windows에서 테스트 필요 |
 | 정식 앱 이름 | 미정 |
 | UI 다국어(영어) | 오픈소스 공개 전에 추가 |
-| Claude Code "mods"(터미널 안 패널) 연동 | 나중에 확장으로 검토 |
+| Claude Code "mods"(터미널 안 패널) 연동 | Phase 11에서 구현 |
 | 외부 블록을 사용자 파일에 써넣을 때의 저작자 표시(NOTICE) 의무 | 공개 전 법률 검토 |
 | React Flow의 WebKitGTK(Linux)·WebView2 실제 조작(드래그, 연결 거부) | 실기 테스트 필요 |
 | 작업 중 사용량 한도에 걸리면 | 풀리는 시각에 바로 이어서 하도록 예약(send_later) |
 | 코드 서명 | SignPath는 이미 공개된 릴리스가 있어야 신청 가능 |
+
+**Phase 9d · 11 결정 (2026-10-12)**
+- 커밋·push·pull을 작업 탭에서 한다(이전 결정 "커밋·push는 Claude Code나 터미널"을 바꿈). GitHub 로그인이 있으면 그 명령 한 번에만 토큰을 git 환경 변수로 넘기고(설정 파일에 저장 안 함), 없으면 사용자 git 자격 증명을 쓴다. pull은 fast-forward만.
+- clone 없는 GitHub 수정은 Git Data API로 한다: 파일을 불러온 커밋 위에 트리·커밋을 만들고 브랜치를 force 없이 옮긴다. 그사이 브랜치가 움직였으면 거절(새 브랜치로는 커밋 가능).
+- mod와 앱은 파일로만 주고받는다: 앱이 `<앱 데이터>/bridge/state.json`에 메모·할 일·PR 요약을 쓰고(30초마다 heartbeat), mod는 `bridge/inbox/*.json`에 요청을 남긴다. DB에 쓰는 건 앱 하나라 동기화(8b)와 꼬이지 않는다. 앱이 꺼져 있으면 다음 실행 때 반영.
+- mod 설치는 사용자 `claude` 명령으로: 앱이 mod 파일을 `<앱 데이터>/claude-mod`(로컬 마켓플레이스 `ai-management`)에 쓰고 `claude plugin marketplace add` + `install branch-notes@ai-management --scope user`. Claude Code 설정·로그인 정보는 앱이 직접 읽거나 쓰지 않는다.
+- 추천 mods는 저장소와 LICENSE를 확인한 것만 넣는다(`docs/research.md` 7).

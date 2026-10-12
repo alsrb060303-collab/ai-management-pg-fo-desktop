@@ -598,6 +598,33 @@ impl Store {
         Ok(changed)
     }
 
+    /// Every (repository, branch) that has a note or TODOs.
+    pub fn live_branches(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT repo_key, branch FROM items WHERE deleted = 0
+                 ORDER BY repo_key, branch",
+            )
+            .map_err(db_err)?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(db_err)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db_err)
+    }
+
+    /// Which repository key each local repository (by its path key) uses.
+    pub fn repo_paths(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT path_key, repo_key FROM repo_paths")
+            .map_err(db_err)?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(db_err)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(db_err)
+    }
+
     /// Branches of a repository that have a note or TODOs.
     pub fn counts(&self, repo: &str) -> Result<Vec<BranchCounts>> {
         let conn = self.conn();

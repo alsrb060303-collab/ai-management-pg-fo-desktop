@@ -169,3 +169,19 @@
 - 공식 색 토큰 예: 배경 #FFFFFF / #F5F4ED / #FAF9F5, 다크 #30302E / #262624 / #141413, 글자 #141413 / #3D3D3A / #73726C, 테두리는 반투명. 모서리 4~12px, 기본 버튼은 거의 검정.
 - 폰트(Anthropic Sans/Serif, Styrene, Tiempos)는 독점 → OFL 대체: Hanken Grotesk·Inter, Source Serif 4, JetBrains Mono. 한글은 Pretendard(OFL).
 - 로고·"Claude" 이름·전용 폰트·공식 색 이름(Clay, Ivory 등)은 쓰지 않고, 강조색은 직접 정한다. https://www.anthropic.com/legal/trademark-guidelines
+
+## 7. Claude Code mods · 추천 mods (2026-10-12 조사: haiku, 검증: sonnet + 직접 설치 확인)
+
+- 공식 문서: https://code.claude.com/docs/en/plugins/mods/overview (터미널은 v2.1.287+, 데스크탑 앱은 v2.1.286+). 마켓플레이스 형식: https://code.claude.com/docs/en/plugin-marketplaces
+- CLI: `claude plugin marketplace add <owner/repo | 로컬 경로 | git URL>`, `claude plugin install <name>@<marketplace> --scope user`(기본 user), `claude plugin uninstall <id> --scope user`, `claude plugin list --json`(각 항목 `id`). 로컬 폴더 마켓플레이스는 설치 후에도 그 폴더에서 바로 읽는다(파일을 바꾸면 다음 세션이나 `/reload-plugins`에 반영). 같은 마켓플레이스를 다시 add해도 성공으로 끝난다.
+- plugin 이름은 `claude-`, `anthropic-`로 시작하면 `claude plugin validate`가 오류를 낸다 → 우리 mod 이름은 `branch-notes`, 마켓플레이스 `ai-management`.
+
+| mod | 하는 일 | 출처 · 설치 | 라이선스 |
+|---|---|---|---|
+| token-weather | 입력창 위 컨텍스트 사용량 예보 | `anthropics/claude-code-playground`의 `claude-code/mods` (마켓플레이스가 하위 폴더라 clone 후 로컬 add, 이름 `claude-code-playground-mods`) | Apache-2.0 (LICENSE 확인) |
+| blast-radius | 위험한 명령(rm -rf, force push) 보류 + 진행/취소 | 위와 같음 | Apache-2.0 |
+| replay-theater | `/replay`로 마지막 턴의 파일 수정 다시 보기 | 위와 같음 | Apache-2.0 |
+| claude-hud | 상태줄(컨텍스트·비용·한도). mod가 아닌 statusLine plugin, 설치 후 `/claude-hud:setup` | `jarrodwatts/claude-hud` (마켓플레이스 `claude-hud`) | MIT (LICENSE 확인) |
+
+- 제외: Git Sidebar(`davila7/claude-code-templates`, MIT)는 마켓플레이스가 아니라 `npx`로 프로젝트 `.claude/skills`에 복사하는 방식이라 넣지 않았다. 공식 `claude-plugins-official`(Apache-2.0)의 plugin들은 mod가 아니다.
+- 네 개 모두 이 저장소 작업 환경에서 격리된 설정(`CLAUDE_CONFIG_DIR`)으로 실제 add·install·list를 확인했다.

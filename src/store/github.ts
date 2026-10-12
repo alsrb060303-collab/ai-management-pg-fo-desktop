@@ -86,6 +86,19 @@ interface GitHubState {
   }) => Promise<Pull | null>;
 }
 
+function summarize(view: RepoView | null) {
+  if (!view || (!view.current && !view.checks)) return null;
+  return {
+    prNumber: view.current?.number ?? null,
+    prTitle: view.current?.title ?? null,
+    prState: view.current ? (view.current.draft ? "draft" : view.current.state) : null,
+    prUrl: view.current?.url ?? null,
+    passed: view.checks?.passed ?? 0,
+    failed: view.checks?.failed ?? 0,
+    pending: view.checks?.pending ?? 0,
+  };
+}
+
 export const useGitHubStore = create<GitHubState>((set, get) => {
   let seq = 0;
   let loginSeq = 0;
@@ -170,6 +183,8 @@ export const useGitHubStore = create<GitHubState>((set, get) => {
       try {
         const view = await invoke<RepoView | null>("github_repo", { project });
         if (id === seq) set({ view, error: null, loading: false });
+        // The Claude Code mod shows the branch's PR and CI too.
+        void invoke("bridge_github", { project, summary: summarize(view) }).catch(() => {});
       } catch (e) {
         if (id === seq) set({ error: String(e), loading: false });
       }

@@ -1,0 +1,11 @@
+{
+  "name": "ai-management",
+  "owner": { "name": "AI Management" },
+  "plugins": [
+    {
+      "name": "branch-notes",
+      "source": "./branch-notes",
+      "description": "Branch notes and to-dos from the AI Management app, inside Claude Code"
+    }
+  ]
+}
