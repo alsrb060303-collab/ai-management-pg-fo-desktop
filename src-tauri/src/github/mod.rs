@@ -634,6 +634,101 @@ mod tests {
     }
 }
 
+/// A branch as the document composer sees it before writing: the commit it
+/// is at, every file path (with its mode), and the text of the files asked for.
+pub(crate) struct Snapshot {
+    pub head: String,
+    pub modes: std::collections::HashMap<String, String>,
+    /// `Err` when a file can't be read as text.
+    pub texts: std::collections::HashMap<String, Result<String, String>>,
+}
+
+/// Reads `branch` of `slug` and the text of `wanted` files that exist. Runs
+/// on the calling thread (call it from a blocking task).
+pub(crate) fn snapshot(
+    app: &AppHandle,
+    slug: &str,
+    branch: &str,
+    wanted: &[String],
+) -> Result<Snapshot, String> {
+    check_slug(slug)?;
+    let gh = app.state::<GitHub>();
+    let tree = gh
+        .call(app, |api| api::remote_tree(api, slug, branch))
+        .map_err(String::from)?;
+    if tree.truncated {
+        return Err(crate::tr!(
+            "저장소가 너무 커서 파일 목록을 다 받지 못했어요. 이 저장소는 clone해서 써 주세요",
+            "The repository is too large to list every file. Clone it and write locally instead"
+        ));
+    }
+    let mut texts = std::collections::HashMap::new();
+    for file in &tree.files {
+        if !wanted.contains(&file.path) {
+            continue;
+        }
+        let text = if file.size > 2 * 1024 * 1024 {
+            Err(crate::tr!(
+                "파일이 너무 커서 건드리지 않았어요 (2MB 초과)",
+                "Left untouched: the file is over 2 MB"
+            ))
+        } else {
+            gh.call(app, |api| api::blob(api, slug, &file.sha))
+                .map_err(String::from)
+                .and_then(|bytes| {
+                    String::from_utf8(bytes).map_err(|_| {
+                        crate::tr!(
+                            "UTF-8 텍스트가 아니라 건드리지 않았어요: {}",
+                            "Left untouched because it isn't UTF-8 text: {}",
+                            file.path
+                        )
+                    })
+                })
+        };
+        texts.insert(file.path.clone(), text);
+    }
+    Ok(Snapshot {
+        head: tree.head,
+        modes: tree.files.into_iter().map(|f| (f.path, f.mode)).collect(),
+        texts,
+    })
+}
+
+/// Commits `(path, text, mode)` files on top of `expected_head` in one
+/// commit, to `branch` or to a new branch. Returns the commit id.
+pub(crate) fn commit_texts(
+    app: &AppHandle,
+    slug: &str,
+    branch: &str,
+    expected_head: &str,
+    files: Vec<(String, String, Option<String>)>,
+    message: &str,
+    new_branch: Option<&str>,
+) -> Result<String, String> {
+    check_slug(slug)?;
+    let changes: Vec<FileChange> = files
+        .into_iter()
+        .map(|(path, text, mode)| FileChange {
+            path,
+            text: Some(text),
+            mode,
+        })
+        .collect();
+    app.state::<GitHub>()
+        .call(app, |api| {
+            api::commit_files(
+                api,
+                slug,
+                branch,
+                expected_head,
+                &changes,
+                message,
+                new_branch,
+            )
+        })
+        .map_err(String::from)
+}
+
 /// Every file in `branch` (and the commit it is at).
 #[tauri::command]
 pub async fn github_remote_tree(
