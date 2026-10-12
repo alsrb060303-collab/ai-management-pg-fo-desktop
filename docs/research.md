@@ -271,3 +271,71 @@ AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는�
 | notion, linear | 업체 운영 | 해당 없음 | 공개 URL만 씀, `/mcp`로 로그인 |
 
 - 제외: Sentry(코드 라이선스 FSL, 소스만 공개), Supabase·Cloudflare(이번에는 보류), sequential-thinking(효용이 애매함), 예전 Notion npm 서버(지원 중단).
+
+## 12. 카탈로그·MCP 추가 조사 (2026-10-12 조사: haiku, 검증: sonnet, 저장소 clone 후 직접 확인)
+
+사용자가 준 출처 목록(awesome 목록, superpowers, claude4world, awesome-mcp-servers)을 조사했다. 목록 자체의 라이선스는 거기 연결된 프로젝트에 적용되지 않으므로, 연결된 저장소마다 LICENSE를 직접 확인했다.
+
+**출처별 결론**
+- hesreallyhim/awesome-claude-code: 목록이 CC BY-NC-ND라 내용은 가져오지 않고 찾는 용도로만 썼다.
+- ComposioHQ/awesome-claude-skills: LICENSE 파일이 없고, 스킬 832개 모두 Composio 호스팅 서비스(Rube MCP)가 필요해 제외.
+- VoltAgent/awesome-design-md: 실제 회사(애플, 나이키, 스트라이프 등)의 브랜드를 따라 하는 문서라 상표 위험으로 제외.
+- claude4world.com/skills: 항목별 출처·라이선스를 보여주지 않아 출처로 쓰지 않음.
+
+**넣은 항목**(27개, 출처·커밋·변경 사항은 THIRD_PARTY_NOTICES.md)
+- addyosmani/agent-skills 5개
+- everything-claude-code 스킬 5개
+- revfactory/harness 2개(한국어)
+- obra writing-skills
+- microsoft zustand-store-ts
+- supabase-postgres-best-practices
+- tjboudreaux pre-mortem·reversibility
+- mhattingpete test-fixing
+- caveman
+- OneRedOak design-review 에이전트와 CLAUDE.md 조각
+- ibelick baseline-ui·fixing-accessibility
+- marketingskills 4개
+
+참고 파일이 있는 스킬은 이번에 추가한 "동반 파일" 방식으로 SKILL.md 옆에 따로 쓴다.
+
+**사용자가 골랐지만 넣지 않은 것**(Anthropic 콘텐츠를 바탕으로 만든 것으로 보이고, 그 원본의 라이선스를 확인할 수 없음)
+- addyosmani `code-simplification`: Claude Code Simplifier 플러그인에서 영감을 받았다고 밝히고, 구조가 같다.
+- everything-claude-code `silent-failure-hunter`, `pr-test-analyzer`: Anthropic pr-review-toolkit 에이전트를 줄여 쓴 것으로 보인다.
+- OneRedOak 보안 리뷰 명령: README에 Anthropic claude-code-security-review에서 가져왔다고 적혀 있다. Claude Code에 내장된 `/security-review`와도 같다.
+
+**그 밖의 제외**
+| 항목 | 이유 |
+|---|---|
+| karpathy CLAUDE.md | LICENSE 파일 없음 |
+| ccstatusline | Claude 로그인 토큰을 읽음 |
+| tdd-guard | 도구를 쓸 때마다 `npx @latest` 실행 |
+| claude-code-safety-net | 확인할 수 없는 컴파일된 번들 |
+| claude-powerline | 이름이 Claude 브랜딩 |
+| trailofbits/skills, osint-investigation | CC BY-SA |
+| context-engineering-kit | GPL-3.0 |
+| humanizer, marketingskills ai-tells.md | 위키백과(CC BY-SA)를 바탕으로 함 |
+| eskill | 사용만 허락하는 자체 라이선스 |
+| marketingskills `ai-seo` | 제휴 홍보 |
+| obra/the-elements-of-style | LICENSE 파일 없음. 사용자 결정으로 제외 |
+
+**MCP 추천 추가**(8개)
+| 서버 | 출처 · 라이선스 | 설정 |
+|---|---|---|
+| Cloudflare | cloudflare/mcp · Apache-2.0 | 원격 OAuth |
+| Supabase | supabase-community/supabase-mcp · Apache-2.0 | 원격 OAuth, `read_only=true`로 넣음 |
+| Stripe | stripe/agent-toolkit · MIT | 원격 OAuth |
+| AWS 문서 | awslabs/mcp · Apache-2.0 | uvx |
+| Postgres MCP Pro | crystaldba · MIT | uvx, `--access-mode=restricted`(읽기 전용) + `DATABASE_URI` |
+| Next.js DevTools | vercel · MIT | 텔레메트리 기본 켜짐 → `NEXT_TELEMETRY_DISABLED=1` |
+| Atlassian | sooperset/mcp-atlassian · MIT | 커뮤니티, 토큰 환경변수 |
+| Figma | GLips/Figma-Context-MCP · MIT | 커뮤니티, 텔레메트리 기본 켜짐 → `FRAMELINK_TELEMETRY=off`, `DO_NOT_TRACK=1`. README에 자사 사이트 UTM 링크가 있지만 서버 자체와는 무관 |
+
+**MCP 제외**
+| 서버 | 이유 |
+|---|---|
+| Sentry | FSL-1.1, 소스만 공개 |
+| Slack(korotovsky) | 브라우저 세션 토큰 필요 |
+| SQLite 서버들 | 6개월 넘게 업데이트 없음 |
+| Docker Hub | 소스에서 직접 빌드해야 함 |
+
+검색 서버(Tavily, Exa, Brave)는 라이선스 문제는 없지만, 사용자가 이번에 고르지 않았다.

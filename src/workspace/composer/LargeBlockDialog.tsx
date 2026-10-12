@@ -4,12 +4,17 @@ import { Button } from "../../components/ui";
 import { useT } from "../../i18n";
 import type { Block } from "../../store/composer";
 
-/** Above this many bytes of text a block gets a warning before it's added. */
-const LARGE = 20_000;
+/**
+ * A block gets a warning before it's added when its own text (read whenever
+ * Claude loads it) or everything it writes (with reference files read only
+ * when needed) is above these many bytes.
+ */
+const LARGE_BODY = 15_000;
+const LARGE_TOTAL = 40_000;
 const OFF_KEY = "composer.largeBlockWarning.off";
 
 export function isLarge(block: Block): boolean {
-  return block.size > LARGE;
+  return new TextEncoder().encode(block.body).length > LARGE_BODY || block.size > LARGE_TOTAL;
 }
 
 export function largeWarningOff(): boolean {
