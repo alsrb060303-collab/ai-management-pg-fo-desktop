@@ -567,6 +567,204 @@ pub fn delete_branch(api: &Api, slug: &str, name: &str) -> Result<()> {
     api.delete(&format!("/repos/{slug}/git/refs/heads/{}", enc_path(name)))
 }
 
+/// A file in a branch's tree.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeFile {
+    pub path: String,
+    /// Blob id, to read the file.
+    pub sha: String,
+    /// `100644`, or `100755` for an executable.
+    pub mode: String,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteTree {
+    /// The branch's commit the tree belongs to; a commit is made on top of it.
+    pub head: String,
+    pub files: Vec<TreeFile>,
+    /// GitHub cut the listing (a very large repository).
+    pub truncated: bool,
+}
+
+#[derive(Deserialize)]
+struct RawBranchHead {
+    commit: RawBranchCommit,
+}
+
+#[derive(Deserialize)]
+struct RawBranchCommit {
+    sha: String,
+    commit: RawCommitTree,
+}
+
+#[derive(Deserialize)]
+struct RawCommitTree {
+    tree: RawGitObject,
+}
+
+#[derive(Deserialize)]
+struct RawTreeEntry {
+    path: String,
+    #[serde(rename = "type")]
+    kind: String,
+    sha: String,
+    mode: String,
+    #[serde(default)]
+    size: u64,
+}
+
+#[derive(Deserialize)]
+struct RawTree {
+    tree: Vec<RawTreeEntry>,
+    #[serde(default)]
+    truncated: bool,
+}
+
+fn branch_head(api: &Api, slug: &str, branch: &str) -> Result<RawBranchHead> {
+    api.get(&format!("/repos/{slug}/branches/{}", enc(branch)))
+}
+
+pub fn remote_tree(api: &Api, slug: &str, branch: &str) -> Result<RemoteTree> {
+    let head = branch_head(api, slug, branch)?;
+    let tree: RawTree = api.get(&format!(
+        "/repos/{slug}/git/trees/{}?recursive=1",
+        head.commit.commit.tree.sha
+    ))?;
+    Ok(RemoteTree {
+        head: head.commit.sha,
+        truncated: tree.truncated,
+        files: tree
+            .tree
+            .into_iter()
+            .filter(|e| e.kind == "blob")
+            .map(|e| TreeFile {
+                path: e.path,
+                sha: e.sha,
+                mode: e.mode,
+                size: e.size,
+            })
+            .collect(),
+    })
+}
+
+#[derive(Deserialize)]
+struct RawBlob {
+    content: String,
+    encoding: String,
+}
+
+/// A file's bytes by blob id (base64 from GitHub).
+pub fn blob(api: &Api, slug: &str, sha: &str) -> Result<Vec<u8>> {
+    let blob: RawBlob = api.get(&format!("/repos/{slug}/git/blobs/{sha}"))?;
+    if blob.encoding != "base64" {
+        return Ok(blob.content.into_bytes());
+    }
+    super::base64_decode(&blob.content).ok_or_else(|| {
+        crate::tr!(
+            "GitHub에서 받은 파일을 읽지 못했어요",
+            "Couldn't read the file from GitHub"
+        )
+        .into()
+    })
+}
+
+/// One file in a commit: new text, or `None` to delete it.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    pub path: String,
+    pub text: Option<String>,
+    /// Kept from the old file; `100644` for a new one.
+    pub mode: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawSha {
+    sha: String,
+}
+
+/// Commits `changes` on top of `expected_head` (the commit the edits were
+/// made against), to `branch` or to a new branch `new_branch` made there.
+/// Returns the new commit. Refused when `branch` moved meanwhile.
+pub fn commit_files(
+    api: &Api,
+    slug: &str,
+    branch: &str,
+    expected_head: &str,
+    changes: &[FileChange],
+    message: &str,
+    new_branch: Option<&str>,
+) -> Result<String> {
+    if message.trim().is_empty() {
+        return Err(crate::tr!("커밋 메시지를 입력해 주세요", "Enter a commit message").into());
+    }
+    if changes.is_empty() {
+        return Err(crate::tr!("커밋할 변경이 없어요", "There's nothing to commit").into());
+    }
+    let new_branch = new_branch.map(str::trim).filter(|b| !b.is_empty());
+    let head = branch_head(api, slug, branch)?;
+    if head.commit.sha != expected_head && new_branch.is_none() {
+        return Err(crate::tr!(
+            "그사이 '{branch}' 브랜치에 새 커밋이 생겼어요. 파일을 다시 불러온 뒤 커밋하거나 새 브랜치로 커밋해 주세요",
+            "Branch '{branch}' got new commits meanwhile. Reload the files before committing, or commit to a new branch"
+        )
+        .into());
+    }
+    let entries: Vec<serde_json::Value> = changes
+        .iter()
+        .map(|c| {
+            let mode = c.mode.clone().unwrap_or_else(|| "100644".into());
+            match &c.text {
+                Some(text) => {
+                    json!({ "path": c.path, "mode": mode, "type": "blob", "content": text })
+                }
+                None => json!({ "path": c.path, "mode": mode, "type": "blob", "sha": null }),
+            }
+        })
+        .collect();
+    // Built on the commit the edits saw, so nothing in between is overwritten.
+    let base: RawCommitTree = api
+        .get::<RawCommitDetailTree>(&format!("/repos/{slug}/git/commits/{expected_head}"))?
+        .into();
+    let tree: RawSha = api.post(
+        &format!("/repos/{slug}/git/trees"),
+        &json!({ "base_tree": base.tree.sha, "tree": entries }),
+    )?;
+    let commit: RawSha = api.post(
+        &format!("/repos/{slug}/git/commits"),
+        &json!({ "message": message.trim(), "tree": tree.sha, "parents": [expected_head] }),
+    )?;
+    match new_branch {
+        Some(name) => {
+            let _: serde_json::Value = api.post(
+                &format!("/repos/{slug}/git/refs"),
+                &json!({ "ref": format!("refs/heads/{name}"), "sha": commit.sha }),
+            )?;
+        }
+        None => {
+            let _: serde_json::Value = api.patch(
+                &format!("/repos/{slug}/git/refs/heads/{}", enc_path(branch)),
+                &json!({ "sha": commit.sha, "force": false }),
+            )?;
+        }
+    }
+    Ok(commit.sha)
+}
+
+#[derive(Deserialize)]
+struct RawCommitDetailTree {
+    tree: RawGitObject,
+}
+
+impl From<RawCommitDetailTree> for RawCommitTree {
+    fn from(c: RawCommitDetailTree) -> Self {
+        RawCommitTree { tree: c.tree }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -790,6 +988,75 @@ mod tests {
             seen[3].starts_with("DELETE /repos/me/r/git/refs/heads/feat/x"),
             "{}",
             seen[3]
+        );
+    }
+
+    #[test]
+    fn files_are_committed_on_the_seen_head() {
+        let branch = r#"{"commit":{"sha":"h1","commit":{"tree":{"sha":"t1"}}}}"#;
+        let (base, seen) = serve(vec![
+            // tree
+            (200, branch),
+            (
+                200,
+                r#"{"tree":[{"path":"a.md","type":"blob","sha":"b1","mode":"100644","size":3},{"path":"src","type":"tree","sha":"x","mode":"040000"}],"truncated":false}"#,
+            ),
+            // commit on the same head
+            (200, branch),
+            (200, r#"{"tree":{"sha":"t1"}}"#),
+            (201, r#"{"sha":"t2"}"#),
+            (201, r#"{"sha":"c2"}"#),
+            (200, r#"{"ref":"refs/heads/main"}"#),
+            // the branch moved: refused before any write
+            (
+                200,
+                r#"{"commit":{"sha":"h9","commit":{"tree":{"sha":"t9"}}}}"#,
+            ),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let tree = remote_tree(&api, "me/r", "main").unwrap();
+        assert_eq!(tree.head, "h1");
+        assert_eq!(tree.files.len(), 1);
+        assert_eq!(tree.files[0].path, "a.md");
+
+        let changes = [
+            FileChange {
+                path: "a.md".into(),
+                text: Some("new".into()),
+                mode: Some("100644".into()),
+            },
+            FileChange {
+                path: "old.txt".into(),
+                text: None,
+                mode: None,
+            },
+        ];
+        let sha = commit_files(&api, "me/r", "main", "h1", &changes, "Edit", None).unwrap();
+        assert_eq!(sha, "c2");
+        assert!(commit_files(&api, "me/r", "main", "h1", &changes, "Edit", None).is_err());
+
+        let seen: Vec<String> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|r| r.split_whitespace().collect::<String>())
+            .collect();
+        assert!(seen[1].contains("/git/trees/t1?recursive=1"), "{}", seen[1]);
+        assert!(
+            seen[4].contains("base_tree") && seen[4].contains("\"sha\":null"),
+            "{}",
+            seen[4]
+        );
+        assert!(seen[5].contains("\"parents\":[\"h1\"]"), "{}", seen[5]);
+        assert!(
+            seen[6].starts_with("PATCH/repos/me/r/git/refs/heads/main"),
+            "{}",
+            seen[6]
         );
     }
 }

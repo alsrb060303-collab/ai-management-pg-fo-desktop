@@ -181,6 +181,27 @@ impl Api<'_> {
             .ok_or_else(|| status_error(404, &Value::Null))
     }
 
+    pub fn patch<T: DeserializeOwned>(&self, path: &str, json: &Value) -> Result<T> {
+        let url = format!("{}{path}", self.base);
+        let (status, body) = read(
+            self.agent
+                .patch(&url)
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("Authorization", &format!("Bearer {}", self.token))
+                .send_json(json),
+        )?;
+        if status >= 400 {
+            return Err(status_error(status, &body));
+        }
+        serde_json::from_value(body).map_err(|e| {
+            Error::Other(crate::tr!(
+                "GitHub 응답을 읽지 못했어요 ({e})",
+                "Couldn't read GitHub's response ({e})"
+            ))
+        })
+    }
+
     /// A DELETE that answers with no content.
     pub fn delete(&self, path: &str) -> Result<()> {
         let url = format!("{}{path}", self.base);

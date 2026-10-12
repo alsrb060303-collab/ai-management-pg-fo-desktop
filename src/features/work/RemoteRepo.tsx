@@ -28,6 +28,7 @@ import {
   PullBadge,
   PullList,
 } from "./GitHubSection";
+import { RemoteFiles } from "./RemoteFiles";
 
 /** Repositories listed before the search narrows them down. */
 const LIST_LIMIT = 40;
@@ -211,6 +212,7 @@ export function RemoteRepo({ compact }: { compact: boolean }) {
         <>
           <Branches data={data} compact={compact} />
           <BranchDetail data={data} compact={compact} />
+          <RemoteFiles compact={compact} />
           <Commits data={data} />
           <PullList pulls={data.view.pulls} />
           <IssueList issues={data.view.issues} />
@@ -331,7 +333,19 @@ function Branches({ data, compact }: { data: RemoteView; compact: boolean }) {
             <li key={b.name} className="group flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => void load(b.name)}
+                onClick={async () => {
+                  if (b.name === data.branch) return;
+                  const drafts = Object.keys(useRemoteStore.getState().drafts).length;
+                  if (
+                    drafts &&
+                    !(await ask(t("work.files.switchConfirm", { n: drafts }), {
+                      title: t("work.remote.branches"),
+                      kind: "warning",
+                    }).catch(() => false))
+                  )
+                    return;
+                  void load(b.name);
+                }}
                 className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-hover ${selected ? "bg-hover font-medium" : ""}`}
               >
                 <GitBranch size={12} className="shrink-0 text-text-subtle" />

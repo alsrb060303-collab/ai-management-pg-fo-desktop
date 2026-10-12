@@ -18,7 +18,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use ureq::Agent;
 
-use api::{Account, Pull, RemoteView, RepoSummary, RepoView};
+use api::{Account, FileChange, Pull, RemoteTree, RemoteView, RepoSummary, RepoView};
 use auth::{DeviceCode, Outcome, TokenStore};
 use http::{Api, Endpoints};
 
@@ -535,6 +535,38 @@ pub(crate) fn git_auth(app: &AppHandle) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// Standard base64 with padding; line breaks (GitHub wraps at 60) are
+/// skipped. `None` for anything else.
+pub(crate) fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let clean: Vec<u8> = text.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
+    if !clean.len().is_multiple_of(4) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(clean.len() / 4 * 3);
+    for chunk in clean.chunks(4) {
+        let pad = chunk.iter().rev().take_while(|&&c| c == b'=').count();
+        if pad > 2 {
+            return None;
+        }
+        let mut n = 0u32;
+        for &c in &chunk[..4 - pad] {
+            n = n << 6 | value(c)? as u32;
+        }
+        n <<= 6 * pad as u32;
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..3 - pad]);
+    }
+    Some(out)
+}
+
 fn base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -570,6 +602,19 @@ mod tests {
     }
 
     #[test]
+    fn base64_round_trips() {
+        for text in ["", "f", "fo", "foo", "foob", "한글 텍스트\n"] {
+            assert_eq!(
+                base64_decode(&base64(text.as_bytes())).unwrap(),
+                text.as_bytes()
+            );
+        }
+        assert_eq!(base64_decode("Zm9v\nYmFy\n").unwrap(), b"foobar");
+        assert!(base64_decode("Zm9").is_none());
+        assert!(base64_decode("Zm9!").is_none());
+    }
+
+    #[test]
     fn slugs_are_checked_before_use() {
         assert!(check_slug("me/repo.name_2").is_ok());
         for bad in [
@@ -587,4 +632,91 @@ mod tests {
         assert!(err.contains("repo"), "{err}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
+}
+
+/// Every file in `branch` (and the commit it is at).
+#[tauri::command]
+pub async fn github_remote_tree(
+    app: AppHandle,
+    slug: String,
+    branch: String,
+) -> Result<RemoteTree, String> {
+    check_slug(&slug)?;
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| api::remote_tree(api, &slug, &branch))
+            .map_err(String::from)
+    })
+    .await
+}
+
+/// A file's text by blob id. Refused for binary or very large files.
+#[tauri::command]
+pub async fn github_remote_file(
+    app: AppHandle,
+    slug: String,
+    sha: String,
+) -> Result<String, String> {
+    check_slug(&slug)?;
+    if !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("bad blob id".into());
+    }
+    blocking(app, move |app, gh| {
+        let bytes = gh
+            .call(app, |api| api::blob(api, &slug, &sha))
+            .map_err(String::from)?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err(crate::tr!(
+                "파일이 너무 커서 열 수 없어요 (2MB 초과)",
+                "The file is too large to open (over 2 MB)"
+            ));
+        }
+        String::from_utf8(bytes).map_err(|_| {
+            crate::tr!(
+                "텍스트 파일이 아니라서 열 수 없어요",
+                "Not a text file, so it can't be opened"
+            )
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn github_remote_commit(
+    app: AppHandle,
+    slug: String,
+    branch: String,
+    expected_head: String,
+    changes: Vec<FileChange>,
+    message: String,
+    new_branch: Option<String>,
+) -> Result<String, String> {
+    check_slug(&slug)?;
+    if changes.iter().any(|c| {
+        c.path.is_empty()
+            || c.path.starts_with('/')
+            || c.path
+                .split('/')
+                .any(|p| p.is_empty() || p == "." || p == "..")
+    }) {
+        return Err(crate::tr!(
+            "파일 경로가 올바르지 않아요",
+            "A file path isn't valid"
+        ));
+    }
+    blocking(app, move |app, gh| {
+        gh.call(app, |api| {
+            api::commit_files(
+                api,
+                &slug,
+                &branch,
+                &expected_head,
+                &changes,
+                &message,
+                new_branch.as_deref(),
+            )
+        })
+        .map_err(String::from)
+    })
+    .await
 }

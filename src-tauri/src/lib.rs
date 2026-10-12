@@ -93,6 +93,9 @@ pub fn run() {
             github::github_remote_delete_branch,
             github::github_remote_create_pr,
             github::github_clone,
+            github::github_remote_tree,
+            github::github_remote_file,
+            github::github_remote_commit,
             shell::view_mode,
             shell::view_switch,
         ])
