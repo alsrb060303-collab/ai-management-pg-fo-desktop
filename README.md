@@ -24,7 +24,7 @@ Claude Code로 작업할 때 **터미널 옆에 붙어서** 문서·git 작업·
 
 **메모**
 - 저장소·브랜치마다 메모와 할 일. 터미널에서 브랜치를 바꾸면 따라 바뀐다.
-- 여러 기기 동기화(Firebase, 허용 목록 계정만): [`docs/sync-setup.md`](docs/sync-setup.md)
+- 여러 기기 동기화(Firebase, 허용 목록 계정만): 메모·할 일, 문서 작성기 문서, 내 라이브러리. 두 기기에서 같이 고치면 나중 것을 남기고 다른 것은 사본으로 보관한다. [`docs/sync-setup.md`](docs/sync-setup.md)
 
 **Claude Code 연동 (mods, Claude Code 2.1.287+)**
 - 설정에서 **브랜치 메모 mod**를 설치하면 Claude Code 입력창 위에 이 브랜치의 할 일·PR·CI가 한 줄로 보이고, `/todo` · `/memo` · `/notes`를 쓸 수 있고, Claude가 메모와 할 일을 알고 작업한다. 터미널 Claude Code와 데스크탑 앱의 Code 탭에 적용된다.

@@ -187,6 +187,11 @@ interface ComposerState {
   deleteDoc: (id: string) => Promise<void>;
   /** Saves pending edits right away (before switching documents or windows). */
   flushSave: () => Promise<void>;
+  /**
+   * After sync changed documents on disk: reloads the list, and the open
+   * document unless it has an edit waiting to be saved.
+   */
+  reloadFromDisk: () => Promise<void>;
   rename: (name: string) => void;
 
   onNodesChange: (changes: NodeChange<ComposerNode>[]) => void;
@@ -432,6 +437,36 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       cancelPending();
       const { doc } = get();
       if (doc) await save(doc);
+    },
+
+    reloadFromDisk: async () => {
+      if (!isTauri()) return;
+      await get().loadDocs();
+      const { doc, docs } = get();
+      // An edit in flight is newer; its save uploads it on the next round.
+      if (!doc || saveTimer !== undefined) return;
+      if (!docs.some((d) => d.id === doc.id)) {
+        // Deleted on another device.
+        const next = docs[0];
+        if (next) {
+          set({ doc: null });
+          await get().openDoc(next.id);
+        } else {
+          await get().newDoc();
+        }
+        return;
+      }
+      try {
+        const fresh = await invoke<ComposerDoc>("composer_doc_load", { id: doc.id });
+        if (
+          JSON.stringify(persistable({ ...blankDoc(), ...fresh, id: doc.id })) !==
+          JSON.stringify(persistable(doc))
+        ) {
+          open({ ...blankDoc(), ...fresh, id: doc.id });
+        }
+      } catch (e) {
+        set({ error: String(e) });
+      }
     },
 
     newDoc: async () => {

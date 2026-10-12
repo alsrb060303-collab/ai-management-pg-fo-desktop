@@ -40,7 +40,7 @@ impl Composer {
     }
 
     fn docs_dir(&self) -> PathBuf {
-        self.data_dir.join("compositions")
+        docs_dir(&self.data_dir)
     }
 
     /// Third-party blocks fetched by "최신 받아오기".
@@ -52,6 +52,11 @@ impl Composer {
         check_doc_id(id)?;
         Ok(self.docs_dir().join(format!("{id}.json")))
     }
+}
+
+/// Where documents are saved (also what sync reads and writes).
+pub fn docs_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("compositions")
 }
 
 /// A file that exists but does not parse is moved aside, so the next save
@@ -203,7 +208,9 @@ pub async fn composer_doc_save(app: AppHandle, doc: Value) -> Result<(), String>
             .ok_or_else(|| crate::tr!("문서 id가 없어요", "The document has no id"))?;
         let path = app.state::<Composer>().doc_path(id)?;
         let text = serde_json::to_string(&doc).map_err(|e| e.to_string())?;
-        ops::write_atomic(&path, text)
+        ops::write_atomic(&path, text)?;
+        crate::sync::changed(app);
+        Ok(())
     })
     .await
 }
@@ -213,7 +220,10 @@ pub async fn composer_doc_delete(app: AppHandle, id: String) -> Result<(), Strin
     blocking(app, move |app| {
         let path = app.state::<Composer>().doc_path(&id)?;
         match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                crate::sync::changed(app);
+                Ok(())
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(crate::tr!(
                 "문서를 지우지 못했어요: {e}",
