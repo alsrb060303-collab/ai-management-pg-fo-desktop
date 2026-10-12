@@ -13,6 +13,7 @@ import {
   Plug,
   Plus,
   Settings,
+  SquareSlash,
   Trash2,
 } from "lucide-react";
 import { Logo } from "../components/Logo";
@@ -29,6 +30,7 @@ const NAV: { page: Page; label: MessageKey; icon: LucideIcon; soon?: boolean }[]
   { page: "config", label: "shell.nav.config", icon: MapIcon },
   { page: "files", label: "shell.nav.files", icon: FileText },
   { page: "mcp", label: "shell.nav.mcp", icon: Plug },
+  { page: "commands", label: "shell.nav.commands", icon: SquareSlash },
   { page: "work", label: "shell.nav.work", icon: GitBranch },
   { page: "memo", label: "shell.nav.memo", icon: NotebookPen },
 ];

@@ -7,6 +7,7 @@ export type Page =
   | "config"
   | "files"
   | "mcp"
+  | "commands"
   | "work"
   | "memo"
   | "settings";
