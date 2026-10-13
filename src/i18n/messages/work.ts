@@ -297,6 +297,14 @@ export const ko = {
   "work.tab.files": "파일",
   "work.flow.editing": "{n}개 수정 중",
   "work.next.commitRemote": "수정한 파일 {n}개 커밋하기",
+  "notify.merged.title": "PR #{n} 병합됨",
+  "notify.merged.body": "{title}",
+  "notify.closed.title": "PR #{n} 닫힘",
+  "notify.closed.body": "{title}",
+  "notify.ciFailed.title": "CI 실패 · PR #{n}",
+  "notify.ciFailed.body": "{failed}개 실패했어요. {title}",
+  "notify.ciPassed.title": "CI 통과 · PR #{n}",
+  "notify.ciPassed.body": "{title}",
 } as const;
 
 export const en: Messages<typeof ko> = {
@@ -601,4 +609,12 @@ export const en: Messages<typeof ko> = {
   "work.tab.files": "Files",
   "work.flow.editing": "{n} edited",
   "work.next.commitRemote": "Commit {n} edited files",
+  "notify.merged.title": "PR #{n} merged",
+  "notify.merged.body": "{title}",
+  "notify.closed.title": "PR #{n} closed",
+  "notify.closed.body": "{title}",
+  "notify.ciFailed.title": "CI failed · PR #{n}",
+  "notify.ciFailed.body": "{failed} failed. {title}",
+  "notify.ciPassed.title": "CI passed · PR #{n}",
+  "notify.ciPassed.body": "{title}",
 };

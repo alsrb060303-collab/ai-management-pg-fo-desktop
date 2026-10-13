@@ -17,6 +17,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { useT } from "../../i18n";
 import { type Checks, type Issue, type Pull, useGitHubStore } from "../../store/github";
+import { useNotifyStore } from "../../store/notify";
 import { useProjectStore } from "../../store/project";
 import { useWorkStore } from "../../store/work";
 import { Command, rich } from "./GitSetupGuide";
@@ -33,7 +34,7 @@ export const open = (url: string) => {
 /**
  * Keeps the GitHub view of the open project current: on project, sign-in,
  * branch and push changes, and every minute while the window is shown.
- * Called once by the work panel, whichever tab is open.
+ * Called once per window (main and sidebar), whatever page is shown.
  */
 export function useGitHubSync() {
   const project = useProjectStore((s) => s.current);
@@ -55,7 +56,10 @@ export function useGitHubSync() {
 
   useEffect(() => {
     const tick = () => {
-      if (document.visibilityState === "visible") void load(useGitHubStore.getState().project);
+      // Hidden, keep watching an open PR so its merge or CI result is notified.
+      const { view, project } = useGitHubStore.getState();
+      const watching = useNotifyStore.getState().on && view?.current?.state === "open";
+      if (document.visibilityState === "visible" || watching) void load(project);
     };
     const timer = setInterval(tick, POLL_MS);
     window.addEventListener("focus", tick);

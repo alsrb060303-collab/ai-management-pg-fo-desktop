@@ -5,6 +5,7 @@ import { CommandsPanel } from "../features/commands/CommandsPanel";
 import { DocsTab } from "../features/docs/DocsTab";
 import { MemoPanel } from "../features/memo/MemoPanel";
 import { SyncNotice } from "../features/sync/SyncNotice";
+import { useGitHubSync } from "../features/work/GitHubSection";
 import { WorkPanel } from "../features/work/WorkPanel";
 import { subscribeDockStatus } from "../store/dock";
 import { useLibraryStore } from "../store/library";
@@ -17,6 +18,8 @@ import { TabNav } from "./TabNav";
 import { TitleBar } from "./TitleBar";
 
 export default function SidebarApp() {
+  // PR and CI state for the open project, and notifications, whatever page is shown.
+  useGitHubSync();
   const activeTab = useUiStore((s) => s.activeTab);
 
   useEffect(() => {

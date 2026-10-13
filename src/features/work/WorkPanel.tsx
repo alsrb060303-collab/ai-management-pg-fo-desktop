@@ -25,7 +25,7 @@ import {
 } from "../../store/work";
 import { DiffView } from "./DiffView";
 import { FlowCard } from "./FlowCard";
-import { GitHubSection, PullBadge, useGitHubSync } from "./GitHubSection";
+import { GitHubSection, PullBadge } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
 import { History } from "./History";
 import { RemoteRepo, RepoPicker } from "./RemoteRepo";
@@ -51,7 +51,6 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
   const { overview, notGit, gitMissing, loading, error, load, refresh, dismissError } =
     useWorkStore();
   const remote = useRemoteStore((s) => s.slug);
-  useGitHubSync();
 
   useEffect(() => {
     void load(project);

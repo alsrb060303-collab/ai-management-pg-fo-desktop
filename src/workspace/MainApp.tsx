@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense, useEffect } from "react";
 import { SyncNotice } from "../features/sync/SyncNotice";
+import { useGitHubSync } from "../features/work/GitHubSection";
 import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
 import { restoreProject } from "../store/project";
@@ -40,6 +41,8 @@ const PAGES: Record<Page, () => React.ReactNode> = {
 };
 
 export default function MainApp() {
+  // PR and CI state for the open project, and notifications, whatever page is shown.
+  useGitHubSync();
   const page = useWorkspaceStore((s) => s.page);
 
   // Recent documents in the navigation, and the project selected last.
