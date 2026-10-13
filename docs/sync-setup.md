@@ -16,7 +16,8 @@
 ## 2-1. 이메일 · Google 로그인 켜기 (앱 계정, 2026-10-13)
 1. **Authentication › 로그인 방법 › 새 제공업체 추가 › 이메일/비밀번호** → 첫 번째 스위치(이메일/비밀번호)만 켜고 저장. 이메일 링크(비밀번호 없는 로그인)는 끈다.
 2. **새 제공업체 추가 › Google** → 사용 설정, 프로젝트 지원 이메일 고르고 저장. Firebase가 Google OAuth 클라이언트("Web client (auto created by Google Service)")를 알아서 만든다. **클라이언트 ID·보안 비밀은 앱에 넣지 않는다**(Firebase 서버가 교환한다).
-3. Google이 앱으로 돌아올 주소를 등록한다: https://console.cloud.google.com/apis/credentials (같은 프로젝트 선택) › **OAuth 2.0 클라이언트 ID › Web client (auto created by Google Service)** › **승인된 리디렉션 URI**에 `http://localhost:47823/auth` 추가 › 저장. (반영까지 몇 분 걸릴 수 있다.)
+3. Google이 앱으로 돌아올 주소를 등록한다: https://console.cloud.google.com/apis/credentials (위쪽 프로젝트 선택에서 **Firebase 프로젝트와 같은 프로젝트**(`ai-manager-7d33c`)를 고른다. 다른 Google Cloud 프로젝트의 클라이언트를 고치면 `redirect_uri_mismatch`가 그대로 난다) › **OAuth 2.0 클라이언트 ID › Web client (auto created by Google Service)** › **승인된 리디렉션 URI**에 `http://localhost:47823/auth` 추가 › 저장. (반영까지 몇 분 걸릴 수 있다.)
+   - 맞는 클라이언트인지 확인: 클라이언트 ID가 앱이 쓰는 것(`332336151846-t5ktm1go…`, 앞 숫자가 프로젝트 번호)과 같아야 한다.
    - 로그인 때 Google이 `redirect_uri_mismatch`를 보여주면 오류 화면의 "요청 세부정보"에 나온 주소를 그대로 추가한다.
 4. **Authentication › 설정 › 승인된 도메인**에 `localhost`가 있는지 확인(기본으로 있다).
 5. **Authentication › 설정 › 사용자 계정 연결**은 기본값 **"동일한 이메일 주소에 계정 연결"**(이메일당 계정 하나)을 그대로 둔다. 같은 이메일로 다른 방법을 쓰면 앱이 "원래 방법으로 로그인한 뒤 계정 설정에서 연결"하라고 안내한다.
