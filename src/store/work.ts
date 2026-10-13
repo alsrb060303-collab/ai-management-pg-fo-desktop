@@ -124,6 +124,15 @@ interface WorkState {
   dismissError: () => void;
   /** Commits only on this branch, or `null` when the check failed. */
   checkBranch: (name: string) => Promise<number | null>;
+  /** The commit whose changes are open in the history. */
+  openCommit: string | null;
+  commitDiff: Diff | null;
+  showCommit: (hash: string | null) => Promise<void>;
+  /** Adds files to the next commit, or takes them out. */
+  stage: (paths: string[], stage: boolean) => Promise<boolean>;
+  /** A commit message from the user's `claude`, or `null` (see `error`). */
+  draftMessage: (all: boolean) => Promise<string | null>;
+  drafting: boolean;
   /** Runs a git operation, then refreshes. Resolves whether it worked. */
   run: (command: string, args: Record<string, unknown>) => Promise<boolean>;
 }
@@ -161,10 +170,55 @@ export const useWorkStore = create<WorkState>((set, get) => {
     error: null,
     selected: null,
     diff: null,
+    openCommit: null,
+    commitDiff: null,
+    drafting: false,
+
+    showCommit: async (hash) => {
+      const { project } = get();
+      if (!hash || hash === get().openCommit) {
+        set({ openCommit: null, commitDiff: null });
+        return;
+      }
+      set({ openCommit: hash, commitDiff: null });
+      if (!project || !isTauri()) return;
+      try {
+        const commitDiff = await invoke<Diff>("work_commit_diff", { project, hash });
+        if (get().openCommit === hash) set({ commitDiff });
+      } catch (e) {
+        if (get().openCommit === hash)
+          set({ commitDiff: { text: String(e), binary: false, truncated: false } });
+      }
+    },
+
+    stage: (paths, stage) => get().run("work_stage", { paths, stage }),
+
+    draftMessage: async (all) => {
+      const { project } = get();
+      if (!project || !isTauri() || get().drafting) return null;
+      set({ drafting: true, error: null });
+      try {
+        return await invoke<string>("work_draft_message", { project, all });
+      } catch (e) {
+        set({ error: String(e) });
+        return null;
+      } finally {
+        set({ drafting: false });
+      }
+    },
 
     load: async (project) => {
       if (project !== get().project) {
-        set({ project, overview: null, notGit: false, error: null, selected: null, diff: null });
+        set({
+          project,
+          overview: null,
+          notGit: false,
+          error: null,
+          selected: null,
+          diff: null,
+          openCommit: null,
+          commitDiff: null,
+        });
       }
       if (!project) return;
       set({ loading: true, error: null });

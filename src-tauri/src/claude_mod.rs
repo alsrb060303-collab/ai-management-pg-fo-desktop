@@ -114,7 +114,18 @@ pub(crate) fn claude_in(
     args: &[&str],
     timeout: std::time::Duration,
 ) -> Result<(bool, String, String)> {
-    use std::io::Read;
+    claude_with_input(dir, args, None, timeout)
+}
+
+/// [`claude_in`] with `input` written to its stdin (`claude -p` reads it
+/// after the prompt), for text too long for a command line.
+pub(crate) fn claude_with_input(
+    dir: &std::path::Path,
+    args: &[&str],
+    input: Option<String>,
+    timeout: std::time::Duration,
+) -> Result<(bool, String, String)> {
+    use std::io::{Read, Write};
     let path = find_claude().ok_or_else(|| {
         crate::tr!(
             "Claude Code(claude 명령)를 찾지 못했어요. 설치한 뒤 다시 시도해 주세요",
@@ -124,7 +135,11 @@ pub(crate) fn claude_in(
     let mut cmd = Command::new(&path);
     cmd.args(args)
         .current_dir(dir)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1")
@@ -140,6 +155,12 @@ pub(crate) fn claude_in(
             "Couldn't run claude: {e}"
         )
     })?;
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        // Written on a thread and closed after, so claude sees the end.
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(input.as_bytes());
+        });
+    }
     // Read both pipes on threads so a full pipe never blocks the child.
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();

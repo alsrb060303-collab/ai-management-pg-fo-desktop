@@ -145,9 +145,6 @@ export const ko = {
 
   // GitHub section
   "work.commit.message": "커밋 메시지",
-  "work.commit": "커밋",
-  "work.commit.staged": "스테이징한 것만 커밋",
-  "work.commit.all": "모든 변경 포함",
   "work.push": "Push",
   "work.push.title": "이 브랜치의 커밋을 원격에 올려요",
   "work.push.first": "이 브랜치를 원격(origin)에 처음 올려요",
@@ -282,6 +279,21 @@ export const ko = {
   "work.changes.notInCommit": "아직 안 담음",
   "work.commit.allN": "변경 {n}개 모두 커밋",
   "work.commit.stagedN": "담은 {n}개만 커밋",
+  "work.stage.add": "커밋에 담기",
+  "work.stage.remove": "커밋에서 빼기",
+  "work.stage.all": "모두 담기",
+  "work.stage.noneAll": "모두 빼기",
+  "work.stage.conflict": "충돌을 먼저 해결해 주세요",
+  "work.commit.onlyChecked": "체크한 파일만 커밋해요",
+  "work.commit.noneChecked": "체크한 게 없으면 전부 커밋해요",
+  "work.draft": "초안",
+  "work.draft.busy": "쓰는 중…",
+  "work.draft.title":
+    "내 Claude Code가 커밋될 변경을 보고 메시지 초안을 써요 (claude -p, haiku, 도구·기록 없음)",
+  "work.draft.replace": "지금 쓴 메시지를 초안으로 바꿀까요?",
+  "work.draft.replaceTitle": "초안으로 바꾸기",
+  "work.log.showChanges": "변경 보기",
+  "work.log.hideChanges": "변경 닫기",
 } as const;
 
 export const en: Messages<typeof ko> = {
@@ -433,9 +445,6 @@ export const en: Messages<typeof ko> = {
 
   // GitHub section
   "work.commit.message": "Commit message",
-  "work.commit": "Commit",
-  "work.commit.staged": "Commit staged only",
-  "work.commit.all": "Include all changes",
   "work.push": "Push",
   "work.push.title": "Send this branch's commits to the remote",
   "work.push.first": "Push this branch to the remote (origin) for the first time",
@@ -571,4 +580,19 @@ export const en: Messages<typeof ko> = {
   "work.changes.notInCommit": "Not added",
   "work.commit.allN": "Commit all {n} changes",
   "work.commit.stagedN": "Commit the {n} added",
+  "work.stage.add": "Add to the commit",
+  "work.stage.remove": "Take out of the commit",
+  "work.stage.all": "Add all",
+  "work.stage.noneAll": "Take all out",
+  "work.stage.conflict": "Resolve the conflict first",
+  "work.commit.onlyChecked": "Commits the checked files",
+  "work.commit.noneChecked": "With none checked, commits everything",
+  "work.draft": "Draft",
+  "work.draft.busy": "Writing…",
+  "work.draft.title":
+    "Your Claude Code drafts a message from the changes to commit (claude -p, haiku, no tools, not saved)",
+  "work.draft.replace": "Replace your message with a draft?",
+  "work.draft.replaceTitle": "Replace with a draft",
+  "work.log.showChanges": "Show changes",
+  "work.log.hideChanges": "Hide changes",
 };

@@ -181,21 +181,23 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 ## 4. 로드맵
 
 - [x] **Phase 0. 초기 세팅**: Tauri + React 스캐폴드, 린트, CI(Windows 설치 파일 빌드), 문서
-- [~] **Phase 1. 사이드바 셸 + 도킹 PoC** (구현 완료, Windows 실기 테스트 대기: `docs/testing/phase1-windows.md`): 활성 창 따라가기, 가장자리 고정 대체 동작, 트레이, 전역 단축키
+- [x] **Phase 1. 사이드바 셸 + 도킹 PoC** (구현 완료, Windows 실기 테스트 대기: `docs/testing/phase1-windows.md`): 활성 창 따라가기, 가장자리 고정 대체 동작, 트레이, 전역 단축키
 - [x] **Phase 2. 설정 지도(읽기 전용)**: 프로젝트 선택, Claude Code 설정 스캔·표시
-- [~] **Phase 3. 라이브러리 적용/제외** (구현·리뷰 완료, Windows 테스트 후 완료 처리)
-- [~] **Phase 4. 메인 창 + 디자인 시스템** (구현·리뷰 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md`): 창 2개 전환, 테마(라이트/다크/시스템), 폰트, 메인 레이아웃. 기존 화면(설정 지도·라이브러리)을 메인 창에도 배치
-- [~] **Phase 5. 문서 작성기** (구현·리뷰 완료, Linux UI 확인. Windows 테스트 대기: `docs/testing/phase4-windows.md` E): 블록 그래프 편집, 미리보기, 저장·불러오기, 실행 취소, 프로젝트에 쓰기
-- [~] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
-- [~] **Phase 7. Git 작업 관리** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` G): 브랜치·worktree·상태·diff·조작
+- [x] **Phase 3. 라이브러리 적용/제외** (구현·리뷰 완료, Windows 테스트 후 완료 처리)
+- [x] **Phase 4. 메인 창 + 디자인 시스템** (구현·리뷰 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md`): 창 2개 전환, 테마(라이트/다크/시스템), 폰트, 메인 레이아웃. 기존 화면(설정 지도·라이브러리)을 메인 창에도 배치
+- [x] **Phase 5. 문서 작성기** (구현·리뷰 완료, Linux UI 확인. Windows 테스트 대기: `docs/testing/phase4-windows.md` E): 블록 그래프 편집, 미리보기, 저장·불러오기, 실행 취소, 프로젝트에 쓰기
+- [x] **Phase 6. 블록 카탈로그** (외부 13개 포함·출처 표시·최신 받아오기 구현. 목록 자체 갱신(새 인기 항목 추가)은 저장소 index가 main에 올라간 뒤): 내장 블록, 외부 인기 항목(라이선스 확인), 최신 받아오기, 내 라이브러리 연동. 이후 `claude -p` 다듬기·스택 감지
+- [x] **Phase 7. Git 작업 관리** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` G): 브랜치·worktree·상태·diff·조작
 - [x] **Phase 8a. 브랜치 메모/TODO (로컬)**: 저장소·브랜치별 메모와 할 일, 브랜치 따라가기, 두 창 동기화
-- [~] **Phase 8b. 메모 동기화 (데이터베이스 연동)** (구현 완료, Firebase 프로젝트 설정 후 Windows 테스트: `docs/sync-setup.md`, `docs/testing/phase4-windows.md` I): Firestore 연동, GitHub 계정으로 로그인, 허용 목록 계정만 사용
+- [x] **Phase 8b. 메모 동기화 (데이터베이스 연동)** (구현 완료, Firebase 프로젝트 설정 후 Windows 테스트: `docs/sync-setup.md`, `docs/testing/phase4-windows.md` I): Firestore 연동, GitHub 계정으로 로그인, 허용 목록 계정만 사용
 - [ ] **Phase 8c. 요금제** (미결정 · 보류): 결제 수단·가격·유료 범위. 정해지면 결제 웹훅이 허용 목록(`allowed/{uid}`)을 채우게 바꾼다
-- [~] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
-- [~] **Phase 9b. GitHub 저장소 선택** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` J): 로그인 안 했으면 프로젝트와 상관없이 로그인 버튼, 내 저장소 목록에서 고르기(clone 있으면 로컬로 열기, 없으면 GitHub 보기: 브랜치·커밋·CI·PR·이슈, 브랜치 만들기/삭제, PR 만들기, clone해서 작업하기)
-- [~] **Phase 9c. 프로젝트 문서 편집** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` K): 연결한 폴더의 CLAUDE.md(하위 폴더 포함)·rules·skills·agents·commands·설정 파일 자동 감지, 앱 안 편집기로 읽고 고쳐서 바로 저장, 밖에서 바뀌면 알림, 새 문서·삭제
-- [~] **Phase 9d. GitHub 직접 수정 · 커밋/push** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` L): clone 없이 GitHub 파일을 열어 고치고 여러 파일을 한 커밋으로(브랜치 또는 새 브랜치), 로컬 작업 탭에서 커밋·push·pull
-- [~] **Phase 11. Claude Code mod 연동** (구현 완료, Windows + Claude Code 2.1.287+ 테스트 대기: `docs/testing/phase4-windows.md` M): 브랜치 메모 mod(입력창 위 한 줄, /notes 패널, /todo · /memo, Claude에게 메모 전달), 설정에서 설치/제거, 추천 mods 설치
+- [x] **Phase 9a. GitHub 연동** (구현 완료, OAuth App 등록·Client ID 입력 후 Windows 테스트: `docs/testing/phase4-windows.md` H): 로그인, PR·CI·이슈 보기, PR 만들기
+- [x] **Phase 9b. GitHub 저장소 선택** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` J): 로그인 안 했으면 프로젝트와 상관없이 로그인 버튼, 내 저장소 목록에서 고르기(clone 있으면 로컬로 열기, 없으면 GitHub 보기: 브랜치·커밋·CI·PR·이슈, 브랜치 만들기/삭제, PR 만들기, clone해서 작업하기)
+- [x] **Phase 9c. 프로젝트 문서 편집** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` K): 연결한 폴더의 CLAUDE.md(하위 폴더 포함)·rules·skills·agents·commands·설정 파일 자동 감지, 앱 안 편집기로 읽고 고쳐서 바로 저장, 밖에서 바뀌면 알림, 새 문서·삭제
+- [x] **Phase 9d. GitHub 직접 수정 · 커밋/push** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` L): clone 없이 GitHub 파일을 열어 고치고 여러 파일을 한 커밋으로(브랜치 또는 새 브랜치), 로컬 작업 탭에서 커밋·push·pull
+- [x] **Phase 11. Claude Code mod 연동** (구현 완료, Windows + Claude Code 2.1.287+ 테스트 대기: `docs/testing/phase4-windows.md` M): 브랜치 메모 mod(입력창 위 한 줄, /notes 패널, /todo · /memo, Claude에게 메모 전달), 설정에서 설치/제거, 추천 mods 설치
+- [x] **Phase 9e. 작업 화면 개편** (2026-10-12): 흐름 카드(커밋→올리기→PR→CI, 다음 할 일 버튼), 변경·기록·브랜치·Worktree·GitHub 탭, 커밋 타임라인, PR 색(열림 초록·병합 보라), 고른 GitHub 저장소·브랜치 기억
+- [ ] **Phase 9f. 작업 화면 보강** (2026-10-12 결정, 순서대로): ① 파일별 커밋에 담기/빼기 ② 기록에서 커밋 눌러 변경 보기 ③ `claude -p`로 커밋 메시지 초안 → ④ clone 없는 저장소 화면에도 흐름 카드·타임라인 ⑤ CI 끝남·PR 상태 변화 알림 ⑥ 충돌 해결 도우미
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크
@@ -221,13 +223,17 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - mod 설치는 사용자 `claude` 명령으로: 앱이 mod 파일을 `<앱 데이터>/claude-mod`(로컬 마켓플레이스 `ai-management`)에 쓰고 `claude plugin marketplace add` + `install branch-notes@ai-management --scope user`. Claude Code 설정·로그인 정보는 앱이 직접 읽거나 쓰지 않는다.
 - 추천 mods는 저장소와 LICENSE를 확인한 것만 넣는다(`docs/research.md` 7).
 
-**나중에 추가할 후보 (2026-10-12)**
+**나중에 추가할 후보 (2026-10-12, 상태는 2026-10-12 기준)**
 - 비슷한 앱 조사(`docs/research.md` 10)에서 나온 후보. 효과가 크고 기존 기능과 잘 맞는 순서:
-  1. **권한 편집기**: settings.json의 `permissions` allow/ask/deny를 범위별로 보고 고치기(read-merge-write). 설정 지도와 연결.
-  2. **사용량·비용 보기**: `~/.claude`의 세션 기록(JSONL)을 읽어 모델·프로젝트별 토큰, 5시간 창. 로그인 정보 파일은 읽지 않는다.
-  3. ~~**MCP 관리**~~ → 2026-10-12 구현(MCP 서버 페이지, `docs/research.md` 11).
-  4. **프로필**: skills·agents·hooks·MCP 묶음을 이름 붙여 저장하고 프로젝트에 한 번에 적용.
-  5. **설정 점검**: 깨진 JSON, 없는 hook 경로, 가려진 규칙을 설정 지도에 표시.
-  6. 세션 기록 탐색, 슬래시 명령 편집기, 상태줄 빌더, 가져오기·내보내기.
-- anthropics/skills `skill-creator` (Apache-2.0): skill을 만들고 평가·개선하는 skill. Python 스크립트(평가 루프, 설명 개선, 패키징)가 있어야 제대로 동작해서 Markdown만 가져오는 지금 카탈로그 방식으로는 넣지 않았다. 스크립트까지 설치하는 방식(예: mods처럼 마켓플레이스로 설치)을 지원할 때 넣는다. 출처: https://github.com/anthropics/skills/tree/main/skills/skill-creator
-- 초보자 모드: Claude Code 내장 출력 스타일 Explanatory·Learning을 설정 화면에서 켜는 기능(`.claude/settings.local.json`의 `outputStyle`, read-merge-write), 초보자용 지침 블록(`docs/research.md` 9).
+  1. [ ] **권한 편집기**: settings.json의 `permissions` allow/ask/deny를 범위별로 보고 고치기(read-merge-write). 설정 지도와 연결. (지금은 설정 지도가 deny로 꺼진 항목을 표시만 함)
+  2. [ ] **사용량·비용 보기**: `~/.claude`의 세션 기록(JSONL)을 읽어 모델·프로젝트별 토큰, 5시간 창. 로그인 정보 파일은 읽지 않는다.
+  3. [x] **MCP 관리**: 2026-10-12 완료(MCP 서버 페이지, `docs/research.md` 11).
+  4. [ ] **프로필**: skills·agents·hooks·MCP 묶음을 이름 붙여 저장하고 프로젝트에 한 번에 적용.
+  5. [~] **설정 점검**: 깨진 설정 JSON·가려진 항목·꺼진 항목 표시는 설정 지도에 있음(완료). 없는 hook 경로 검사는 아직.
+  6. 세션 기록 탐색 [ ], 슬래시 명령 편집기 [~](프로젝트 문서 화면에서 commands 파일 편집은 완료, 전용 편집기는 아직), 상태줄 빌더 [ ], 가져오기·내보내기 [ ].
+- [ ] 문서 작성기 블록끼리 연결(체인 4종, 선으로 연결 + 블록에 표시. 결정 완료, 구현 전).
+- [ ] 문서 작성기 `claude -p` "내 프로젝트에 맞게 다듬기", 기술 스택 감지로 블록 추천.
+- [ ] anthropics/skills `skill-creator` (Apache-2.0): skill을 만들고 평가·개선하는 skill. Python 스크립트(평가 루프, 설명 개선, 패키징)가 있어야 제대로 동작해서 Markdown만 가져오는 지금 카탈로그 방식으로는 넣지 않았다. 스크립트까지 설치하는 방식(예: mods처럼 마켓플레이스로 설치)을 지원할 때 넣는다. 출처: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+- [ ] 초보자 모드: Claude Code 내장 출력 스타일 Explanatory·Learning을 설정 화면에서 켜는 기능(`.claude/settings.local.json`의 `outputStyle`, read-merge-write), 초보자용 지침 블록(`docs/research.md` 9).
+- [x] 카탈로그 추가(27개 블록·동반 파일·큰 블록 경고)와 추천 MCP 8개: 2026-10-12 완료(`docs/research.md` 12).
+- [x] 문서 작성기에서 clone 없이 GitHub 저장소에 바로 쓰기(새 브랜치+PR 또는 브랜치에 직접): 2026-10-12 완료.

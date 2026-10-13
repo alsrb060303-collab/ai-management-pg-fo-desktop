@@ -1,8 +1,9 @@
-import { Cloud, GitMerge, Tag } from "lucide-react";
+import { ChevronRight, Cloud, GitMerge, Tag } from "lucide-react";
 import { useState } from "react";
 import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
 import { type Commit, type RefLabel, useWorkStore } from "../../store/work";
+import { DiffView } from "./DiffView";
 import { open } from "./GitHubSection";
 
 /**
@@ -65,6 +66,8 @@ function CommitRow({
   url: string | null;
 }) {
   const t = useT();
+  const { openCommit, commitDiff, showCommit } = useWorkStore();
+  const open_ = openCommit === c.hash;
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard
@@ -101,9 +104,19 @@ function CommitRow({
       {/* Body */}
       <div className={`min-w-0 flex-1 pb-2 ${compact ? "text-xs" : "text-sm"}`}>
         <div className="flex items-center gap-1.5">
-          <span className="min-w-0 truncate" title={c.subject}>
-            {c.subject}
-          </span>
+          <button
+            type="button"
+            onClick={() => void showCommit(c.hash)}
+            aria-expanded={open_}
+            title={`${c.subject}\n${t(open_ ? "work.log.hideChanges" : "work.log.showChanges")}`}
+            className="flex min-w-0 items-center gap-1 rounded text-left hover:text-accent"
+          >
+            <ChevronRight
+              size={12}
+              className={`shrink-0 text-text-subtle transition-transform ${open_ ? "rotate-90" : ""}`}
+            />
+            <span className="min-w-0 truncate">{c.subject}</span>
+          </button>
           {now && (
             <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-medium text-primary-fg">
               {t("work.log.now")}
@@ -136,6 +149,7 @@ function CommitRow({
             <RefChip key={`${r.kind}:${r.name}`} label={r} />
           ))}
         </div>
+        {open_ && <DiffView diff={commitDiff} compact={compact} />}
       </div>
     </div>
   );
