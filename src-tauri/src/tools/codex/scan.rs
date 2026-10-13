@@ -306,8 +306,10 @@ fn project_dirs(project: &Path, root: Option<&Path>) -> Vec<PathBuf> {
     dirs
 }
 
-/// `trust_level` for the project folder, else for the project root. Codex
-/// writes the keys resolved (and lowercased on Windows).
+/// `trust_level` for the project folder, else for the project root, else (in
+/// a linked worktree) for the main worktree, as Codex resolves a worktree to
+/// its main repository for trust. Codex writes the keys resolved (and
+/// lowercased on Windows).
 fn trust_of(user: &TomlItem, project: &Path, root: Option<&Path>) -> Trust {
     let Some(projects) = get(user, &["projects"]).and_then(TomlItem::as_table_like) else {
         return Trust::Unknown;
@@ -323,7 +325,14 @@ fn trust_of(user: &TomlItem, project: &Path, root: Option<&Path>) -> Trust {
             .find(|(key, _)| *key == dir)
             .and_then(|(_, level)| *level)
     };
-    let level = lookup(project).or_else(|| root.and_then(lookup));
+    let main = || {
+        crate::tools::detect::repo_root(project)
+            .as_deref()
+            .and_then(crate::tools::detect::main_worktree)
+    };
+    let level = lookup(project)
+        .or_else(|| root.and_then(lookup))
+        .or_else(|| main().as_deref().and_then(lookup));
     match level {
         Some("trusted") => Trust::Trusted,
         Some("untrusted") => Trust::Untrusted,

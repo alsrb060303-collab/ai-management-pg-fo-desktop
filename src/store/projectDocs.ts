@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { onLocaleApplied } from "../i18n";
 import type { ToolId } from "../tools";
-import { useProjectStore } from "./project";
+import { useProjectStore, whenToolReady } from "./project";
 
 // Mirrors src-tauri/src/project_docs.rs.
 export type DocKind =
@@ -81,7 +81,8 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
     changedOutside: false,
     saving: false,
 
-    load: async (project, tool = useProjectStore.getState().tool) => {
+    load: async (project, toolArg) => {
+      const tool = toolArg ?? (await whenToolReady());
       if (project !== get().project || tool !== get().tool) {
         set({
           project,

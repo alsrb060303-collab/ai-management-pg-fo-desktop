@@ -15,7 +15,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
-import { useProjectStore } from "../../store/project";
+import { useProjectStore, whenToolReady } from "../../store/project";
 import { useRemoteStore } from "../../store/remote";
 import {
   type Branch,
@@ -901,7 +901,11 @@ function NewWorktree({ onDone }: { onDone: () => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         if (!valid) return;
-        const ok = await run("work_add_worktree", { name, base: base || null, tool });
+        const ok = await run("work_add_worktree", {
+          name,
+          base: base || null,
+          tool: await whenToolReady(),
+        });
         if (ok) onDone();
       }}
       className="mb-2 space-y-1.5 rounded-lg border border-border bg-surface p-2"

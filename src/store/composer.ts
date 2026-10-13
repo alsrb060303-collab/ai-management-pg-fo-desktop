@@ -187,6 +187,11 @@ export function useComposerTool(): ToolId {
   return useProjectStore((s) => (s.current ? s.tool : s.defaultTool));
 }
 
+/** Whether `useComposerTool()` is settled (not waiting for a project's detection). */
+export function useComposerToolReady(): boolean {
+  return useProjectStore((s) => !s.current || s.toolReady);
+}
+
 /** Whether `target` exists for `tool` (`Target::available`): Codex has no rule files. */
 export function targetAvailable(target: Target, tool: ToolId): boolean {
   return target !== "rules" || TOOLS[tool].rulesDir !== null;

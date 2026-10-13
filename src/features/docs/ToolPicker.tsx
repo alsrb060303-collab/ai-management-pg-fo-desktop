@@ -5,12 +5,16 @@ import { TOOL_IDS, TOOLS, type ToolPref } from "../../tools";
 /** Which AI tool the current project is handled as: detected, or picked. */
 export function ToolPicker() {
   const t = useT();
-  const { toolPref, detection, loading, setToolPref } = useProjectStore();
+  const { toolPref, mainPref, detection, loading, setToolPref } = useProjectStore();
   const detected = detection ? TOOLS[detection.tool].name : "…";
+  // A worktree on "auto" follows its main repository's choice.
+  const auto = mainPref ? TOOLS[mainPref].name : detected;
 
   let reason = "";
   if (toolPref !== "auto") {
     reason = t("tools.picked", { tool: detected });
+  } else if (mainPref) {
+    reason = t("tools.reason.main");
   } else if (detection?.reason === "files") {
     const files = detection.signals
       .filter((s) => s.tool === detection.tool)
@@ -35,7 +39,7 @@ export function ToolPicker() {
         onChange={(e) => void setToolPref(e.target.value as ToolPref)}
         className="shrink-0 rounded-md border border-border bg-surface-raised px-2 py-1"
       >
-        <option value="auto">{t("tools.autoWith", { tool: detected })}</option>
+        <option value="auto">{t("tools.autoWith", { tool: auto })}</option>
         {TOOL_IDS.map((id) => (
           <option key={id} value={id}>
             {TOOLS[id].name}
