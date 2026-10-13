@@ -305,6 +305,34 @@ export const ko = {
   "notify.ciFailed.body": "{failed}개 실패했어요. {title}",
   "notify.ciPassed.title": "CI 통과 · PR #{n}",
   "notify.ciPassed.body": "{title}",
+  "work.conflict.ours": "현재 쪽",
+  "work.conflict.theirs": "들어오는 쪽",
+  "work.conflict.both": "둘 다",
+  "work.conflict.bothTheirsFirst": "둘 다 (들어오는 쪽 먼저)",
+  "work.conflict.block": "충돌 {n}/{total}",
+  "work.conflict.progress": "{n}개 중 {done}개 골랐어요",
+  "work.conflict.allOurs": "전부 현재 쪽",
+  "work.conflict.allTheirs": "전부 들어오는 쪽",
+  "work.conflict.pickAll": "충돌마다 쓸 쪽을 눌러 골라 주세요.",
+  "work.conflict.ready": "다 골랐어요. 저장하면 해결됨으로 표시돼요.",
+  "work.conflict.save": "저장하고 해결 표시",
+  "work.conflict.empty": "(비어 있음)",
+  "work.conflict.rebaseHint":
+    "리베이스 중엔 '현재 쪽'이 기준 브랜치이고 '들어오는 쪽'이 내 커밋이에요.",
+  "work.conflict.missing":
+    "한쪽에서 지운 파일이에요. 지운 쪽을 따르려면 삭제로 해결하고, 남기려면 터미널에서 파일을 되살려 주세요.",
+  "work.conflict.unreadable":
+    "바이너리이거나 너무 큰 파일이라 여기서 고를 수 없어요. 편집기나 터미널에서 해결해 주세요.",
+  "work.conflict.noMarkers":
+    "충돌 표시가 없는 파일이에요(한쪽에서 지웠거나 이미 고친 경우). 지금 파일을 남길지, 삭제할지 골라 주세요.",
+  "work.conflict.keepFile": "지금 파일로 해결",
+  "work.conflict.delete": "삭제로 해결",
+  "work.next.showConflicts": "충돌 해결하기",
+  "work.next.continue": "계속하기",
+  "work.next.abort": "중단하기",
+  "work.next.abortConfirm":
+    "진행 중인 {op}을(를) 중단하고 시작 전 상태로 돌아갈까요? 여기서 해결한 내용은 사라져요.",
+  "work.next.continueReady": "충돌을 다 해결했어요. 계속하면 다음 단계로 넘어가요.",
 } as const;
 
 export const en: Messages<typeof ko> = {
@@ -617,4 +645,32 @@ export const en: Messages<typeof ko> = {
   "notify.ciFailed.body": "{failed} failed. {title}",
   "notify.ciPassed.title": "CI passed · PR #{n}",
   "notify.ciPassed.body": "{title}",
+  "work.conflict.ours": "Current",
+  "work.conflict.theirs": "Incoming",
+  "work.conflict.both": "Both",
+  "work.conflict.bothTheirsFirst": "Both (incoming first)",
+  "work.conflict.block": "Conflict {n}/{total}",
+  "work.conflict.progress": "{done} of {n} picked",
+  "work.conflict.allOurs": "All current",
+  "work.conflict.allTheirs": "All incoming",
+  "work.conflict.pickAll": "Click the side to keep for each conflict.",
+  "work.conflict.ready": "All picked. Saving marks the file resolved.",
+  "work.conflict.save": "Save and mark resolved",
+  "work.conflict.empty": "(empty)",
+  "work.conflict.rebaseHint":
+    "While rebasing, 'current' is the base branch and 'incoming' is your commit.",
+  "work.conflict.missing":
+    "This file was deleted on one side. Resolve by deleting it, or restore it in the terminal to keep it.",
+  "work.conflict.unreadable":
+    "Binary or too large to pick here. Resolve it in an editor or the terminal.",
+  "work.conflict.noMarkers":
+    "This file has no conflict markers (deleted on one side, or already edited). Keep it as it is, or delete it.",
+  "work.conflict.keepFile": "Keep this file",
+  "work.conflict.delete": "Resolve by deleting",
+  "work.next.showConflicts": "Resolve conflicts",
+  "work.next.continue": "Continue",
+  "work.next.abort": "Abort",
+  "work.next.abortConfirm":
+    "Abort the {op} and go back to where it started? What you resolved here is lost.",
+  "work.next.continueReady": "All conflicts resolved. Continue to the next step.",
 };

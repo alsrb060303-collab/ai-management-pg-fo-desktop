@@ -1,3 +1,4 @@
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDown,
   ArrowUp,
@@ -52,6 +53,8 @@ export interface Next {
   note?: string;
   noteTone?: "muted" | "warn" | "bad" | "good";
   button?: { label: string; Icon: LucideIcon; onClick: () => void; tone?: "primary" | "danger" };
+  /** A quieter second choice (e.g. "Abort" next to "Continue"). */
+  extra?: { label: string; onClick: () => void };
 }
 
 /**
@@ -60,7 +63,7 @@ export interface Next {
  */
 export function FlowCard({ compact }: { compact: boolean }) {
   const t = useT();
-  const { overview, busy, run, refresh } = useWorkStore();
+  const { overview, busy, run, refresh, select } = useWorkStore();
   const { status, view } = useGitHubStore();
   const reloadGitHub = useGitHubStore((s) => s.load);
   const { setTab, setCreatingPull, focusCommit } = useWorkUi();
@@ -79,6 +82,11 @@ export function FlowCard({ compact }: { compact: boolean }) {
 
   const push = async () => {
     if (await run("work_push", {})) void reloadGitHub(useGitHubStore.getState().project);
+  };
+  const showConflicts = () => {
+    const first = overview.changes.find((c) => c.kind === "conflicted");
+    setTab("changes");
+    if (first && useWorkStore.getState().selected?.path !== first.path) void select(first);
   };
   const openPullForm = () => {
     setTab("github");
@@ -116,6 +124,41 @@ export function FlowCard({ compact }: { compact: boolean }) {
 
   // What to do next, most urgent first.
   const next: Next = (() => {
+    if (operation && operation !== "bisect") {
+      const op = isOperation(operation) ? t(`work.op.${operation}`) : operation;
+      const abort = {
+        label: t("work.next.abort"),
+        onClick: async () => {
+          if (
+            await ask(t("work.next.abortConfirm", { op }), { title: op, kind: "warning" }).catch(
+              () => false,
+            )
+          )
+            void run("work_abort", {});
+        },
+      };
+      if (conflicts)
+        return {
+          note: t("work.next.conflicts", { n: conflicts }),
+          noteTone: "bad",
+          button: {
+            label: t("work.next.showConflicts"),
+            Icon: TriangleAlert,
+            onClick: showConflicts,
+          },
+          extra: abort,
+        };
+      return {
+        note: t("work.next.continueReady"),
+        noteTone: "warn",
+        button: {
+          label: t("work.next.continue"),
+          Icon: Check,
+          onClick: () => void run("work_continue", {}),
+        },
+        extra: abort,
+      };
+    }
     if (operation)
       return {
         note: t("work.next.operation", {
@@ -123,7 +166,16 @@ export function FlowCard({ compact }: { compact: boolean }) {
         }),
         noteTone: "warn",
       };
-    if (conflicts) return { note: t("work.next.conflicts", { n: conflicts }), noteTone: "bad" };
+    if (conflicts)
+      return {
+        note: t("work.next.conflicts", { n: conflicts }),
+        noteTone: "bad",
+        button: {
+          label: t("work.next.showConflicts"),
+          Icon: TriangleAlert,
+          onClick: showConflicts,
+        },
+      };
     if (changeCount)
       return {
         button: {
@@ -255,13 +307,23 @@ export function FlowShell({
               {next.note}
             </p>
           )}
+          {next.extra && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={next.extra.onClick}
+              className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs text-text-muted hover:border-border-strong hover:text-text disabled:opacity-50"
+            >
+              {next.extra.label}
+            </button>
+          )}
           {next.button && (
             <button
               type="button"
               disabled={busy}
               onClick={next.button.onClick}
               className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
-                next.note ? "shrink-0" : "w-full"
+                next.note || next.extra ? "shrink-0" : "w-full"
               } ${
                 next.button.tone === "danger"
                   ? "bg-danger text-surface hover:opacity-90"

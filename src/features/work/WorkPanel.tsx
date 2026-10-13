@@ -23,6 +23,7 @@ import {
   useWorkStore,
   type Worktree,
 } from "../../store/work";
+import { ConflictView } from "./ConflictView";
 import { DiffView } from "./DiffView";
 import { FlowCard } from "./FlowCard";
 import { GitHubSection, PullBadge } from "./GitHubSection";
@@ -304,7 +305,12 @@ function Changes({ compact }: { compact: boolean }) {
                   open={selected?.path === c.path}
                   onClick={() => void select(c)}
                 />
-                {selected?.path === c.path && <DiffView diff={diff} compact={compact} />}
+                {selected?.path === c.path &&
+                  (c.kind === "conflicted" ? (
+                    <ConflictView path={c.path} compact={compact} />
+                  ) : (
+                    <DiffView diff={diff} compact={compact} />
+                  ))}
               </li>
             ))}
           </ul>

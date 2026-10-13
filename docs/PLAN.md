@@ -197,7 +197,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [x] **Phase 9d. GitHub 직접 수정 · 커밋/push** (구현 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` L): clone 없이 GitHub 파일을 열어 고치고 여러 파일을 한 커밋으로(브랜치 또는 새 브랜치), 로컬 작업 탭에서 커밋·push·pull
 - [x] **Phase 11. Claude Code mod 연동** (구현 완료, Windows + Claude Code 2.1.287+ 테스트 대기: `docs/testing/phase4-windows.md` M): 브랜치 메모 mod(입력창 위 한 줄, /notes 패널, /todo · /memo, Claude에게 메모 전달), 설정에서 설치/제거, 추천 mods 설치
 - [x] **Phase 9e. 작업 화면 개편** (2026-10-12): 흐름 카드(커밋→올리기→PR→CI, 다음 할 일 버튼), 변경·기록·브랜치·Worktree·GitHub 탭, 커밋 타임라인, PR 색(열림 초록·병합 보라), 고른 GitHub 저장소·브랜치 기억
-- [ ] **Phase 9f. 작업 화면 보강** (2026-10-12 결정, 순서대로): ① 파일별 커밋에 담기/빼기 ② 기록에서 커밋 눌러 변경 보기 ③ `claude -p`로 커밋 메시지 초안 → ④ clone 없는 저장소 화면에도 흐름 카드·타임라인 ⑤ CI 끝남·PR 상태 변화 알림 ⑥ 충돌 해결 도우미
+- [x] **Phase 9f. 작업 화면 보강** (2026-10-13): ① 파일별 커밋에 담기/빼기(체크박스) ② 기록에서 커밋 눌러 변경 보기 ③ `claude -p`로 커밋 메시지 초안(haiku, 도구 끔, 세션 저장 안 함) ④ clone 없는 저장소 화면에도 흐름 카드·탭·타임라인 ⑤ 브랜치 PR 병합·닫힘, CI 끝남 데스크톱 알림(설정에서 끄기) ⑥ 충돌 해결 도우미(블록마다 현재/들어오는/둘 다, 계속하기·중단하기)
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크

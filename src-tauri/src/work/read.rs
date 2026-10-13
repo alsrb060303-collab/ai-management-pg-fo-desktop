@@ -379,7 +379,7 @@ fn parse_worktrees(raw: &[u8], current_root: &str, main_root: &str) -> Vec<Workt
 }
 
 /// The operation a worktree is in the middle of, from its git dir.
-fn operation(git_dir: &Path) -> Option<String> {
+pub(super) fn operation(git_dir: &Path) -> Option<String> {
     [
         ("rebase-merge", "rebase"),
         ("rebase-apply", "rebase"),

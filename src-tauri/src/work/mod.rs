@@ -2,6 +2,7 @@
 //! and worktrees, and the branch and worktree operations it offers, plus
 //! committing, pushing and pulling (with the GitHub sign-in when there is one).
 
+mod conflict;
 mod ops;
 mod read;
 
@@ -190,6 +191,37 @@ fn strip_fences(text: &str) -> String {
         }
         None => t.to_string(),
     }
+}
+
+#[tauri::command]
+pub async fn work_conflict(
+    project: String,
+    path: String,
+) -> Result<conflict::ConflictFile, String> {
+    blocking(project, move |root| conflict::read(root, &path)).await
+}
+
+/// Saves the resolved file (`text`), or deletes it (`None`), and marks it resolved.
+#[tauri::command]
+pub async fn work_resolve(
+    project: String,
+    path: String,
+    text: Option<String>,
+) -> Result<(), String> {
+    blocking(project, move |root| {
+        conflict::resolve(root, &path, text.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn work_continue(project: String) -> Result<(), String> {
+    blocking(project, conflict::continue_operation).await
+}
+
+#[tauri::command]
+pub async fn work_abort(project: String) -> Result<(), String> {
+    blocking(project, conflict::abort_operation).await
 }
 
 /// The installed git's version (`git version 2.47.0.windows.1`), or `None`
