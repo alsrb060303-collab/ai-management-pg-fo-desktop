@@ -150,6 +150,30 @@
   --color-drop: var(--c-drop);
 }
 
+/* Work tab flow: a line blending two step colors. Registered as colors so
+   the browser can fade them when a step changes (CI running → passed). */
+@property --line-from {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+@property --line-to {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+.flow-line {
+  background: linear-gradient(to right, var(--line-from), var(--line-to));
+  transition:
+    --line-from 0.7s ease,
+    --line-to 0.7s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-line {
+    transition: none;
+  }
+}
+
 /* A pixel size that follows the font size setting: `text-fs-11` is 11px at "default". */
 @utility text-fs-* {
   font-size: calc(--value(number) * 1px * var(--fs));

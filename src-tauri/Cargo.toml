@@ -1,6 +1,6 @@
 [package]
 name = "ai-management"
-version = "0.1.3"
+version = "0.1.4"
 description = "Floating sidebar for managing AI coding work (Claude Code docs, git, memos)"
 authors = ["alsrb060303-collab"]
 license = "Apache-2.0"

@@ -166,6 +166,7 @@ export const ko = {
   "work.files.switchConfirm": "커밋하지 않은 파일 변경 {n}개를 버리고 브랜치를 바꿀까요?",
   "work.repos.title": "내 GitHub 저장소",
   "work.repos.githubView": "GitHub에서 보기",
+  "work.repos.githubViewHint": "이 프로젝트의 저장소를 GitHub 보기로 열어요",
   "work.repos.githubViewWarn":
     "{slug}은(는) 이 컴퓨터에 clone돼 있어요. GitHub 보기에서 고친 파일은 GitHub에 바로 커밋되고, 이 컴퓨터 폴더에는 pull해야 반영돼요. 같은 파일을 양쪽에서 고치면 충돌이 날 수 있어요.\n\nGitHub 보기로 전환할까요?",
   "work.repos.search": "저장소 검색",
@@ -509,6 +510,7 @@ export const en: Messages<typeof ko> = {
   "work.files.switchConfirm": "Discard {n} uncommitted file changes and switch branches?",
   "work.repos.title": "My GitHub repositories",
   "work.repos.githubView": "View on GitHub",
+  "work.repos.githubViewHint": "Open this project's repository in the GitHub view",
   "work.repos.githubViewWarn":
     "{slug} is cloned on this computer. Files you change in the GitHub view are committed to GitHub directly and reach this computer's folder only after a pull. Changing the same file in both places can cause conflicts.\n\nSwitch to the GitHub view?",
   "work.repos.search": "Search repositories",
