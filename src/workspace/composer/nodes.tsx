@@ -6,18 +6,22 @@ import { memo, useRef, useState } from "react";
 import { Switch } from "../../components/ui";
 import { useT } from "../../i18n";
 import {
-  ACCEPTS,
+  AGENTS_MD_BYTE_BUDGET,
+  AGENTS_MD_BYTE_LIMIT,
+  accepts,
   type Block,
   type BlockData,
   type BlockNode,
   CLAUDE_MD_LINE_BUDGET,
   EVENTS_WITHOUT_MATCHER,
-  HOOK_EVENTS,
+  hookEvents,
   inputsOf,
   MODELS,
   type OutputData,
   type OutputNode,
   useComposerStore,
+  useComposerTool,
+  utf8Bytes,
 } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS, targetTitle } from "./kinds";
 import { DeleteNodeButton, useDraft } from "./nodeParts";
@@ -34,6 +38,7 @@ export const BlockNodeView = memo(function BlockNodeView({
   const on = !data.disabled;
   const Icon = KIND_ICON[kind];
   const color = kindColor(kind);
+  const tool = useComposerTool();
   const t = useT();
 
   return (
@@ -83,7 +88,10 @@ export const BlockNodeView = memo(function BlockNodeView({
               {block.summary}
             </div>
           )}
-          {block?.kind === "agent" && <ModelPicker id={id} data={data} block={block} />}
+          {/* Model aliases are Claude Code's; Codex subagents leave them out. */}
+          {block?.kind === "agent" && tool === "claude" && (
+            <ModelPicker id={id} data={data} block={block} />
+          )}
           {block?.kind === "hook" && <HookFields id={id} data={data} block={block} />}
         </div>
         {!on && <p className="mt-1.5 text-fs-11 text-text-subtle">{t("composer.node.off")}</p>}
@@ -148,9 +156,12 @@ function ModelPicker({ id, data, block }: { id: string; data: BlockData; block: 
 /** Hooks: when it runs (event, matcher) and the command it runs. */
 function HookFields({ id, data, block }: { id: string; data: BlockData; block: Block }) {
   const setBlockData = useComposerStore((s) => s.setBlockData);
+  const tool = useComposerTool();
   const t = useT();
   const event = data.event ?? block.event ?? "";
-  const events = HOOK_EVENTS.includes(event) || !event ? HOOK_EVENTS : [event, ...HOOK_EVENTS];
+  const offered = hookEvents(tool);
+  // An event the tool doesn't have stays selectable so the warning makes sense.
+  const events = offered.includes(event) || !event ? offered : [event, ...offered];
   const usesMatcher = !EVENTS_WITHOUT_MATCHER.has(event);
   const matcher = useDraft(data.matcher ?? block.matcher ?? "", (next) =>
     setBlockData(id, { matcher: next }),
@@ -180,7 +191,9 @@ function HookFields({ id, data, block }: { id: string; data: BlockData; block: B
           <input
             {...matcher}
             onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-            placeholder={t("composer.hook.matcherHint")}
+            placeholder={t(
+              tool === "claude" ? "composer.hook.matcherHint" : "composer.hook.matcherHintAny",
+            )}
             spellCheck={false}
             className={`${fieldClass} flex-1 font-mono`}
           />
@@ -238,6 +251,7 @@ export const OutputNodeView = memo(function OutputNodeView({
   const fileCount = useComposerStore((s) => s.compiled?.files.filter((f) => f.node === id).length);
   const setScope = useComposerStore((s) => s.setScope);
   const reorder = useComposerStore((s) => s.reorder);
+  const tool = useComposerTool();
   const { deleteElements } = useReactFlow();
   const t = useT();
 
@@ -245,9 +259,23 @@ export const OutputNodeView = memo(function OutputNodeView({
   const meta = TARGETS.find((m) => m.target === data.target) ?? TARGETS[0];
   const Icon = meta.icon;
   const inputs = doc ? inputsOf(doc, id) : [];
-  const isClaudeMd = data.target === "claudeMd";
-  const lines = isClaudeMd ? (file?.lines ?? 0) : 0;
-  const over = lines > CLAUDE_MD_LINE_BUDGET;
+  const isInstructions = data.target === "instructions";
+  // Claude Code: CLAUDE.md is followed better under a line budget. Codex:
+  // AGENTS.md is cut after a byte limit.
+  const budget =
+    tool === "codex"
+      ? {
+          used: isInstructions && file ? utf8Bytes(file.content) : 0,
+          max: AGENTS_MD_BYTE_LIMIT,
+          warnAt: AGENTS_MD_BYTE_BUDGET,
+        }
+      : {
+          used: isInstructions ? (file?.lines ?? 0) : 0,
+          max: CLAUDE_MD_LINE_BUDGET,
+          warnAt: CLAUDE_MD_LINE_BUDGET,
+        };
+  const over = budget.used > budget.warnAt;
+  const kib = (bytes: number) => (bytes / 1024).toFixed(1).replace(/\.0$/, "");
 
   const titleOf = (nodeId: string) => {
     const node = doc?.nodes.find((n) => n.id === nodeId);
@@ -285,14 +313,16 @@ export const OutputNodeView = memo(function OutputNodeView({
           <div className="truncate font-mono text-fs-13 font-semibold">
             {data.target === "custom" && !data.path?.trim()
               ? t("composer.target.custom")
-              : targetTitle(data.target, personal, data.path)}
+              : targetTitle(data.target, personal, tool, data.path)}
           </div>
           <div className="text-fs-11 text-text-subtle">
             {t("composer.node.accepts", {
               kinds:
                 data.target === "plans"
                   ? t("composer.plan.main")
-                  : ACCEPTS[data.target].map((k) => t(KIND_LABEL[k])).join(" · "),
+                  : accepts(data.target, tool)
+                      .map((k) => t(KIND_LABEL[k]))
+                      .join(" · "),
             })}
           </div>
         </div>
@@ -336,7 +366,7 @@ export const OutputNodeView = memo(function OutputNodeView({
         <OrderedInputs
           ids={inputs}
           titleOf={titleOf}
-          reorderable={isClaudeMd || data.target === "plans"}
+          reorderable={isInstructions || data.target === "plans"}
           onReorder={(from, to) => reorder(id, from, to)}
           onDisconnect={(source) => {
             const edges = (doc?.edges ?? [])
@@ -348,16 +378,18 @@ export const OutputNodeView = memo(function OutputNodeView({
       )}
 
       <div className="flex items-center gap-2 border-t border-border px-3.5 py-2 text-fs-11 text-text-muted">
-        {isClaudeMd ? (
+        {isInstructions ? (
           <>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunken">
               <div
                 className={`h-full rounded-full ${over ? "bg-danger" : "bg-accent"}`}
-                style={{ width: `${Math.min(100, (lines / CLAUDE_MD_LINE_BUDGET) * 100)}%` }}
+                style={{ width: `${Math.min(100, (budget.used / budget.max) * 100)}%` }}
               />
             </div>
             <span className={over ? "font-medium text-danger" : ""}>
-              {t("composer.node.lineBudget", { n: lines, max: CLAUDE_MD_LINE_BUDGET })}
+              {tool === "codex"
+                ? t("composer.node.byteBudget", { n: kib(budget.used), max: kib(budget.max) })
+                : t("composer.node.lineBudget", { n: budget.used, max: budget.max })}
             </span>
           </>
         ) : (
@@ -368,7 +400,7 @@ export const OutputNodeView = memo(function OutputNodeView({
   );
 });
 
-/** The output's connected blocks; CLAUDE.md order can be changed by dragging. */
+/** The output's connected blocks; the instructions' order can be changed by dragging. */
 function OrderedInputs({
   ids,
   titleOf,

@@ -11,9 +11,12 @@ import {
   type BlockKind,
   originUrl,
   type Target,
+  targetAvailable,
   useComposerStore,
+  useComposerTool,
 } from "../../store/composer";
-import { KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
+import { TOOLS, type ToolId } from "../../tools";
+import { hooksFile, instructionsLabel, KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
 import { isLarge, LargeBlockDialog, largeWarningOff } from "./LargeBlockDialog";
 import { dropIndex, PLAN_ENTRIES, type PlanEntry, setPlanDrop } from "./plans";
 
@@ -66,6 +69,7 @@ export function Palette() {
     else addToCanvas(block.id, at);
   };
   const addOutput = useComposerStore((s) => s.addOutput);
+  const tool = useComposerTool();
   const refreshExternal = useComposerStore((s) => s.refreshExternal);
   const t = useT();
   const [refreshing, setRefreshing] = useState(false);
@@ -365,6 +369,7 @@ export function Palette() {
                     {opened === block.id && (
                       <BlockDetail
                         block={block}
+                        tool={tool}
                         onAdd={() => addBlock(block, place.nearCenter())}
                       />
                     )}
@@ -377,21 +382,29 @@ export function Palette() {
       </div>
 
       <div className="border-t border-border p-3">
-        <h3 className="mb-1.5 px-1 text-xs font-semibold text-text-muted">
+        <h3
+          className="mb-1.5 flex items-baseline gap-1.5 px-1 text-xs font-semibold text-text-muted"
+          title={t("composer.palette.toolHint", { tool: TOOLS[tool].name })}
+        >
           {t("composer.palette.addOutput")}
+          <span className="ml-auto truncate font-normal text-text-subtle">
+            {t("composer.palette.forTool", { tool: TOOLS[tool].name })}
+          </span>
         </h3>
         <div className="grid grid-cols-2 gap-1.5">
-          {TARGETS.map(({ target, label, icon: Icon }) => (
-            <button
-              key={target}
-              type="button"
-              onClick={() => addOutputNode(target)}
-              className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-border-strong"
-            >
-              <Icon size={13} className="text-text-muted" />
-              {t(label)}
-            </button>
-          ))}
+          {TARGETS.filter((m) => targetAvailable(m.target, tool)).map(
+            ({ target, label, icon: Icon }) => (
+              <button
+                key={target}
+                type="button"
+                onClick={() => addOutputNode(target)}
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-raised px-2 py-1.5 text-xs hover:border-border-strong"
+              >
+                <Icon size={13} className="text-text-muted" />
+                {label ? t(label) : instructionsLabel(tool)}
+              </button>
+            ),
+          )}
         </div>
       </div>
 
@@ -436,13 +449,24 @@ const openLink = (url: string) => {
 };
 
 /** A block's details: what it does, where it goes, where it's from, and its text. */
-function BlockDetail({ block, onAdd }: { block: Block; onAdd: () => void }) {
+function BlockDetail({ block, tool, onAdd }: { block: Block; tool: ToolId; onAdd: () => void }) {
   const t = useT();
   const [showText, setShowText] = useState(false);
+  const info = TOOLS[tool];
+  const dirs: Record<BlockKind, string> = {
+    instruction: info.instructions.team,
+    rule: info.rulesDir ?? info.instructions.team,
+    skill: info.skillsDir,
+    agent: info.agentsDir,
+    hook: hooksFile(tool, false),
+  };
+  const params = { tool: info.name, file: info.instructions.team, dir: dirs[block.kind] };
   const where =
-    block.kind === "rule" && block.paths.length
-      ? t("composer.detail.where.ruleFor", { paths: block.paths.join(", ") })
-      : t(KIND_WHERE[block.kind]);
+    block.kind === "rule" && !info.rulesDir
+      ? t("composer.detail.where.ruleNoRules", params)
+      : block.kind === "rule" && block.paths.length
+        ? t("composer.detail.where.ruleFor", { ...params, paths: block.paths.join(", ") })
+        : t(KIND_WHERE[block.kind], params);
   return (
     <div className="mx-1 mt-1 mb-2 space-y-2 rounded-lg border border-border bg-surface-raised p-2.5 text-xs">
       {block.detail && <p className="leading-relaxed text-text">{block.detail}</p>}

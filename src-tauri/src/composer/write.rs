@@ -1,15 +1,17 @@
 //! Writes compiled files into a project without clobbering the user's work.
 //!
-//! - Section files (CLAUDE.md): only the text between our markers is ours.
-//!   The rest of the file is left as is; without markers the section is
-//!   appended. Claude Code strips block-level HTML comments, so the markers
-//!   cost no context.
+//! - Section files (CLAUDE.md, AGENTS.md): only the text between our markers
+//!   is ours. The rest of the file is left as is; without markers the section
+//!   is appended. Claude Code strips block-level HTML comments, so there the
+//!   markers cost no context; Codex reads them as text (two short lines).
 //! - Whole files (rules, skills, agents): written when new, or when the file
 //!   still has the content we last wrote.
 //!
-//! - Hooks (settings.json): the file is read, the hooks we wrote last time
-//!   are taken out, ours are added, and every other key is kept. Since hooks
-//!   run commands, each change needs the user's confirmation.
+//! - Hooks (Claude Code settings.json, Codex `.codex/hooks.json`): the file is
+//!   read, the hooks we wrote last time (kept in our records, never in the
+//!   file) are taken out, ours are added, and every other key is kept. Codex
+//!   rejects a hooks.json with unknown top-level keys, so none are added.
+//!   Since hooks run commands, each change needs the user's confirmation.
 //!
 //! Anything the user changed since our last write, or a file we did not write,
 //! is only overwritten after the user confirms that path.
@@ -22,8 +24,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::catalog::normalize;
+use super::compile::tool_name;
 use super::compile::{OutFile, Target, add_hook, import_tokens};
 use crate::library::ops;
+use crate::tools::ToolId;
 
 pub const BEGIN: &str = "<!-- ai-management:begin (managed by AI Management; edits here are replaced on the next write) -->";
 pub const END: &str = "<!-- ai-management:end -->";
@@ -183,8 +187,6 @@ fn record<'a>(records: &'a [Written], project: &str, path: &str) -> Option<&'a W
         .find(|r| r.project == project && r.path == path)
 }
 
-/// Claude Code reads AGENTS.md only while no CLAUDE.md-family file exists, so
-/// creating the first one would silently stop it loading. Import it instead.
 /// The project a plan is made for: a local folder, or a GitHub branch read
 /// through the API.
 pub trait Project {
@@ -213,6 +215,8 @@ impl Project for Local<'_> {
     }
 }
 
+/// Claude Code reads AGENTS.md only while no CLAUDE.md-family file exists, so
+/// creating the first one would silently stop it loading. Import it instead.
 fn keeps_agents_md(project: &dyn Project) -> bool {
     project.is_file("AGENTS.md")
         && !["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"]
@@ -229,13 +233,26 @@ fn bare_imports(project: &dyn Project, content: &str) -> Vec<String> {
         .collect()
 }
 
-/// What writing `file` into `root` would do.
-pub fn plan_file(root: &Path, project: &str, file: &OutFile, records: &[Written]) -> PlanItem {
-    plan(&Local(root), project, file, records)
+/// What writing `file` (compiled for `tool`) into `root` would do.
+pub fn plan_file(
+    root: &Path,
+    project: &str,
+    file: &OutFile,
+    records: &[Written],
+    tool: ToolId,
+) -> PlanItem {
+    plan(&Local(root), project, file, records, tool)
 }
 
-/// What writing `file` into `target` would do; `project` keys the records.
-pub fn plan(target: &dyn Project, project: &str, file: &OutFile, records: &[Written]) -> PlanItem {
+/// What writing `file` (compiled for `tool`) into `target` would do;
+/// `project` keys the records.
+pub fn plan(
+    target: &dyn Project,
+    project: &str,
+    file: &OutFile,
+    records: &[Written],
+    tool: ToolId,
+) -> PlanItem {
     let content = normalize(&file.content);
     let item = |status, old: Option<String>, new: String, note: Option<String>| PlanItem {
         path: file.path.clone(),
@@ -270,27 +287,45 @@ pub fn plan(target: &dyn Project, project: &str, file: &OutFile, records: &[Writ
 
     if file.target == Target::Hooks {
         let previous = last.and_then(|r| r.hooks.as_ref());
-        return match merge_hooks(existing.as_deref(), previous, &file.content) {
+        return match merge_hooks(existing.as_deref(), previous, &file.content, tool) {
             Err(reason) => item(Status::Blocked(reason), existing, String::new(), None),
             Ok(None) => {
                 let text = existing.unwrap_or_default();
                 item(Status::Unchanged, Some(text.clone()), text, None)
             }
-            Ok(Some(new)) => item(
-                Status::Commands,
-                existing,
-                new,
-                Some(crate::tr!(
-                    "Claude Code가 이 명령을 직접 실행해요. 내용을 확인해 주세요",
-                    "Claude Code runs these commands by itself. Check them first"
-                )),
-            ),
+            Ok(Some(new)) => {
+                let mut notes = vec![crate::tr!(
+                    "{}가 이 명령을 직접 실행해요. 내용을 확인해 주세요",
+                    "{} runs these commands by itself. Check them first",
+                    tool_name(tool)
+                )];
+                if tool == ToolId::Codex {
+                    notes.push(crate::tr!(
+                        "Codex는 새로 넣거나 바뀐 hook을 /hooks에서 신뢰한 뒤에야 실행해요",
+                        "Codex runs new or changed hooks only after you trust them in /hooks"
+                    ));
+                }
+                item(Status::Commands, existing, new, join_notes(notes))
+            }
         };
     }
 
     if file.section {
         let mut notes = Vec::new();
-        let imports = bare_imports(target, &content);
+        // Only Claude Code reads `@path` as an import.
+        let imports = match tool {
+            ToolId::Claude => bare_imports(target, &content),
+            ToolId::Codex => Vec::new(),
+        };
+        if tool == ToolId::Codex
+            && file.path == tool.instructions_file(file.personal)
+            && target.is_file("AGENTS.override.md")
+        {
+            notes.push(crate::tr!(
+                "AGENTS.override.md가 있어서 Codex는 이 폴더의 AGENTS.md를 읽지 않아요",
+                "There's an AGENTS.override.md, so Codex doesn't read the AGENTS.md in this folder"
+            ));
+        }
         if !imports.is_empty() {
             notes.push(crate::tr!(
                 "@{}는 Claude Code가 그 파일을 매번 불러와요. 의도한 게 아니면 백틱으로 감싸 주세요",
@@ -303,7 +338,10 @@ pub fn plan(target: &dyn Project, project: &str, file: &OutFile, records: &[Writ
             Err(reason) => return item(Status::Blocked(reason), existing, String::new(), None),
         };
         let Some(text) = existing else {
-            if keeps_agents_md(target) {
+            if tool == ToolId::Claude
+                && file.target == Target::Instructions
+                && keeps_agents_md(target)
+            {
                 new = format!("@AGENTS.md\n\n{new}");
                 notes.push(crate::tr!(
                     "AGENTS.md가 계속 읽히도록 맨 위에 @AGENTS.md를 넣어요",
@@ -345,12 +383,18 @@ pub fn plan(target: &dyn Project, project: &str, file: &OutFile, records: &[Writ
     item(status, Some(text), content, None)
 }
 
-/// The settings file with `ours` in place of `previous`, or `None` when
-/// nothing would change. Other keys and the user's own hooks are kept.
+/// Top-level keys Codex accepts in `hooks.json`; any other key makes it
+/// reject the whole file.
+const CODEX_HOOKS_KEYS: &[&str] = &["description", "hooks"];
+
+/// The settings file (or Codex hooks.json) with `ours` in place of
+/// `previous`, or `None` when nothing would change. Other keys and the user's
+/// own hooks are kept.
 fn merge_hooks(
     existing: Option<&str>,
     previous: Option<&serde_json::Value>,
     ours: &str,
+    tool: ToolId,
 ) -> Result<Option<String>, String> {
     use serde_json::{Map, Value};
     let not_json = || {
@@ -368,6 +412,20 @@ fn merge_hooks(
     let Value::Object(mut settings) = base.clone() else {
         return Err(not_json());
     };
+    if tool == ToolId::Codex {
+        let unknown: Vec<&str> = settings
+            .keys()
+            .map(String::as_str)
+            .filter(|k| !CODEX_HOOKS_KEYS.contains(k))
+            .collect();
+        if !unknown.is_empty() {
+            return Err(crate::tr!(
+                "hooks.json에 Codex가 모르는 최상위 키({})가 있어서 Codex가 이 파일을 거부해요. 그 키를 지운 뒤 다시 써 주세요",
+                "hooks.json has top-level keys Codex doesn't know ({}), so Codex rejects the file. Remove them and write again",
+                unknown.join(", ")
+            ));
+        }
+    }
     let mut hooks = match settings.remove("hooks") {
         None => Map::new(),
         Some(Value::Object(h)) => h,
@@ -501,7 +559,7 @@ mod tests {
             section,
             personal: false,
             target: if section {
-                Target::ClaudeMd
+                Target::Instructions
             } else {
                 Target::Rules
             },
@@ -511,8 +569,12 @@ mod tests {
         }
     }
 
+    fn plan_claude(root: &Path, project: &str, f: &OutFile, records: &[Written]) -> PlanItem {
+        plan_file(root, project, f, records, ToolId::Claude)
+    }
+
     fn write(root: &Path, f: &OutFile, records: &mut Vec<Written>) -> PlanItem {
-        let item = plan_file(root, "p", f, records);
+        let item = plan_claude(root, "p", f, records);
         let w = write_file(root, "p", f, &item).unwrap();
         sync_exclude(root, f).unwrap();
         records.retain(|r| r.path != w.path);
@@ -538,13 +600,16 @@ mod tests {
         // User adds text after the section; a new body replaces only the section.
         fs::write(root.join("CLAUDE.md"), format!("{text}\nAfter.\n")).unwrap();
         let f = file("CLAUDE.md", "## B", true);
-        assert_eq!(plan_file(root, "p", &f, &records).status, Status::Update);
+        assert_eq!(plan_claude(root, "p", &f, &records).status, Status::Update);
         write(root, &f, &mut records);
         assert_eq!(
             fs::read_to_string(root.join("CLAUDE.md")).unwrap(),
             format!("# My project\nKeep me.\n\n{BEGIN}\n## B\n{END}\n\nAfter.\n")
         );
-        assert_eq!(plan_file(root, "p", &f, &records).status, Status::Unchanged);
+        assert_eq!(
+            plan_claude(root, "p", &f, &records).status,
+            Status::Unchanged
+        );
     }
 
     #[test]
@@ -558,7 +623,7 @@ mod tests {
             .replace("## A", "## A (mine)");
         fs::write(root.join("CLAUDE.md"), edited).unwrap();
         assert_eq!(
-            plan_file(root, "p", &file("CLAUDE.md", "## C", true), &records).status,
+            plan_claude(root, "p", &file("CLAUDE.md", "## C", true), &records).status,
             Status::Modified
         );
     }
@@ -567,7 +632,7 @@ mod tests {
     fn broken_markers_block_the_write() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("CLAUDE.md"), format!("{BEGIN}\nno end\n")).unwrap();
-        let item = plan_file(tmp.path(), "p", &file("CLAUDE.md", "x", true), &[]);
+        let item = plan_claude(tmp.path(), "p", &file("CLAUDE.md", "x", true), &[]);
         assert!(matches!(item.status, Status::Blocked(_)));
     }
 
@@ -575,7 +640,7 @@ mod tests {
     fn crlf_files_keep_their_line_endings() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("CLAUDE.md"), "Top\r\n").unwrap();
-        let item = plan_file(tmp.path(), "p", &file("CLAUDE.md", "a\nb", true), &[]);
+        let item = plan_claude(tmp.path(), "p", &file("CLAUDE.md", "a\nb", true), &[]);
         assert_eq!(
             item.new,
             format!("Top\r\n\r\n{BEGIN}\r\na\r\nb\r\n{END}\r\n")
@@ -591,14 +656,17 @@ mod tests {
         assert_eq!(write(root, &f, &mut records).status, Status::New);
 
         let f2 = file(".claude/rules/ts.md", "# TS 2\n", false);
-        assert_eq!(plan_file(root, "p", &f2, &records).status, Status::Update);
+        assert_eq!(plan_claude(root, "p", &f2, &records).status, Status::Update);
 
         fs::write(root.join(".claude/rules/ts.md"), "# edited\n").unwrap();
-        assert_eq!(plan_file(root, "p", &f2, &records).status, Status::Modified);
+        assert_eq!(
+            plan_claude(root, "p", &f2, &records).status,
+            Status::Modified
+        );
 
         let other = file(".claude/rules/go.md", "# Go\n", false);
         fs::write(root.join(".claude/rules/go.md"), "# theirs\n").unwrap();
-        let item = plan_file(root, "p", &other, &records);
+        let item = plan_claude(root, "p", &other, &records);
         assert_eq!(item.status, Status::Exists);
         assert!(item.status.needs_confirm());
     }
@@ -611,7 +679,10 @@ mod tests {
         // Content compiled on a CRLF checkout.
         let f = file("CLAUDE.md", "## A\r\n- one", true);
         write(root, &f, &mut records);
-        assert_eq!(plan_file(root, "p", &f, &records).status, Status::Unchanged);
+        assert_eq!(
+            plan_claude(root, "p", &f, &records).status,
+            Status::Unchanged
+        );
         // An editor re-saves the file with a BOM and CRLF.
         let text = fs::read_to_string(root.join("CLAUDE.md")).unwrap();
         fs::write(
@@ -619,14 +690,20 @@ mod tests {
             format!("\u{feff}{}", text.replace('\n', "\r\n")),
         )
         .unwrap();
-        assert_eq!(plan_file(root, "p", &f, &records).status, Status::Unchanged);
+        assert_eq!(
+            plan_claude(root, "p", &f, &records).status,
+            Status::Unchanged
+        );
         let f2 = file("CLAUDE.md", "## B", true);
-        assert_eq!(plan_file(root, "p", &f2, &records).status, Status::Update);
+        assert_eq!(plan_claude(root, "p", &f2, &records).status, Status::Update);
 
         let r = file(".claude/rules/a.md", "# A\n", false);
         write(root, &r, &mut records);
         fs::write(root.join(".claude/rules/a.md"), "# A\r\n").unwrap();
-        assert_eq!(plan_file(root, "p", &r, &records).status, Status::Unchanged);
+        assert_eq!(
+            plan_claude(root, "p", &r, &records).status,
+            Status::Unchanged
+        );
     }
 
     #[test]
@@ -634,11 +711,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         fs::write(root.join("AGENTS.md"), "# Shared").unwrap();
-        let item = plan_file(root, "p", &file("CLAUDE.local.md", "## Me", true), &[]);
+        let item = plan_claude(root, "p", &file("CLAUDE.local.md", "## Me", true), &[]);
         assert!(item.new.starts_with("@AGENTS.md\n\n"), "{}", item.new);
         assert!(item.note.is_some());
         fs::write(root.join("CLAUDE.md"), "# Team").unwrap();
-        let item = plan_file(root, "p", &file("CLAUDE.local.md", "## Me", true), &[]);
+        let item = plan_claude(root, "p", &file("CLAUDE.local.md", "## Me", true), &[]);
         assert!(!item.new.contains("@AGENTS.md"));
     }
 
@@ -646,7 +723,7 @@ mod tests {
     fn notes_bare_imports_of_existing_files() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("Makefile"), "all:").unwrap();
-        let item = plan_file(
+        let item = plan_claude(
             tmp.path(),
             "p",
             &file("CLAUDE.md", "Use @Makefile and @nobody", true),
@@ -707,7 +784,7 @@ mod tests {
             serde_json::json!([{"type": "command", "command": "mine"}, {"type": "command", "command": "ours 1"}])
         );
         assert_eq!(
-            plan_file(root, "p", &hooks("ours 1"), &records).status,
+            plan_claude(root, "p", &hooks("ours 1"), &records).status,
             Status::Unchanged
         );
 
@@ -721,7 +798,7 @@ mod tests {
 
         fs::write(&path, "{ not json").unwrap();
         assert!(matches!(
-            plan_file(root, "p", &hooks("ours 3"), &records).status,
+            plan_claude(root, "p", &hooks("ours 3"), &records).status,
             Status::Blocked(_)
         ));
     }
@@ -736,5 +813,143 @@ mod tests {
         write(root, &f, &mut Vec::new());
         let exclude = fs::read_to_string(root.join(".git/info/exclude")).unwrap();
         assert!(exclude.contains("/CLAUDE.local.md\n"), "{exclude}");
+    }
+
+    #[test]
+    fn codex_agents_md_notes_an_override_and_never_imports_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("AGENTS.md"), "# Shared").unwrap();
+        fs::write(root.join("Makefile"), "all:").unwrap();
+        let f = file("AGENTS.md", "## A, see @Makefile", true);
+        let item = plan_file(root, "p", &f, &[], ToolId::Codex);
+        assert!(!item.new.contains("@AGENTS.md\n"), "{}", item.new);
+        assert!(item.new.starts_with("# Shared\n\n"), "{}", item.new);
+        // Codex doesn't import `@` paths, so no note about them either.
+        assert!(item.note.is_none(), "{:?}", item.note);
+
+        fs::write(root.join("AGENTS.override.md"), "# Mine").unwrap();
+        let item = plan_file(root, "p", &f, &[], ToolId::Codex);
+        assert!(
+            item.note.as_deref().unwrap().contains("AGENTS.override.md"),
+            "{:?}",
+            item.note
+        );
+        // Claude Code does not read AGENTS.override.md.
+        let item = plan_claude(root, "p", &file("CLAUDE.md", "## A", true), &[]);
+        assert!(!item.note.unwrap_or_default().contains("override"));
+    }
+
+    struct Fake(Vec<(&'static str, &'static str)>);
+
+    impl Project for Fake {
+        fn read(&self, path: &str) -> Result<Option<String>, String> {
+            Ok(self
+                .0
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, t)| t.to_string()))
+        }
+        fn is_file(&self, path: &str) -> bool {
+            self.0.iter().any(|(p, _)| *p == path)
+        }
+        fn is_tracked(&self, path: &str) -> bool {
+            self.is_file(path)
+        }
+    }
+
+    #[test]
+    fn personal_codex_agents_md_is_blocked_when_tracked_and_excluded_otherwise() {
+        let mut f = file("AGENTS.md", "## Me", true);
+        f.personal = true;
+        let tracked = Fake(vec![("AGENTS.md", "# Team\n")]);
+        let item = plan(&tracked, "p", &f, &[], ToolId::Codex);
+        assert!(
+            matches!(item.status, Status::Blocked(_)),
+            "{:?}",
+            item.status
+        );
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join(".git").join("info")).unwrap();
+        let item = plan_file(root, "p", &f, &[], ToolId::Codex);
+        assert_eq!(item.status, Status::New);
+        write_file(root, "p", &f, &item).unwrap();
+        sync_exclude(root, &f).unwrap();
+        let exclude = fs::read_to_string(root.join(".git/info/exclude")).unwrap();
+        assert!(exclude.contains("/AGENTS.md\n"), "{exclude}");
+    }
+
+    fn codex_hooks(cmd: &str) -> OutFile {
+        OutFile {
+            target: Target::Hooks,
+            ..file(
+                ".codex/hooks.json",
+                &format!(
+                    r#"{{"hooks": {{"Stop": [{{"hooks": [{{"type": "command", "command": "{cmd}"}}]}}]}}}}"#
+                ),
+                false,
+            )
+        }
+    }
+
+    #[test]
+    fn codex_hooks_json_keeps_others_hooks_and_adds_no_keys() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join(".codex")).unwrap();
+        let path = root.join(".codex/hooks.json");
+        fs::write(
+            &path,
+            r#"{"description": "team hooks", "hooks": {"PreToolUse": [{"matcher": "shell", "hooks": [{"type": "command", "command": "theirs"}]}]}}"#,
+        )
+        .unwrap();
+        let mut records = Vec::new();
+        let item = plan_file(root, "p", &codex_hooks("ours 1"), &records, ToolId::Codex);
+        assert_eq!(item.status, Status::Commands);
+        assert!(
+            item.note.as_deref().unwrap().contains("/hooks"),
+            "{:?}",
+            item.note
+        );
+        let w = write_file(root, "p", &codex_hooks("ours 1"), &item).unwrap();
+        // What we wrote is remembered in our records, not in the file.
+        assert!(w.hooks.is_some());
+        records.push(w);
+
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(keys, ["description", "hooks"]);
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "theirs");
+        assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["command"], "ours 1");
+
+        // The next write replaces only ours.
+        let item = plan_file(root, "p", &codex_hooks("ours 2"), &records, ToolId::Codex);
+        let v: serde_json::Value = serde_json::from_str(&item.new).unwrap();
+        assert_eq!(v["hooks"]["PreToolUse"][0]["hooks"][0]["command"], "theirs");
+        assert_eq!(
+            v["hooks"]["Stop"][0]["hooks"],
+            serde_json::json!([{"type": "command", "command": "ours 2"}])
+        );
+
+        // A key Codex doesn't know: it rejects the file, so we don't touch it.
+        fs::write(&path, r#"{"hooks": {}, "model": "x"}"#).unwrap();
+        let item = plan_file(root, "p", &codex_hooks("ours 2"), &records, ToolId::Codex);
+        match item.status {
+            Status::Blocked(reason) => assert!(reason.contains("model"), "{reason}"),
+            s => panic!("{s:?}"),
+        }
+        // Claude Code's settings.json may have any keys.
+        assert!(
+            merge_hooks(
+                Some(r#"{"model": "x"}"#),
+                None,
+                &codex_hooks("a").content,
+                ToolId::Claude
+            )
+            .is_ok()
+        );
     }
 }

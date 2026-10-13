@@ -1,17 +1,22 @@
-//! Turns a composer graph into the files it describes. Pure: no IO.
+//! Turns a composer graph into the files it describes, for one tool (the
+//! project's: Claude Code or Codex). Pure: no IO. Graphs themselves are
+//! tool-independent; the same graph compiles for either.
 //!
 //! Output nodes decide where blocks go:
-//! - CLAUDE.md (team) / CLAUDE.local.md (personal): a managed section holding
-//!   the connected instruction blocks in the node's order
-//! - rules: one `.claude/rules/<name>.md` per block
-//! - skills: `.claude/skills/<name>/SKILL.md`
-//! - agents: `.claude/agents/<name>.md`
+//! - instructions: a managed section holding the connected blocks in the
+//!   node's order, in CLAUDE.md (team) / CLAUDE.local.md (personal), or for
+//!   Codex in AGENTS.md (personal = kept out of git). Codex has no rule files,
+//!   so there instructions also take rule blocks.
+//! - rules: one `.claude/rules/<name>.md` per block (Claude Code only)
+//! - skills: `<skills dir>/<name>/SKILL.md` (`.claude/skills`, `.agents/skills`)
+//! - agents: `.claude/agents/<name>.md`, or Codex `.codex/agents/<name>.toml`
 //! - custom: a managed section in a file at a path the user types, holding
 //!   the user's own text and the connected instruction and rule blocks
 //! - hooks: the `hooks` of `.claude/settings.json` (or `settings.local.json`),
-//!   merged into the file by `write`
+//!   or Codex `.codex/hooks.json` (team only), merged into the file by `write`
 //! - plans: a managed section in `PLANS.md` (`PLANS.local.md`) holding the
-//!   connected plan nodes (`plans`), and a line in CLAUDE.md pointing to it
+//!   connected plan nodes (`plans`), and a line in the instructions file
+//!   pointing to it
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,9 +25,18 @@ use serde::{Deserialize, Serialize};
 use super::catalog::{Block, BlockKind, normalize};
 use super::plans::{self, Plan, PlanItem};
 use crate::library::{Mode, check_id};
+use crate::tools::{ToolId, frontmatter};
 
 /// CLAUDE.md guidance: longer files are followed less reliably.
 pub const CLAUDE_MD_LINE_BUDGET: usize = 200;
+
+/// Codex reads at most this much project AGENTS.md text in total
+/// (`project_doc_max_bytes`) and cuts the rest.
+pub const AGENTS_MD_BYTE_LIMIT: usize = 32 * 1024;
+
+/// Warn a little before the limit: the user's own text around the section and
+/// AGENTS.md files in subfolders count too.
+pub const AGENTS_MD_BYTE_BUDGET: usize = 28 * 1024;
 
 /// Model aliases a subagent's `model` can be set to. Claude Code resolves
 /// each to the newest model of that family.
@@ -64,6 +78,38 @@ pub const HOOK_EVENTS: &[&str] = &[
     "Elicitation",
     "ElicitationResult",
 ];
+
+/// Codex hook events (`codex-rs` hooks, 2026-10; docs/research.md §13).
+pub const CODEX_HOOK_EVENTS: &[&str] = &[
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "Interrupt",
+];
+
+/// The hook events `tool` knows.
+pub fn hook_events(tool: ToolId) -> &'static [&'static str] {
+    match tool {
+        ToolId::Claude => HOOK_EVENTS,
+        ToolId::Codex => CODEX_HOOK_EVENTS,
+    }
+}
+
+/// Product name for messages; not translated.
+pub fn tool_name(tool: ToolId) -> &'static str {
+    match tool {
+        ToolId::Claude => "Claude Code",
+        ToolId::Codex => "Codex",
+    }
+}
 
 /// Events whose `matcher` Claude Code ignores; it is left out for them.
 const EVENTS_WITHOUT_MATCHER: &[&str] = &[
@@ -140,7 +186,10 @@ pub struct Edge {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Target {
-    ClaudeMd,
+    /// The always-loaded instructions file (CLAUDE.md, AGENTS.md). Saved as
+    /// `claudeMd` before other tools were supported.
+    #[serde(alias = "claudeMd")]
+    Instructions,
     Rules,
     Skills,
     Agents,
@@ -150,12 +199,21 @@ pub enum Target {
 }
 
 impl Target {
-    pub fn accepts(self, kind: BlockKind) -> bool {
+    /// Whether the output exists for `tool` (Codex has no rule files).
+    pub fn available(self, tool: ToolId) -> bool {
+        self != Target::Rules || tool.has_rules()
+    }
+
+    pub fn accepts(self, tool: ToolId, kind: BlockKind) -> bool {
         match self {
-            Target::ClaudeMd => kind == BlockKind::Instruction,
-            Target::Rules | Target::Custom => {
-                matches!(kind, BlockKind::Rule | BlockKind::Instruction)
+            // Without rule files, rules become always-on instructions.
+            Target::Instructions => {
+                kind == BlockKind::Instruction || (!tool.has_rules() && kind == BlockKind::Rule)
             }
+            Target::Rules => {
+                tool.has_rules() && matches!(kind, BlockKind::Rule | BlockKind::Instruction)
+            }
+            Target::Custom => matches!(kind, BlockKind::Rule | BlockKind::Instruction),
             Target::Skills => kind == BlockKind::Skill,
             Target::Agents => kind == BlockKind::Agent,
             Target::Hooks => kind == BlockKind::Hook,
@@ -202,12 +260,20 @@ pub fn custom_path(raw: &str) -> Result<String, String> {
     Ok(path)
 }
 
-/// The text of section outputs (CLAUDE.md, custom): blocks in order, third-
-/// party ones credited in an HTML comment (which Claude Code strips).
-fn section_text(resolved: &[(&str, &Block, String)]) -> String {
+/// The text of section outputs (instructions, custom): blocks in order,
+/// third-party ones credited in an HTML comment (which Claude Code strips),
+/// or with `plain_credit` in an italic line (Codex keeps HTML comments, so
+/// there a comment would cost as much context and read worse).
+fn section_text(resolved: &[(&str, &Block, String)], plain_credit: bool) -> String {
     resolved
         .iter()
         .map(|(_, block, body)| match &block.origin {
+            Some(o) if plain_credit => format!(
+                "*Source: {} ({}, {})*\n\n{body}",
+                o.url(),
+                o.license,
+                o.copyright
+            ),
             Some(o) => format!(
                 "<!-- Source: {} ({}, {}) -->\n{body}",
                 o.url(),
@@ -247,14 +313,19 @@ pub struct Warning {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Compiled {
+    /// The tool the files are laid out for.
+    pub tool: ToolId,
     pub files: Vec<OutFile>,
     pub warnings: Vec<Warning>,
 }
 
-pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
+pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
     let blocks: HashMap<&str, &Block> = catalog.iter().map(|b| (b.id.as_str(), b)).collect();
     let nodes: HashMap<&str, &Node> = doc.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-    let mut out = Compiled::default();
+    let mut out = Compiled {
+        tool,
+        ..Compiled::default()
+    };
     let mut paths = HashSet::new();
 
     let warn = |out: &mut Compiled, node: &str, message: String| {
@@ -271,6 +342,19 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
         let personal = output.data.scope == Some(Mode::Personal);
         // After the others: steps check which skills and subagents are written.
         if target == Target::Plans {
+            continue;
+        }
+        if !target.available(tool) {
+            warn(
+                &mut out,
+                &output.id,
+                crate::tr!(
+                    "{}에는 규칙 파일이 없어서 이 출력은 아무것도 쓰지 않아요. 블록을 지침({})에 연결해 주세요",
+                    "{} has no rule files, so this output writes nothing. Connect the blocks to the instructions ({}) instead",
+                    tool_name(tool),
+                    tool.instructions_file(false)
+                ),
+            );
             continue;
         }
 
@@ -318,7 +402,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                 );
                 continue;
             };
-            if !target.accepts(block.kind) {
+            if !target.accepts(tool, block.kind) {
                 warn(
                     &mut out,
                     node_id,
@@ -344,13 +428,26 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             }
             let edited = node.data.body.as_deref().map(normalize);
             let body = edited.as_deref().unwrap_or(&block.body).trim();
-            if has_import_like(body) {
+            // Only Claude Code reads `@path` as an import.
+            if tool == ToolId::Claude && has_import_like(body) {
                 warn(
                     &mut out,
                     node_id,
                     crate::tr!(
                         "'{}' 본문의 @경로는 Claude Code가 파일 불러오기로 읽어요. 의도한 게 아니면 `@...`처럼 백틱으로 감싸 주세요",
                         "Claude Code reads @paths in the '{}' text as file imports. If that's not intended, wrap them in backticks like `@...`",
+                        block.display_title()
+                    ),
+                );
+            }
+            if target == Target::Instructions && !block.paths.is_empty() {
+                warn(
+                    &mut out,
+                    node_id,
+                    crate::tr!(
+                        "{}에는 경로별 지침이 없어서 '{}'은(는) 항상 적용돼요",
+                        "{} has no path-scoped instructions, so '{}' always applies",
+                        tool_name(tool),
                         block.display_title()
                     ),
                 );
@@ -371,10 +468,23 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
 
         let mut files = Vec::new();
         match target {
-            Target::ClaudeMd => {
-                let content = section_text(&resolved);
+            Target::Instructions => {
+                let content = section_text(&resolved, tool == ToolId::Codex);
                 let lines = content.lines().count();
-                if lines > CLAUDE_MD_LINE_BUDGET {
+                let bytes = content.len();
+                if tool == ToolId::Codex && bytes > AGENTS_MD_BYTE_BUDGET {
+                    let kib = format!("{:.1}", bytes as f64 / 1024.0);
+                    let limit = AGENTS_MD_BYTE_LIMIT / 1024;
+                    warn(
+                        &mut out,
+                        &output.id,
+                        crate::tr!(
+                            "{kib} KiB예요. Codex는 프로젝트의 AGENTS.md를 모두 합쳐 {limit} KiB까지만 읽고 나머지는 잘라요. 일부를 skill로 옮겨 보세요",
+                            "{kib} KiB. Codex reads at most {limit} KiB of a project's AGENTS.md files in total and cuts the rest. Try moving some of it into skills"
+                        ),
+                    );
+                }
+                if tool == ToolId::Claude && lines > CLAUDE_MD_LINE_BUDGET {
                     warn(
                         &mut out,
                         &output.id,
@@ -384,13 +494,8 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                         ),
                     );
                 }
-                let path = if personal {
-                    "CLAUDE.local.md"
-                } else {
-                    "CLAUDE.md"
-                };
                 files.push(OutFile {
-                    path: path.into(),
+                    path: tool.instructions_file(personal).into(),
                     lines,
                     content,
                     section: true,
@@ -403,7 +508,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             Target::Custom => match custom_path(output.data.path.as_deref().unwrap_or("")) {
                 Err(reason) => warn(&mut out, &output.id, reason),
                 Ok(path) => {
-                    let blocks = section_text(&resolved);
+                    let blocks = section_text(&resolved, false);
                     let content = match &own_text {
                         Some(text) if blocks.is_empty() => text.trim().to_string(),
                         Some(text) => format!("{}\n\n{blocks}", text.trim()),
@@ -421,7 +526,20 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     });
                 }
             },
+            Target::Hooks if tool == ToolId::Codex && personal => {
+                // Codex has no personal hooks file in a project; a git-excluded
+                // `.codex/hooks.json` would clash with the team's one.
+                warn(
+                    &mut out,
+                    &output.id,
+                    crate::tr!(
+                        "Codex에는 프로젝트의 개인용 hook 파일이 없어서 '나만' HOOKS는 쓰지 않아요. '팀'으로 바꾸거나 ~/.codex/hooks.json에 직접 넣어 주세요",
+                        "Codex has no personal hooks file in a project, so a 'Just me' HOOKS output writes nothing. Switch it to 'Team', or add the hooks to ~/.codex/hooks.json yourself"
+                    ),
+                );
+            }
             Target::Hooks => {
+                let events = hook_events(tool);
                 let mut used = Vec::new();
                 let mut hooks = serde_json::Map::new();
                 for (node_id, block, body) in &resolved {
@@ -431,7 +549,21 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                         .or(block.event.as_deref())
                         .unwrap_or("")
                         .trim();
-                    if !HOOK_EVENTS.contains(&event) {
+                    if !events.contains(&event) && HOOK_EVENTS.contains(&event) {
+                        warn(
+                            &mut out,
+                            node_id,
+                            crate::tr!(
+                                "'{}'의 {} 이벤트는 {}에 없어요. 다른 이벤트를 골라 주세요",
+                                "'{}': {} has no {} event. Pick another event",
+                                block.display_title(),
+                                tool_name(tool),
+                                event
+                            ),
+                        );
+                        continue;
+                    }
+                    if !events.contains(&event) {
                         warn(
                             &mut out,
                             node_id,
@@ -467,10 +599,10 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     let content =
                         serde_json::to_string_pretty(&serde_json::json!({ "hooks": hooks }))
                             .unwrap_or_default();
-                    let path = if personal {
-                        ".claude/settings.local.json"
-                    } else {
-                        ".claude/settings.json"
+                    let path = match (tool, personal) {
+                        (ToolId::Codex, _) => ".codex/hooks.json",
+                        (ToolId::Claude, true) => ".claude/settings.local.json",
+                        (ToolId::Claude, false) => ".claude/settings.json",
                     };
                     files.push(OutFile {
                         path: path.into(),
@@ -505,9 +637,32 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                             rule_file(block, body),
                         ),
                         Target::Skills => (
-                            format!(".claude/skills/{}/SKILL.md", block.name),
+                            format!("{}/{}/SKILL.md", tool.skills_dir(), block.name),
                             skill_file(block, body),
                         ),
+                        _ if tool.agents_are_toml() => {
+                            let (content, mut dropped) = agent_toml(block, body);
+                            let chosen = nodes
+                                .get(node_id)
+                                .and_then(|n| n.data.model.as_deref())
+                                .is_some_and(|m| !m.is_empty());
+                            if chosen && !dropped.iter().any(|d| d == "model") {
+                                dropped.push("model".into());
+                            }
+                            if !dropped.is_empty() {
+                                warn(
+                                    &mut out,
+                                    node_id,
+                                    crate::tr!(
+                                        "'{}'의 {} 설정은 Codex subagent에 없어서 빠져요",
+                                        "'{}': {} isn't supported by Codex subagents, so it's left out",
+                                        block.display_title(),
+                                        dropped.join(", ")
+                                    ),
+                                );
+                            }
+                            (tool.agent_file(&block.name), content)
+                        }
                         _ => {
                             let model = nodes
                                 .get(node_id)
@@ -524,7 +679,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                                 );
                             }
                             (
-                                format!(".claude/agents/{}.md", block.name),
+                                tool.agent_file(&block.name),
                                 agent_file(
                                     block,
                                     body,
@@ -560,7 +715,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     if target == Target::Skills {
                         for (rel, text) in &block.companions {
                             files.push(OutFile {
-                                path: format!(".claude/skills/{}/{rel}", block.name),
+                                path: format!("{}/{}/{rel}", tool.skills_dir(), block.name),
                                 lines: text.lines().count(),
                                 content: text.to_string(),
                                 section: false,
@@ -588,7 +743,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             }
         }
     }
-    compile_plans(doc, &nodes, &blocks, &mut out);
+    compile_plans(doc, &nodes, &blocks, tool, &mut out);
     out
 }
 
@@ -615,11 +770,12 @@ fn inputs_of<'a>(doc: &'a Doc, output: &'a Node) -> Vec<&'a str> {
     inputs
 }
 
-/// PLANS outputs, and the line pointing CLAUDE.md to them.
+/// PLANS outputs, and the line pointing the instructions file to them.
 fn compile_plans(
     doc: &Doc,
     nodes: &HashMap<&str, &Node>,
     blocks: &HashMap<&str, &Block>,
+    tool: ToolId,
     out: &mut Compiled,
 ) {
     // Catalog ids of the skills and subagents this document writes.
@@ -691,28 +847,29 @@ fn compile_plans(
             blocks: used,
         });
 
-        // Claude Code doesn't read PLANS.md by itself: CLAUDE.md points to it.
+        // Neither tool reads PLANS.md by itself: the instructions file points
+        // to it. (Codex's team and personal instructions share AGENTS.md, so
+        // the scope is matched too.)
         let pointer = plans::pointer(path);
-        let claude_md = if personal {
-            "CLAUDE.local.md"
-        } else {
-            "CLAUDE.md"
-        };
-        if let Some(file) = out.files.iter_mut().find(|f| f.path == claude_md) {
+        let claude_md = tool.instructions_file(personal);
+        if let Some(file) = out.files.iter_mut().find(|f| {
+            f.target == Target::Instructions && f.path == claude_md && f.personal == personal
+        }) {
             file.content = format!("{}\n\n{pointer}", file.content);
             file.lines = file.content.lines().count();
         } else if let Some(node) = doc.nodes.iter().find(|n| {
             n.kind == "output"
-                && n.data.target == Some(Target::ClaudeMd)
+                && n.data.target == Some(Target::Instructions)
                 && (n.data.scope == Some(Mode::Personal)) == personal
-        }) {
+        }) && !out.files.iter().any(|f| f.path == claude_md)
+        {
             out.files.push(OutFile {
                 path: claude_md.into(),
                 lines: pointer.lines().count(),
                 content: pointer,
                 section: true,
                 personal,
-                target: Target::ClaudeMd,
+                target: Target::Instructions,
                 node: node.id.clone(),
                 blocks: Vec::new(),
             });
@@ -720,8 +877,9 @@ fn compile_plans(
             out.warnings.push(Warning {
                 node: Some(output.id.clone()),
                 message: crate::tr!(
-                    "Claude Code는 {path}를 스스로 읽지 않아요. {claude_md} 출력({})을 추가하면 계획을 읽으라는 안내가 들어가요",
-                    "Claude Code doesn't read {path} by itself. Add a {claude_md} output ({}) and it gets a line pointing to the plan",
+                    "{}는 {path}를 스스로 읽지 않아요. {claude_md} 출력({})을 추가하면 계획을 읽으라는 안내가 들어가요",
+                    "{} doesn't read {path} by itself. Add a {claude_md} output ({}) and it gets a line pointing to the plan",
+                    tool_name(tool),
                     if personal { crate::tr!("나만", "Just me") } else { crate::tr!("팀", "Team") }
                 ),
             });
@@ -868,6 +1026,58 @@ fn agent_file(block: &Block, body: &str, model: Option<&str>) -> String {
     format!("{fm}---\n\n{body}\n")
 }
 
+/// A Codex subagent (`.codex/agents/<name>.toml`): `name`, `description` and
+/// `developer_instructions` (the block body), with third-party credit as TOML
+/// comments. Also returns the Claude Code fields that have no Codex
+/// counterpart and were left out.
+fn agent_toml(block: &Block, body: &str) -> (String, Vec<String>) {
+    let fields = block
+        .frontmatter
+        .as_ref()
+        .and_then(|raw| frontmatter::parse(&format!("---\n{raw}\n---\n")))
+        .unwrap_or_default();
+    let name = fields
+        .get("name")
+        .filter(|n| !n.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| block.name.clone());
+    let description = fields
+        .get("description")
+        .cloned()
+        .or_else(|| block.description.clone())
+        .unwrap_or_else(|| block.summary.clone());
+
+    // Library agents: every other frontmatter field is Claude Code's.
+    let mut dropped: Vec<String> = fields
+        .iter()
+        .filter(|(k, v)| !matches!(k.as_str(), "name" | "description") && !v.is_empty())
+        .map(|(k, _)| k.clone())
+        .collect();
+    for (key, value) in [("tools", &block.tools), ("model", &block.model)] {
+        if value.as_deref().is_some_and(|v| !v.is_empty()) && !dropped.iter().any(|d| d == key) {
+            dropped.push(key.to_string());
+        }
+    }
+
+    let mut doc = toml_edit::DocumentMut::new();
+    doc["name"] = toml_edit::value(name);
+    doc["description"] = toml_edit::value(description);
+    doc["developer_instructions"] = toml_edit::value(format!("{}\n", body.trim_end()));
+    let credit = block
+        .origin
+        .as_ref()
+        .map(|o| {
+            format!(
+                "# Source: {}\n# License: {}, {}\n",
+                o.url(),
+                o.license,
+                o.copyright
+            )
+        })
+        .unwrap_or_default();
+    (format!("{credit}{doc}"), dropped)
+}
+
 /// `@token`s outside code (fenced blocks with ``` or ~~~, and inline code
 /// spans), which CLAUDE.md treats as imports. E-mail addresses are skipped.
 pub fn import_tokens(text: &str) -> Vec<String> {
@@ -983,7 +1193,7 @@ mod tests {
             ],
             "edges": [{"source": "r", "target": "ag"}, {"source": "g", "target": "p"}]
         }"#);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         let plan = out.files.iter().find(|f| f.path == "PLANS.md").unwrap();
         assert!(plan.section);
         assert_eq!(plan.blocks, ["g"]);
@@ -1011,7 +1221,7 @@ mod tests {
             ],
             "edges": [{"source": "g", "target": "p"}]
         }"#);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         assert_eq!(out.files.len(), 1);
         assert_eq!(out.files[0].path, "PLANS.local.md");
         assert!(out.files[0].personal);
@@ -1029,7 +1239,7 @@ mod tests {
             ],
             "edges": [{"source": "x", "target": "o"}, {"source": "y", "target": "o"}]
         }"#);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         assert_eq!(out.files.len(), 1);
         let f = &out.files[0];
         assert_eq!(f.path, "CLAUDE.md");
@@ -1048,7 +1258,7 @@ mod tests {
             ],
             "edges": [{"source": "x", "target": "o"}]
         }"#);
-        let f = &compile(&d, &catalog()).files[0];
+        let f = &compile(&d, &catalog(), ToolId::Claude).files[0];
         assert_eq!(f.path, "CLAUDE.local.md");
         assert_eq!(f.content, "Mine");
     }
@@ -1064,7 +1274,7 @@ mod tests {
             ],
             "edges": [{"source": "s", "target": "S"}]
         }"#);
-        let out = compile(&d, &[skill]);
+        let out = compile(&d, &[skill], ToolId::Claude);
         let paths: Vec<_> = out.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(
             paths,
@@ -1094,7 +1304,7 @@ mod tests {
                 {"source": "s", "target": "S"}, {"source": "g", "target": "G"}
             ]
         }"#);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         let by_path: HashMap<_, _> = out.files.iter().map(|f| (f.path.as_str(), f)).collect();
         assert_eq!(
             by_path[".claude/rules/ts.md"].content,
@@ -1137,7 +1347,7 @@ mod tests {
             ]
         }}"#
         ));
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         let messages: Vec<_> = out.warnings.iter().map(|w| w.message.as_str()).collect();
         assert!(messages.iter().any(|m| m.contains("두 번 연결")));
         assert!(messages.iter().any(|m| m.contains("연결할 수 없어요")));
@@ -1211,7 +1421,7 @@ mod tests {
             ],
             "edges": [{"source": "x", "target": "o"}, {"source": "y", "target": "p"}]
         }"#);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         assert!(out.files[0].content.contains("\nmodel: fable\n"));
         assert_eq!(out.warnings.len(), 2, "{:?}", out.warnings); // unknown model + same path twice
     }
@@ -1226,7 +1436,7 @@ mod tests {
             ],
             "edges": [{"source": "x", "target": "o"}]
         }"##);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         assert_eq!(out.files.len(), 1);
         let f = &out.files[0];
         assert_eq!(f.path, "docs/AGENTS.md");
@@ -1268,7 +1478,7 @@ mod tests {
             "edges": [{"source": "a", "target": "o"}, {"source": "b", "target": "o"},
                       {"source": "c", "target": "o"}, {"source": "d", "target": "o"}]
         }"#);
-        let out = compile(&d, &[fmt, stop, blank]);
+        let out = compile(&d, &[fmt, stop, blank], ToolId::Claude);
         let f = &out.files[0];
         assert_eq!(f.path, ".claude/settings.local.json");
         assert_eq!(f.blocks, ["a", "b", "c"]);
@@ -1295,7 +1505,7 @@ mod tests {
             ],
             "edges": [{"source": "x", "target": "o"}, {"source": "y", "target": "o"}]
         }"#);
-        let out = compile(&d, &catalog());
+        let out = compile(&d, &catalog(), ToolId::Claude);
         assert_eq!(out.files[0].content, "## B");
         assert_eq!(out.files[0].blocks, ["y"]);
     }
@@ -1309,7 +1519,10 @@ mod tests {
             ],
             "edges": [{"source": "x", "target": "o"}]
         }"#);
-        assert_eq!(compile(&d, &catalog()).files[0].content, "One\nTwo");
+        assert_eq!(
+            compile(&d, &catalog(), ToolId::Claude).files[0].content,
+            "One\nTwo"
+        );
     }
 
     #[test]
@@ -1325,5 +1538,400 @@ mod tests {
         assert!(!has_import_like("Use `@scope/pkg` here"));
         assert!(!has_import_like("```\n@docs/x.md\n```"));
         assert!(!has_import_like("mail me@example.com or @someone"));
+    }
+
+    #[test]
+    fn old_claude_md_targets_still_load() {
+        let d =
+            doc(r#"{"nodes": [{"id": "o", "type": "output", "data": {"target": "claudeMd"}}]}"#);
+        assert_eq!(d.nodes[0].data.target, Some(Target::Instructions));
+        let d = doc(
+            r#"{"nodes": [{"id": "o", "type": "output", "data": {"target": "instructions"}}]}"#,
+        );
+        assert_eq!(d.nodes[0].data.target, Some(Target::Instructions));
+        assert_eq!(
+            serde_json::to_string(&Target::Instructions).unwrap(),
+            "\"instructions\""
+        );
+    }
+
+    fn all_outputs_doc(scope: &str) -> Doc {
+        doc(&format!(
+            r#"{{
+            "nodes": [
+                {{"id": "i", "type": "block", "data": {{"blockId": "builtin:a"}}}},
+                {{"id": "s", "type": "block", "data": {{"blockId": "builtin:review"}}}},
+                {{"id": "g", "type": "block", "data": {{"blockId": "builtin:reviewer"}}}},
+                {{"id": "I", "type": "output", "data": {{"target": "instructions", "scope": "{scope}"}}}},
+                {{"id": "S", "type": "output", "data": {{"target": "skills"}}}},
+                {{"id": "G", "type": "output", "data": {{"target": "agents"}}}}
+            ],
+            "edges": [
+                {{"source": "i", "target": "I"}}, {{"source": "s", "target": "S"}},
+                {{"source": "g", "target": "G"}}
+            ]
+        }}"#
+        ))
+    }
+
+    fn paths(out: &Compiled) -> Vec<&str> {
+        out.files.iter().map(|f| f.path.as_str()).collect()
+    }
+
+    #[test]
+    fn paths_follow_the_tool() {
+        let claude = compile(&all_outputs_doc("team"), &catalog(), ToolId::Claude);
+        assert_eq!(
+            paths(&claude),
+            [
+                "CLAUDE.md",
+                ".claude/skills/review/SKILL.md",
+                ".claude/agents/reviewer.md"
+            ]
+        );
+        assert_eq!(claude.tool, ToolId::Claude);
+        let codex = compile(&all_outputs_doc("team"), &catalog(), ToolId::Codex);
+        assert_eq!(
+            paths(&codex),
+            [
+                "AGENTS.md",
+                ".agents/skills/review/SKILL.md",
+                ".codex/agents/reviewer.toml"
+            ]
+        );
+        assert_eq!(codex.tool, ToolId::Codex);
+        // The skill file itself is the same for both tools.
+        assert_eq!(claude.files[1].content, codex.files[1].content);
+
+        let personal = compile(&all_outputs_doc("personal"), &catalog(), ToolId::Claude);
+        assert_eq!(personal.files[0].path, "CLAUDE.local.md");
+        let personal = compile(&all_outputs_doc("personal"), &catalog(), ToolId::Codex);
+        assert_eq!(personal.files[0].path, "AGENTS.md");
+        assert!(personal.files[0].personal && personal.files[0].section);
+    }
+
+    #[test]
+    fn codex_skill_companions_follow_the_skills_dir() {
+        let mut skill = block("builtin:guide", BlockKind::Skill, "See references/a.md");
+        skill.companions = vec![("references/a.md".into(), "# A\n")];
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "s", "type": "block", "data": {"blockId": "builtin:guide"}},
+                {"id": "S", "type": "output", "data": {"target": "skills"}}
+            ],
+            "edges": [{"source": "s", "target": "S"}]
+        }"#);
+        let out = compile(&d, &[skill], ToolId::Codex);
+        assert_eq!(
+            paths(&out),
+            [
+                ".agents/skills/guide/SKILL.md",
+                ".agents/skills/guide/references/a.md"
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_instructions_take_rules_and_warn_about_paths() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "i", "type": "block", "data": {"blockId": "builtin:a"}},
+                {"id": "r", "type": "block", "data": {"blockId": "builtin:ts"}},
+                {"id": "o", "type": "output", "data": {"target": "instructions"}}
+            ],
+            "edges": [{"source": "i", "target": "o"}, {"source": "r", "target": "o"}]
+        }"#);
+        let out = compile(&d, &catalog(), ToolId::Codex);
+        assert_eq!(out.files[0].content, "## A\n- one\n\n# TS");
+        assert_eq!(out.files[0].blocks, ["i", "r"]);
+        assert_eq!(out.warnings.len(), 1);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("r"));
+        assert!(out.warnings[0].message.contains("항상 적용"));
+
+        // Claude Code keeps rules out of CLAUDE.md.
+        let out = compile(&d, &catalog(), ToolId::Claude);
+        assert_eq!(out.files[0].content, "## A\n- one");
+        assert!(out.warnings[0].message.contains("연결할 수 없어요"));
+    }
+
+    #[test]
+    fn codex_has_no_rules_output() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "r", "type": "block", "data": {"blockId": "builtin:ts"}},
+                {"id": "R", "type": "output", "data": {"target": "rules"}}
+            ],
+            "edges": [{"source": "r", "target": "R"}]
+        }"#);
+        let out = compile(&d, &catalog(), ToolId::Codex);
+        assert!(out.files.is_empty());
+        assert_eq!(out.warnings.len(), 1);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("R"));
+        assert!(out.warnings[0].message.contains("규칙 파일이 없어서"));
+        assert!(out.warnings[0].message.contains("AGENTS.md"));
+        assert_eq!(compile(&d, &catalog(), ToolId::Claude).files.len(), 1);
+    }
+
+    #[test]
+    fn budgets_and_import_checks_depend_on_the_tool() {
+        let instructions = |body: String| {
+            doc(&format!(
+                r#"{{
+                "nodes": [
+                    {{"id": "x", "type": "block", "data": {{"blockId": "builtin:a", "body": {body:?}}}}},
+                    {{"id": "o", "type": "output", "data": {{"target": "instructions"}}}}
+                ],
+                "edges": [{{"source": "x", "target": "o"}}]
+            }}"#
+            ))
+        };
+        let messages = |out: &Compiled| -> Vec<String> {
+            out.warnings.iter().map(|w| w.message.clone()).collect()
+        };
+
+        // 201 short lines: too long for CLAUDE.md, fine for AGENTS.md.
+        let lines = instructions(
+            (0..=CLAUDE_MD_LINE_BUDGET)
+                .map(|i| format!("- {i}\n"))
+                .collect(),
+        );
+        assert!(messages(&compile(&lines, &catalog(), ToolId::Claude))[0].contains("줄이에요"));
+        assert!(
+            compile(&lines, &catalog(), ToolId::Codex)
+                .warnings
+                .is_empty()
+        );
+
+        // A few long lines: over Codex's byte budget, under CLAUDE.md's line budget.
+        let big = instructions(format!("{}\n", "x".repeat(1000)).repeat(30));
+        let codex = compile(&big, &catalog(), ToolId::Codex);
+        assert!(codex.files[0].content.len() > AGENTS_MD_BYTE_BUDGET);
+        let m = messages(&codex);
+        assert_eq!(m.len(), 1);
+        assert!(m[0].contains("KiB") && m[0].contains("32"), "{}", m[0]);
+        assert!(
+            compile(&big, &catalog(), ToolId::Claude)
+                .warnings
+                .is_empty()
+        );
+
+        // `@path` is an import only for Claude Code.
+        let at = instructions("See @docs/api.md".into());
+        assert!(messages(&compile(&at, &catalog(), ToolId::Claude))[0].contains("@경로"));
+        assert!(compile(&at, &catalog(), ToolId::Codex).warnings.is_empty());
+    }
+
+    fn origin(path: &str, c: char) -> super::super::catalog::Origin {
+        super::super::catalog::Origin {
+            repo: "o/r".into(),
+            commit: c.to_string().repeat(40),
+            path: path.into(),
+            license: "MIT".into(),
+            copyright: "Copyright (c) 2025 X".into(),
+        }
+    }
+
+    #[test]
+    fn codex_credits_third_party_text_without_html_comments() {
+        let mut ext = block("external:x", BlockKind::Instruction, "## X");
+        ext.origin = Some(origin("x.md", 'a'));
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "x", "type": "block", "data": {"blockId": "external:x"}},
+                {"id": "o", "type": "output", "data": {"target": "instructions"}}
+            ],
+            "edges": [{"source": "x", "target": "o"}]
+        }"#);
+        let url = format!("https://github.com/o/r/blob/{}/x.md", "a".repeat(40));
+        let codex = compile(&d, std::slice::from_ref(&ext), ToolId::Codex);
+        assert_eq!(
+            codex.files[0].content,
+            format!("*Source: {url} (MIT, Copyright (c) 2025 X)*\n\n## X")
+        );
+        let claude = compile(&d, &[ext], ToolId::Claude);
+        assert!(claude.files[0].content.starts_with("<!-- Source: "));
+    }
+
+    fn parse_toml(text: &str) -> toml_edit::DocumentMut {
+        text.parse().unwrap_or_else(|e| panic!("{e}\n{text}"))
+    }
+
+    #[test]
+    fn codex_agents_are_toml_with_escaped_instructions() {
+        let body = "You review.\nSay \"\"\" and ''' and \\ freely.\n\tTabbed \"quote\"";
+        let mut agent = block("external:reviewer", BlockKind::Agent, body);
+        agent.description = Some("Reviews \"code\"\nline two".into());
+        agent.model = Some("sonnet".into());
+        agent.origin = Some(origin("agents/reviewer.md", 'b'));
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "g", "type": "block", "data": {"blockId": "external:reviewer"}},
+                {"id": "G", "type": "output", "data": {"target": "agents"}}
+            ],
+            "edges": [{"source": "g", "target": "G"}]
+        }"#);
+        let out = compile(&d, &[agent], ToolId::Codex);
+        let file = &out.files[0];
+        assert_eq!(file.path, ".codex/agents/reviewer.toml");
+        assert!(
+            file.content.starts_with(&format!(
+                "# Source: https://github.com/o/r/blob/{}/agents/reviewer.md\n# License: MIT, Copyright (c) 2025 X\n",
+                "b".repeat(40)
+            )),
+            "{}",
+            file.content
+        );
+        let toml = parse_toml(&file.content);
+        assert_eq!(toml["name"].as_str(), Some("reviewer"));
+        assert_eq!(
+            toml["description"].as_str(),
+            Some("Reviews \"code\"\nline two")
+        );
+        assert_eq!(
+            toml["developer_instructions"].as_str(),
+            Some(format!("{body}\n").as_str())
+        );
+        // Claude Code's `tools` and `model` have no Codex field.
+        assert_eq!(out.warnings.len(), 1);
+        let m = &out.warnings[0].message;
+        assert!(m.contains("tools") && m.contains("model"), "{m}");
+    }
+
+    #[test]
+    fn toml_instructions_survive_triple_quotes_at_the_end() {
+        for body in [
+            "ends with \"\"\"",
+            "ends with '''",
+            "\"\"\"\"\"\"",
+            "a\\\"\"\"b",
+        ] {
+            let agent = block("builtin:q", BlockKind::Agent, body);
+            let (text, _) = agent_toml(&agent, body);
+            let toml = parse_toml(&text);
+            assert_eq!(
+                toml["developer_instructions"].as_str(),
+                Some(format!("{body}\n").as_str()),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn library_agents_for_codex_keep_their_name_and_drop_claude_fields() {
+        let mut agent = block("library:agent:reviewer", BlockKind::Agent, "Review.");
+        agent.tools = None;
+        agent.frontmatter =
+            Some("name: code-reviewer\ndescription: Reviews diffs\npermissionMode: plan".into());
+        let (text, dropped) = agent_toml(&agent, "Review.");
+        let toml = parse_toml(&text);
+        assert_eq!(toml["name"].as_str(), Some("code-reviewer"));
+        assert_eq!(toml["description"].as_str(), Some("Reviews diffs"));
+        assert_eq!(toml["developer_instructions"].as_str(), Some("Review.\n"));
+        assert_eq!(dropped, ["permissionMode"]);
+        assert!(!text.contains("permissionMode"));
+
+        // Without frontmatter fields, the block's own name and description.
+        let mut plain = block("builtin:helper", BlockKind::Agent, "Help.");
+        plain.tools = None;
+        let (text, dropped) = agent_toml(&plain, "Help.");
+        let toml = parse_toml(&text);
+        assert_eq!(toml["name"].as_str(), Some("helper"));
+        assert_eq!(toml["description"].as_str(), Some("Does: things"));
+        assert!(dropped.is_empty());
+    }
+
+    #[test]
+    fn codex_hooks_go_to_hooks_json_with_codex_events_only() {
+        let mut fmt = block("builtin:fmt", BlockKind::Hook, "pnpm format");
+        fmt.event = Some("PostToolUse".into());
+        fmt.matcher = Some("apply_patch".into());
+        let blank = block("builtin:blank", BlockKind::Hook, "");
+        let other = block("builtin:other", BlockKind::Hook, "");
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "a", "type": "block", "data": {"blockId": "builtin:fmt"}},
+                {"id": "b", "type": "block", "data": {"blockId": "builtin:blank", "event": "Interrupt", "body": "echo stop"}},
+                {"id": "c", "type": "block", "data": {"blockId": "builtin:other", "event": "Notification", "body": "x"}},
+                {"id": "o", "type": "output", "data": {"target": "hooks", "scope": "team"}}
+            ],
+            "edges": [{"source": "a", "target": "o"}, {"source": "b", "target": "o"}, {"source": "c", "target": "o"}]
+        }"#);
+        let out = compile(
+            &d,
+            &[fmt.clone(), blank.clone(), other.clone()],
+            ToolId::Codex,
+        );
+        let f = &out.files[0];
+        assert_eq!(f.path, ".codex/hooks.json");
+        assert!(!f.personal);
+        assert_eq!(f.blocks, ["a", "b"]);
+        let v: serde_json::Value = serde_json::from_str(&f.content).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({"hooks": {
+                "PostToolUse": [{"matcher": "apply_patch", "hooks": [{"type": "command", "command": "pnpm format"}]}],
+                "Interrupt": [{"hooks": [{"type": "command", "command": "echo stop"}]}]
+            }})
+        );
+        // "c": a Claude Code-only event.
+        assert!(
+            out.warnings
+                .iter()
+                .any(|w| w.node.as_deref() == Some("c") && w.message.contains("Notification")),
+            "{:?}",
+            out.warnings
+        );
+
+        // Claude Code doesn't know Codex's Interrupt.
+        let claude = compile(&d, &[fmt.clone(), blank, other], ToolId::Claude);
+        assert_eq!(claude.files[0].path, ".claude/settings.json");
+        assert!(!claude.files[0].content.contains("Interrupt"));
+
+        // No personal hooks file for Codex: a warning, nothing written.
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "a", "type": "block", "data": {"blockId": "builtin:fmt"}},
+                {"id": "o", "type": "output", "data": {"target": "hooks", "scope": "personal"}}
+            ],
+            "edges": [{"source": "a", "target": "o"}]
+        }"#);
+        let out = compile(&d, &[fmt], ToolId::Codex);
+        assert!(out.files.is_empty());
+        assert_eq!(out.warnings.len(), 1);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("o"));
+    }
+
+    #[test]
+    fn codex_plans_point_from_agents_md() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "i", "type": "block", "data": {"blockId": "builtin:a"}},
+                {"id": "c", "type": "output", "data": {"target": "instructions", "scope": "team"}},
+                {"id": "g", "type": "plan", "data": {"title": "Goal"}},
+                {"id": "p", "type": "output", "data": {"target": "plans", "scope": "team"}}
+            ],
+            "edges": [{"source": "i", "target": "c"}, {"source": "g", "target": "p"}]
+        }"#);
+        let out = compile(&d, &catalog(), ToolId::Codex);
+        assert_eq!(paths(&out), ["AGENTS.md", "PLANS.md"]);
+        assert!(out.files[0].content.starts_with("## A\n- one\n\n"));
+        assert!(out.files[0].content.contains("`PLANS.md`"));
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+
+        // A personal plan needs a personal AGENTS.md output, not the team one.
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "i", "type": "block", "data": {"blockId": "builtin:a"}},
+                {"id": "c", "type": "output", "data": {"target": "instructions", "scope": "team"}},
+                {"id": "g", "type": "plan", "data": {"title": "Goal"}},
+                {"id": "p", "type": "output", "data": {"target": "plans", "scope": "personal"}}
+            ],
+            "edges": [{"source": "i", "target": "c"}, {"source": "g", "target": "p"}]
+        }"#);
+        let out = compile(&d, &catalog(), ToolId::Codex);
+        assert_eq!(paths(&out), ["AGENTS.md", "PLANS.local.md"]);
+        assert!(!out.files[0].content.contains("PLANS"));
+        assert_eq!(out.warnings.len(), 1);
+        assert!(out.warnings[0].message.contains("Codex"));
     }
 }

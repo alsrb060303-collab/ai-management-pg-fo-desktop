@@ -5,10 +5,11 @@ import { ChevronDown, ChevronRight, FolderOpen, GitBranch, X } from "lucide-reac
 import { useCallback, useEffect, useState } from "react";
 import { Button, IconButton, Segmented } from "../../components/ui";
 import { type MessageKey, useT } from "../../i18n";
-import type { ComposerDoc } from "../../store/composer";
+import { type ComposerDoc, useComposerTool } from "../../store/composer";
 import { type Pull, useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, useRemoteStore } from "../../store/remote";
+import { TOOLS } from "../../tools";
 
 // Mirrors `PlanItem` / `Status` in src-tauri/src/composer/write.rs.
 type Status =
@@ -92,6 +93,7 @@ const needsConfirm = (s: Status) =>
 
 export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }) {
   const t = useT();
+  const tool = useComposerTool();
   const [mode, setMode] = useState<Mode>(() =>
     remembered(MODE_KEY) === "github" ? "github" : "local",
   );
@@ -127,7 +129,13 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
               remember(MODE_KEY, m);
             }}
           />
-          <IconButton label={t("composer.write.close")} onClick={onClose} className="ml-auto">
+          <span
+            className="ml-auto truncate text-xs text-text-subtle"
+            title={t("composer.palette.toolHint", { tool: TOOLS[tool].name })}
+          >
+            {t("composer.palette.forTool", { tool: TOOLS[tool].name })}
+          </span>
+          <IconButton label={t("composer.write.close")} onClick={onClose}>
             <X size={17} />
           </IconButton>
         </header>
@@ -143,6 +151,8 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
 
 function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }) {
   const { current, choose, refresh } = useProjectStore();
+  // The files are laid out for the project's tool; a change re-plans.
+  const tool = useComposerTool();
   const [plan, setPlan] = useState<PlanItem[] | null>(null);
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
@@ -159,11 +169,11 @@ function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void })
     setConfirmed(new Set());
     setOpen(null);
     try {
-      setPlan(await invoke<PlanItem[]>("composer_plan", { project: current, doc }));
+      setPlan(await invoke<PlanItem[]>("composer_plan", { project: current, doc, tool }));
     } catch (e) {
       setError(String(e));
     }
-  }, [current, doc]);
+  }, [current, doc, tool]);
 
   useEffect(() => {
     void load();
@@ -182,6 +192,7 @@ function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void })
       const res = await invoke<WriteResult>("composer_write", {
         project: current,
         doc,
+        tool,
         confirmed: confirmations,
       });
       setResult(res);
@@ -343,6 +354,8 @@ const field =
 /** Writes straight to a GitHub branch: one commit, optionally on a new branch with a PR. */
 function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }) {
   const t = useT();
+  // No local project here: the files follow the composer's tool.
+  const tool = useComposerTool();
   const account = useGitHubStore((s) => s.status?.account ?? null);
   const initGitHub = useGitHubStore((s) => s.init);
   const repos = useRemoteStore((s) => s.repos);
@@ -402,11 +415,11 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
     setConfirmed(new Set());
     setOpen(null);
     try {
-      setPlan(await invoke<RemotePlan>("composer_plan_remote", { slug, branch, doc }));
+      setPlan(await invoke<RemotePlan>("composer_plan_remote", { slug, branch, doc, tool }));
     } catch (e) {
       setError(String(e));
     }
-  }, [slug, branch, doc]);
+  }, [slug, branch, doc, tool]);
 
   useEffect(() => {
     void load();
@@ -427,6 +440,7 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
         branch,
         head: plan.head,
         doc,
+        tool,
         confirmed: confirmationsOf(plan.items, confirmed),
         message,
         newBranch: commitTo === "pr" ? newBranch.trim() : null,

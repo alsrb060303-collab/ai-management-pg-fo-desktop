@@ -12,12 +12,18 @@ import {
 } from "@xyflow/react";
 import { create } from "zustand";
 import { onLocaleApplied, t, useLocaleStore } from "../i18n";
+import { TOOLS, type ToolId } from "../tools";
 import type { Mode } from "./library";
+import { useProjectStore } from "./project";
 import { useSyncStore } from "./sync";
 
 // Mirrors src-tauri/src/composer.
 export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
-export type Target = "claudeMd" | "rules" | "skills" | "agents" | "custom" | "hooks" | "plans";
+/**
+ * Output targets. `instructions` is the tool's always-loaded file (CLAUDE.md,
+ * AGENTS.md); documents saved before tools existed call it `claudeMd`.
+ */
+export type Target = "instructions" | "rules" | "skills" | "agents" | "custom" | "hooks" | "plans";
 
 export interface Block {
   id: string;
@@ -33,7 +39,7 @@ export interface Block {
   paths: string[];
   tools: string | null;
   model: string | null;
-  /** Hooks: the Claude Code event and matcher; the body is the command. */
+  /** Hooks: the event and matcher; the body is the command. */
   event?: string | null;
   matcher?: string | null;
   body: string;
@@ -69,6 +75,8 @@ export interface OutFile {
 }
 
 export interface Compiled {
+  /** The tool the files are laid out for. */
+  tool: ToolId;
   files: OutFile[];
   warnings: { node: string | null; message: string }[];
 }
@@ -165,17 +173,47 @@ export interface ComposerDoc {
   edges: Edge[];
 }
 
-/** Which block kinds each output accepts (same rule as `Target::accepts`). */
-export const ACCEPTS: Record<Target, BlockKind[]> = {
-  claudeMd: ["instruction"],
-  rules: ["rule", "instruction"],
-  skills: ["skill"],
-  agents: ["agent"],
-  custom: ["instruction", "rule"],
-  hooks: ["hook"],
-  // Plan nodes (main goals), not catalog blocks.
-  plans: [],
-};
+/**
+ * The tool the composer compiles and writes for: the current project's, or
+ * the default tool when no project is chosen. Documents stay tool-independent.
+ */
+export function composerTool(): ToolId {
+  const { current, tool, defaultTool } = useProjectStore.getState();
+  return current ? tool : defaultTool;
+}
+
+/** `composerTool()` as a React hook. */
+export function useComposerTool(): ToolId {
+  return useProjectStore((s) => (s.current ? s.tool : s.defaultTool));
+}
+
+/** Whether `target` exists for `tool` (`Target::available`): Codex has no rule files. */
+export function targetAvailable(target: Target, tool: ToolId): boolean {
+  return target !== "rules" || TOOLS[tool].rulesDir !== null;
+}
+
+/** Which block kinds each output accepts for `tool` (same rule as `Target::accepts`). */
+export function accepts(target: Target, tool: ToolId): BlockKind[] {
+  const hasRules = TOOLS[tool].rulesDir !== null;
+  switch (target) {
+    // Without rule files, rules become always-on instructions.
+    case "instructions":
+      return hasRules ? ["instruction"] : ["instruction", "rule"];
+    case "rules":
+      return hasRules ? ["rule", "instruction"] : [];
+    case "skills":
+      return ["skill"];
+    case "agents":
+      return ["agent"];
+    case "custom":
+      return ["instruction", "rule"];
+    case "hooks":
+      return ["hook"];
+    // Plan nodes (main goals), not catalog blocks.
+    case "plans":
+      return [];
+  }
+}
 
 /** Subagent model aliases (`MODEL_ALIASES` in compile.rs) and their current model. */
 export const MODELS: { alias: string; label: string }[] = [
@@ -185,8 +223,8 @@ export const MODELS: { alias: string; label: string }[] = [
   { alias: "haiku", label: "Haiku 5.5" },
 ];
 
-/** Hook events offered first; the rest of `HOOK_EVENTS` in compile.rs follow. */
-export const HOOK_EVENTS = [
+/** Claude Code hook events offered first; the rest of `HOOK_EVENTS` in compile.rs follow. */
+const CLAUDE_HOOK_EVENTS = [
   "PreToolUse",
   "PostToolUse",
   "UserPromptSubmit",
@@ -208,7 +246,28 @@ export const HOOK_EVENTS = [
   "TaskCompleted",
 ];
 
-/** Events whose matcher Claude Code ignores (`EVENTS_WITHOUT_MATCHER`). */
+/** Codex hook events (`CODEX_HOOK_EVENTS` in compile.rs), most used first. */
+const CODEX_HOOK_EVENTS = [
+  "PreToolUse",
+  "PostToolUse",
+  "UserPromptSubmit",
+  "Stop",
+  "SubagentStop",
+  "SessionStart",
+  "SessionEnd",
+  "PreCompact",
+  "PermissionRequest",
+  "SubagentStart",
+  "PostCompact",
+  "Interrupt",
+];
+
+/** The hook events offered for `tool`. */
+export function hookEvents(tool: ToolId): string[] {
+  return tool === "codex" ? CODEX_HOOK_EVENTS : CLAUDE_HOOK_EVENTS;
+}
+
+/** Events whose matcher is ignored (`EVENTS_WITHOUT_MATCHER`). */
 export const EVENTS_WITHOUT_MATCHER = new Set([
   "UserPromptSubmit",
   "PostToolBatch",
@@ -223,6 +282,15 @@ export const EVENTS_WITHOUT_MATCHER = new Set([
 ]);
 
 export const CLAUDE_MD_LINE_BUDGET = 200;
+/** Codex reads at most this many bytes of a project's AGENTS.md files (`AGENTS_MD_BYTE_LIMIT`). */
+export const AGENTS_MD_BYTE_LIMIT = 32 * 1024;
+/** Codex instructions warn above this many bytes (`AGENTS_MD_BYTE_BUDGET`). */
+export const AGENTS_MD_BYTE_BUDGET = 28 * 1024;
+
+/** UTF-8 length of `text` (Codex limits AGENTS.md by bytes). */
+export function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
 const HISTORY_LIMIT = 100;
 
 type Snapshot = { nodes: ComposerNode[]; edges: Edge[] };
@@ -298,7 +366,7 @@ interface ComposerState {
 
 /** The output a block of each kind goes to when previewed on its own. */
 const PREVIEW_TARGET: Record<BlockKind, Target> = {
-  instruction: "claudeMd",
+  instruction: "instructions",
   rule: "rules",
   skill: "skills",
   agent: "agents",
@@ -347,10 +415,27 @@ function blankDoc(): ComposerDoc {
         id: newId("o"),
         type: "output",
         position: { x: 640, y: 160 },
-        data: { target: "claudeMd", scope: "team", order: [] },
+        data: { target: "instructions", scope: "team", order: [] },
       },
     ],
     edges: [],
+  };
+}
+
+/**
+ * Brings a document saved by an older version up to date: the CLAUDE.md
+ * output (`claudeMd`) is now the tool-neutral `instructions`.
+ */
+function migrate(doc: ComposerDoc): ComposerDoc {
+  const old = (n: ComposerNode) => n.type === "output" && (n.data.target as string) === "claudeMd";
+  if (!doc.nodes.some(old)) return doc;
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) =>
+      old(n) && n.type === "output"
+        ? { ...n, data: { ...n.data, target: "instructions" as const } }
+        : n,
+    ),
   };
 }
 
@@ -387,7 +472,10 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       if (!doc || !isTauri()) return;
       const seq = ++compileSeq;
       try {
-        const compiled = await invoke<Compiled>("composer_compile", { doc: persistable(doc) });
+        const compiled = await invoke<Compiled>("composer_compile", {
+          doc: persistable(doc),
+          tool: composerTool(),
+        });
         if (seq === compileSeq) set({ compiled });
       } catch (e) {
         if (seq === compileSeq) set({ error: String(e) });
@@ -481,6 +569,15 @@ export const useComposerStore = create<ComposerState>((set, get) => {
 
   // Compile warnings come from the backend: redo them in the new language.
   onLocaleApplied(() => scheduleCompile());
+  // The files depend on the project's tool: recompile when it changes.
+  useProjectStore.subscribe((state, prev) => {
+    const tool = state.current ? state.tool : state.defaultTool;
+    const before = prev.current ? prev.tool : prev.defaultTool;
+    if (tool !== before) {
+      set({ standalone: null });
+      scheduleCompile();
+    }
+  });
   return {
     catalog: [],
     blocks: new Map(),
@@ -565,7 +662,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       }
       try {
         const loaded = await invoke<ComposerDoc>("composer_doc_load", { id: doc.id });
-        const fresh = { ...blankDoc(), ...loaded, id: doc.id };
+        const fresh = migrate({ ...blankDoc(), ...loaded, id: doc.id });
         if (canonical(fresh) === onDisk) return;
         if (pending || saveTimer !== undefined) {
           // Keep editing ours; theirs is kept next to it as a copy.
@@ -596,7 +693,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       await get().flushSave();
       try {
         const doc = await invoke<ComposerDoc>("composer_doc_load", { id });
-        open({ ...blankDoc(), ...doc, id });
+        open(migrate({ ...blankDoc(), ...doc, id }));
       } catch (e) {
         set({ error: String(e) });
       }
@@ -692,7 +789,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       } else {
         if (source?.type !== "block") return false;
         const kind = blocks.get(source.data.blockId)?.kind;
-        if (!kind || !ACCEPTS[target.data.target].includes(kind)) return false;
+        if (!kind || !accepts(target.data.target, composerTool()).includes(kind)) return false;
       }
       return !doc.edges.some((e) => e.source === source.id && e.target === target.id);
     },
@@ -740,6 +837,7 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       if (compiled?.files.some((f) => f.blocks.includes(node.id))) return;
       const kind = node.type === "plan" ? "plan" : blocks.get(node.data.blockId)?.kind;
       if (!kind) return;
+      const tool = composerTool();
       const { selected: _s, dragging: _d, ...block } = node;
       const out = "preview-output";
       const temp: ComposerDoc = {
@@ -751,7 +849,13 @@ export const useComposerStore = create<ComposerState>((set, get) => {
             type: "output",
             position: { x: 0, y: 0 },
             data: {
-              target: kind === "plan" ? "plans" : PREVIEW_TARGET[kind],
+              // Rules have no file of their own in tools without rule files.
+              target:
+                kind === "plan"
+                  ? "plans"
+                  : kind === "rule" && !targetAvailable("rules", tool)
+                    ? "instructions"
+                    : PREVIEW_TARGET[kind],
               scope: "team",
               order: [node.id],
             },
@@ -760,8 +864,8 @@ export const useComposerStore = create<ComposerState>((set, get) => {
         edges: [{ id: "preview-edge", source: node.id, target: out }],
       };
       try {
-        const result = await invoke<Compiled>("composer_compile", { doc: temp });
-        // A plan's preview also points CLAUDE.md to it; show PLANS.md.
+        const result = await invoke<Compiled>("composer_compile", { doc: temp, tool });
+        // A plan's preview also points the instructions file to it; show PLANS.md.
         const file = result.files.find((f) => f.node === out) ?? null;
         if (get().focus === nodeId) set({ standalone: file });
       } catch (e) {
