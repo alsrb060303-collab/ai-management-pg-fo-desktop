@@ -13,6 +13,7 @@
     "core:window:allow-destroy",
     "opener:default",
     "dialog:allow-open",
-    "dialog:allow-ask"
+    "dialog:allow-ask",
+    "notification:default"
   ]
 }

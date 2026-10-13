@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { onLocaleApplied } from "../i18n";
+import { notifyGitHub } from "./notify";
 
 // Mirrors src-tauri/src/github.
 export interface Account {
@@ -182,7 +183,10 @@ export const useGitHubStore = create<GitHubState>((set, get) => {
       set({ loading: true });
       try {
         const view = await invoke<RepoView | null>("github_repo", { project });
+        const before = get().view;
         if (id === seq) set({ view, error: null, loading: false });
+        if (id === seq && before && view && get().project === project)
+          void notifyGitHub(before, view);
         // The Claude Code mod shows the branch's PR and CI too.
         void invoke("bridge_github", { project, summary: summarize(view) }).catch(() => {});
       } catch (e) {

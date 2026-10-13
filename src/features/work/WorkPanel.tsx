@@ -5,13 +5,12 @@ import {
   ArrowUp,
   FolderOpen,
   FolderTree,
-  GitBranch,
   Plus,
-  RefreshCw,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
@@ -21,13 +20,18 @@ import {
   type Branch,
   type Change,
   type ChangeKind,
-  type Diff,
   useWorkStore,
   type Worktree,
 } from "../../store/work";
-import { GitHubSection } from "./GitHubSection";
+import { ConflictView } from "./ConflictView";
+import { DiffView } from "./DiffView";
+import { FlowCard } from "./FlowCard";
+import { GitHubSection, PullBadge } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
+import { History } from "./History";
 import { RemoteRepo, RepoPicker } from "./RemoteRepo";
+import { TabBar, type TabItem } from "./TabBar";
+import { useWorkUi, type WorkTab } from "./ui";
 
 /** How often the state is re-read while the panel is visible. */
 const POLL_MS = 4000;
@@ -127,7 +131,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
       {!overview && <GitHubSection compact={compact} />}
       {overview && (
         <>
-          <HeadBar compact={compact} />
+          <FlowCard compact={compact} />
           {(!overview.head.commit || !overview.hasRemote) && (
             <GitSetupGuide
               key={`${project}:${overview.head.commit ? "noRemote" : "noCommit"}`}
@@ -139,93 +143,53 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
               compact={compact}
             />
           )}
-          <GitHubSection compact={compact} />
-          <Changes compact={compact} />
-          <Branches compact={compact} />
-          <Worktrees compact={compact} />
+          <Tabs compact={compact} />
         </>
       )}
     </div>
   );
 }
 
-/** Operations with a label; others show git's own name. */
-const OPERATIONS = ["rebase", "merge", "cherry-pick", "revert", "bisect"] as const;
-type Operation = (typeof OPERATIONS)[number];
-const isOperation = (op: string): op is Operation => (OPERATIONS as readonly string[]).includes(op);
-
-function HeadBar({ compact }: { compact: boolean }) {
+/** Changes, history, branches, worktrees and GitHub, one at a time. */
+function Tabs({ compact }: { compact: boolean }) {
   const t = useT();
-  const { overview, busy, refresh } = useWorkStore();
+  const overview = useWorkStore((s) => s.overview);
+  const { status, view } = useGitHubStore();
+  const { tab, setTab } = useWorkUi();
   if (!overview) return null;
-  const { head, operation } = overview;
+  const github = !!status?.configured && (!status.account || overview.hasRemote);
+  const tabs: TabItem<WorkTab>[] = [
+    {
+      key: "changes",
+      label: t("work.tab.changes"),
+      count: overview.changeCount || undefined,
+      dot: overview.changeCount > 0,
+    },
+    { key: "history", label: t("work.tab.history"), count: overview.unpushed || undefined },
+    { key: "branches", label: t("work.tab.branches"), count: overview.branches.length },
+    { key: "worktrees", label: t("work.tab.worktrees"), count: overview.worktrees.length },
+    ...(github
+      ? [
+          {
+            key: "github" as const,
+            label: t("work.tab.github"),
+            count: view?.pulls.length || undefined,
+          },
+        ]
+      : []),
+  ];
+  const shown = tabs.some((x) => x.key === tab) ? tab : "changes";
   return (
-    <div className="flex items-center gap-2">
-      <GitBranch size={compact ? 15 : 17} className="shrink-0 text-text-subtle" />
-      <span className={`min-w-0 truncate font-semibold ${compact ? "text-sm" : "text-base"}`}>
-        {head.branch ?? t("work.detached", { commit: head.commit ?? "" })}
-      </span>
-      <Track ahead={head.ahead} behind={head.behind} />
-      {operation && (
-        <span className="shrink-0 rounded-full bg-warning/15 px-2 py-px text-[11px] text-warning">
-          {isOperation(operation) ? t(`work.op.${operation}`) : operation}
-        </span>
-      )}
-      {!head.commit && <span className="text-xs text-text-subtle">{t("work.noCommits")}</span>}
-      <SyncButtons compact={compact} />
-      <IconButton
-        label={t("work.refresh")}
-        disabled={busy}
-        onClick={() => void refresh(true)}
-        className="ml-auto size-7"
-      >
-        <RefreshCw size={14} />
-      </IconButton>
+    <div className="space-y-3">
+      <TabBar tabs={tabs} tab={shown} onTab={setTab} compact={compact} />
+      <div role="tabpanel">
+        {shown === "changes" && <Changes compact={compact} />}
+        {shown === "history" && <History compact={compact} />}
+        {shown === "branches" && <Branches compact={compact} />}
+        {shown === "worktrees" && <Worktrees compact={compact} />}
+        {shown === "github" && <GitHubSection compact={compact} />}
+      </div>
     </div>
-  );
-}
-
-/** Push (and set the upstream the first time) and fast-forward pull. */
-function SyncButtons({ compact }: { compact: boolean }) {
-  const t = useT();
-  const { overview, busy, run } = useWorkStore();
-  const reloadGitHub = useGitHubStore((s) => s.load);
-  if (!overview?.head.branch || !overview.head.commit || !overview.hasRemote) return null;
-  const { ahead, behind, upstream } = overview.head;
-  const canPush = ahead > 0 || !upstream;
-  const button =
-    "flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-[11px] hover:border-border-strong disabled:opacity-50";
-  return (
-    <span className="flex shrink-0 items-center gap-1">
-      {behind > 0 && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void run("work_pull", {})}
-          title={t("work.pull.title")}
-          className={button}
-        >
-          <ArrowDown size={11} />
-          {!compact && t("work.pull")}
-        </button>
-      )}
-      {canPush && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={async () => {
-            if (await run("work_push", {})) {
-              void reloadGitHub(useGitHubStore.getState().project);
-            }
-          }}
-          title={upstream ? t("work.push.title") : t("work.push.first")}
-          className={button}
-        >
-          <ArrowUp size={11} />
-          {!compact && t("work.push")}
-        </button>
-      )}
-    </span>
   );
 }
 
@@ -279,60 +243,145 @@ function Section({
 }
 
 /** Labels are `work.kind.<kind>`. */
-const KIND: Record<ChangeKind, { letter: string; color: string }> = {
-  modified: { letter: "M", color: "text-warning" },
-  added: { letter: "A", color: "text-success" },
-  deleted: { letter: "D", color: "text-danger" },
-  renamed: { letter: "R", color: "text-info" },
-  copied: { letter: "C", color: "text-info" },
-  typeChanged: { letter: "T", color: "text-warning" },
-  untracked: { letter: "U", color: "text-success" },
-  conflicted: { letter: "!", color: "text-danger" },
+const KIND: Record<ChangeKind, string> = {
+  modified: "bg-warning/15 text-warning",
+  added: "bg-success/15 text-success",
+  deleted: "bg-danger/15 text-danger",
+  renamed: "bg-info/15 text-info",
+  copied: "bg-info/15 text-info",
+  typeChanged: "bg-warning/15 text-warning",
+  untracked: "bg-success/15 text-success",
+  conflicted: "bg-danger text-surface",
 };
+
+/** Paths git needs to stage or unstage a change (a rename has two). */
+const pathsOf = (c: Change) => (c.origPath ? [c.path, c.origPath] : [c.path]);
 
 function Changes({ compact }: { compact: boolean }) {
   const t = useT();
-  const { overview, selected, diff, select } = useWorkStore();
+  const { overview, selected, diff, select, stage, busy } = useWorkStore();
   if (!overview) return null;
   const { changes, changeCount } = overview;
+  if (changeCount === 0)
+    return <p className="text-xs text-text-subtle">{t("work.changes.none")}</p>;
+  const stageable = changes.filter((c) => c.kind !== "conflicted");
+  const staged = changes.filter((c) => c.staged);
+  const allIn = stageable.length > 0 && stageable.every((c) => c.staged && !c.unstaged);
+  const groups = staged.length
+    ? [
+        { key: "in", title: t("work.changes.inCommit"), items: staged },
+        {
+          key: "out",
+          title: t("work.changes.notInCommit"),
+          items: changes.filter((c) => !c.staged),
+        },
+      ].filter((g) => g.items.length)
+    : [{ key: "all", title: null, items: changes }];
   return (
-    <Section title={t("work.changes")} count={changeCount}>
-      {changeCount === 0 ? (
-        <p className="text-xs text-text-subtle">{t("work.changes.none")}</p>
-      ) : (
-        <ul className="space-y-px">
-          {changes.map((c) => (
-            <li key={`${c.kind}:${c.path}`}>
-              <ChangeRow
-                change={c}
-                compact={compact}
-                open={selected?.path === c.path}
-                onClick={() => void select(c)}
-              />
-              {selected?.path === c.path && <DiffView diff={diff} compact={compact} />}
-            </li>
-          ))}
-          {changeCount > changes.length && (
-            <li className="px-2 pt-1 text-[11px] text-text-subtle">
-              {t("work.changes.more", { n: changeCount - changes.length })}
-            </li>
+    <div>
+      <div className="mb-1 flex items-center gap-2 px-2 text-[11px] text-text-muted">
+        <Check
+          state={allIn ? "on" : staged.length ? "some" : "off"}
+          disabled={busy || !stageable.length}
+          label={allIn ? t("work.stage.noneAll") : t("work.stage.all")}
+          onChange={() => void stage(stageable.flatMap(pathsOf), !allIn)}
+        />
+        <span>{allIn ? t("work.stage.noneAll") : t("work.stage.all")}</span>
+      </div>
+      {groups.map((g) => (
+        <div key={g.key} className="mb-2">
+          {g.title && (
+            <h4 className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold text-text-muted">
+              {g.title}
+              <span className="font-normal text-text-subtle">{g.items.length}</span>
+            </h4>
           )}
-        </ul>
+          <ul className="space-y-px">
+            {g.items.map((c) => (
+              <li key={`${c.kind}:${c.path}`}>
+                <ChangeRow
+                  change={c}
+                  compact={compact}
+                  open={selected?.path === c.path}
+                  onClick={() => void select(c)}
+                />
+                {selected?.path === c.path &&
+                  (c.kind === "conflicted" ? (
+                    <ConflictView path={c.path} compact={compact} />
+                  ) : (
+                    <DiffView diff={diff} compact={compact} />
+                  ))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {changeCount > changes.length && (
+        <p className="px-2 pb-1 text-[11px] text-text-subtle">
+          {t("work.changes.more", { n: changeCount - changes.length })}
+        </p>
       )}
-      {changeCount > 0 && overview.operation === null && <CommitBox />}
-    </Section>
+      {overview.operation === null && <CommitBox />}
+    </div>
   );
 }
 
-/** A message and "Commit": every change, or only the staged ones. */
+/** A checkbox that can also show "some" (a partly added file or list). */
+function Check({
+  state,
+  disabled,
+  label,
+  onChange,
+}: {
+  state: "on" | "some" | "off";
+  disabled?: boolean;
+  label: string;
+  onChange: () => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      title={label}
+      checked={state === "on"}
+      ref={(el) => {
+        if (el) el.indeterminate = state === "some";
+      }}
+      disabled={disabled}
+      onChange={onChange}
+      onClick={(e) => e.stopPropagation()}
+      className="size-3.5 shrink-0 accent-[var(--c-accent)] disabled:opacity-40"
+    />
+  );
+}
+
+/**
+ * A message and "Commit": the checked files, or every change when none is
+ * checked. The message can be drafted by the user's own Claude Code.
+ */
 function CommitBox() {
   const t = useT();
-  const { overview, busy, run } = useWorkStore();
+  const { overview, busy, run, drafting, draftMessage } = useWorkStore();
   const [message, setMessage] = useState("");
-  const someStaged = overview?.changes.some((c) => c.staged) ?? false;
-  const [all, setAll] = useState(true);
+  const commitFocus = useWorkUi((s) => s.commitFocus);
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (commitFocus) box.current?.focus();
+  }, [commitFocus]);
   if (!overview) return null;
-  const onlyStaged = someStaged && !all;
+  const stagedCount = overview.changes.filter((c) => c.staged).length;
+  const onlyStaged = stagedCount > 0;
+
+  const draft = async () => {
+    if (message.trim() && !(await confirm(t("work.draft.replace"), t("work.draft.replaceTitle"))))
+      return;
+    const text = await draftMessage(!onlyStaged);
+    if (text) {
+      setMessage(text);
+      box.current?.focus();
+    }
+  };
+
   return (
     <form
       onSubmit={async (e) => {
@@ -341,30 +390,44 @@ function CommitBox() {
       }}
       className="mt-2 space-y-1.5"
     >
-      <textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) e.currentTarget.form?.requestSubmit();
-        }}
-        placeholder={t("work.commit.message")}
-        rows={2}
-        className="w-full min-w-0 resize-y rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong"
-      />
+      <div className="relative">
+        <textarea
+          ref={box}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey))
+              e.currentTarget.form?.requestSubmit();
+          }}
+          placeholder={t("work.commit.message")}
+          rows={message.includes("\n") ? 4 : 2}
+          disabled={drafting}
+          className="w-full min-w-0 resize-y rounded-md border border-border bg-surface px-2 py-1 pr-20 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong disabled:opacity-60"
+        />
+        <button
+          type="button"
+          onClick={() => void draft()}
+          disabled={drafting || busy}
+          title={t("work.draft.title")}
+          className="absolute top-1 right-1 flex items-center gap-1 rounded-md border border-border bg-surface-raised px-1.5 py-0.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text disabled:opacity-60"
+        >
+          <Sparkles size={11} className={drafting ? "animate-pulse text-accent" : "text-accent"} />
+          {drafting ? t("work.draft.busy") : t("work.draft")}
+        </button>
+      </div>
       <div className="flex items-center gap-2 text-xs">
-        {someStaged && (
-          <label className="flex items-center gap-1.5 text-text-muted">
-            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-            {t("work.commit.all")}
-          </label>
-        )}
+        <span className="min-w-0 truncate text-[11px] text-text-subtle">
+          {onlyStaged ? t("work.commit.onlyChecked") : t("work.commit.noneChecked")}
+        </span>
         <button
           type="submit"
-          disabled={busy || !message.trim()}
+          disabled={busy || drafting || !message.trim()}
           title="Ctrl+Enter"
-          className="ml-auto rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
+          className="ml-auto shrink-0 rounded-md bg-primary px-2.5 py-1 font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
         >
-          {t(onlyStaged ? "work.commit.staged" : "work.commit")}
+          {onlyStaged
+            ? t("work.commit.stagedN", { n: stagedCount })
+            : t("work.commit.allN", { n: overview.changeCount })}
         </button>
       </div>
     </form>
@@ -383,79 +446,55 @@ function ChangeRow({
   onClick: () => void;
 }) {
   const t = useT();
+  const { stage, busy } = useWorkStore();
   const kind = KIND[change.kind];
   const label = t(`work.kind.${change.kind}`);
   const trimmed = change.path.replace(/\/$/, "");
   const slash = trimmed.lastIndexOf("/");
   const dir = slash >= 0 ? trimmed.slice(0, slash + 1) : "";
   const name = trimmed.slice(slash + 1) + (change.path.endsWith("/") ? "/" : "");
-  const stage = change.staged ? t(change.unstaged ? "work.partlyStaged" : "work.staged") : "";
+  const stageLabel = change.staged ? t(change.unstaged ? "work.partlyStaged" : "work.staged") : "";
+  const conflicted = change.kind === "conflicted";
+  const full = change.staged && !change.unstaged;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={`${label}${stage ? ` · ${stage}` : ""}${change.origPath ? ` · ${t("work.renamedFrom", { path: change.origPath })}` : ""}\n${change.path}`}
-      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left font-mono ${
+    <div
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 ${
         compact ? "text-[11px]" : "text-xs"
       } ${open ? "bg-active" : "hover:bg-hover"}`}
     >
-      <span className={`w-3 shrink-0 text-center font-semibold ${kind.color}`}>{kind.letter}</span>
-      <span className="min-w-0 flex-1 truncate">
-        <span className="text-text-subtle">{dir}</span>
-        {name}
-      </span>
-      {change.staged && (
+      <Check
+        state={full ? "on" : change.staged ? "some" : "off"}
+        disabled={busy || conflicted}
+        label={
+          conflicted
+            ? t("work.stage.conflict")
+            : full
+              ? t("work.stage.remove")
+              : t("work.stage.add")
+        }
+        onChange={() => void stage(pathsOf(change), !full)}
+      />
+      <button
+        type="button"
+        onClick={onClick}
+        title={`${label}${stageLabel ? ` · ${stageLabel}` : ""}${change.origPath ? ` · ${t("work.renamedFrom", { path: change.origPath })}` : ""}\n${change.path}`}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left font-mono"
+      >
         <span
-          className="size-1.5 shrink-0 rounded-full bg-success"
-          role="img"
-          aria-label={t("work.staged")}
-        />
-      )}
-    </button>
-  );
-}
-
-function DiffView({ diff, compact }: { diff: Diff | null; compact: boolean }) {
-  const t = useT();
-  if (!diff)
-    return <p className="px-2 py-2 text-[11px] text-text-subtle">{t("work.diff.loading")}</p>;
-  if (diff.binary)
-    return <p className="px-2 py-2 text-[11px] text-text-subtle">{t("work.diff.binary")}</p>;
-  const lines = diff.text.split("\n");
-  if (lines[lines.length - 1] === "") lines.pop();
-  return (
-    <div
-      className={`selectable my-1 overflow-auto rounded-lg border border-border bg-sunken font-mono leading-snug ${
-        compact ? "max-h-72 text-[10.5px]" : "max-h-[28rem] text-xs"
-      }`}
-    >
-      <pre className="min-w-fit py-1">
-        {lines.map((line, i) => (
-          <div
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines have no identity
-            key={i}
-            className={`px-2 ${
-              line.startsWith("@@")
-                ? "text-info"
-                : line.startsWith("+++") || line.startsWith("---")
-                  ? "text-text-subtle"
-                  : line.startsWith("+")
-                    ? "bg-success/10 text-success"
-                    : line.startsWith("-")
-                      ? "bg-danger/10 text-danger"
-                      : "text-text-muted"
-            }`}
-          >
-            {line || " "}
-          </div>
-        ))}
-        {lines.length === 0 && <div className="px-2 text-text-subtle">{t("work.diff.empty")}</div>}
-      </pre>
-      {diff.truncated && (
-        <p className="border-t border-border px-2 py-1 text-[11px] text-text-subtle">
-          {t("work.diff.truncated")}
-        </p>
-      )}
+          className={`w-14 shrink-0 truncate rounded px-1 py-px text-center font-sans text-[10px] font-medium ${kind}`}
+        >
+          {label}
+        </span>
+        <span className="min-w-0 flex-1 truncate">
+          <span className="text-text-subtle">{dir}</span>
+          {name}
+        </span>
+        {change.staged && change.unstaged && (
+          <span className="shrink-0 font-sans text-[10px] text-text-subtle">
+            {t("work.partlyStaged")}
+          </span>
+        )}
+      </button>
     </div>
   );
 }
@@ -463,10 +502,13 @@ function DiffView({ diff, compact }: { diff: Diff | null; compact: boolean }) {
 function Branches({ compact }: { compact: boolean }) {
   const t = useT();
   const { overview, busy, run, checkBranch } = useWorkStore();
+  const view = useGitHubStore((s) => s.view);
   const [adding, setAdding] = useState(false);
   const [all, setAll] = useState(false);
   if (!overview) return null;
   const { branches } = overview;
+  const pullOf = (b: Branch) =>
+    (b.current && view?.current) || view?.pulls.find((p) => p.head === b.name) || null;
   const shown = all ? branches : branches.slice(0, BRANCH_LIMIT);
 
   const remove = async (b: Branch) => {
@@ -519,15 +561,24 @@ function Branches({ compact }: { compact: boolean }) {
         {shown.map((b) => (
           <li
             key={b.name}
-            className={`group flex h-7 items-center gap-2 rounded-md px-2 hover:bg-hover ${
-              compact ? "text-xs" : "text-sm"
-            }`}
+            className={`group flex h-7 items-center gap-2 rounded-md px-2 ${
+              b.current ? "bg-accent-soft" : "hover:bg-hover"
+            } ${compact ? "text-xs" : "text-sm"}`}
             title={`${b.commit} ${b.subject}${
               b.upstream ? `\n${t("work.branch.upstream", { upstream: b.upstream })}` : ""
             }${b.worktree && !b.current ? `\n${t("work.branch.worktree", { path: b.worktree })}` : ""}`}
           >
+            <span
+              className={`size-2 shrink-0 rounded-full ${
+                b.current ? "bg-accent" : "border border-border-strong"
+              }`}
+            />
             <span className={`min-w-0 truncate ${b.current ? "font-semibold" : ""}`}>{b.name}</span>
             {b.current && <Badge>{t("work.branch.current")}</Badge>}
+            {(() => {
+              const pull = pullOf(b);
+              return pull && <PullBadge pull={pull} number />;
+            })()}
             {b.worktree && !b.current && <Badge>worktree</Badge>}
             <Track ahead={b.ahead} behind={b.behind} gone={b.gone} />
             {!compact && (

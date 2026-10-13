@@ -415,6 +415,121 @@ pub fn diff(
     Ok(clean_diff(&raw))
 }
 
+fn normal_path(path: &str) -> git::Result<()> {
+    use std::path::Component;
+    let ok = !path.is_empty()
+        && Path::new(path.trim_end_matches('/'))
+            .components()
+            .all(|c| matches!(c, Component::Normal(_)));
+    if ok {
+        Ok(())
+    } else {
+        Err(crate::tr!("잘못된 경로예요", "Invalid path"))
+    }
+}
+
+/// Adds `paths` to the next commit (`stage`), or takes them back out.
+/// Paths are taken literally (no globs).
+pub fn stage(root: &Path, paths: &[String], stage: bool) -> git::Result<()> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    for p in paths {
+        normal_path(p)?;
+    }
+    let mut args: Vec<&str> = vec!["--literal-pathspecs"];
+    let has_head = git::run(root, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok();
+    if stage {
+        args.extend(["add", "-A", "--"]);
+    } else if has_head {
+        args.extend(["reset", "-q", "HEAD", "--"]);
+    } else {
+        // Nothing to reset to before the first commit.
+        args.extend(["rm", "-r", "-q", "--cached", "--ignore-unmatch", "--"]);
+    }
+    args.extend(paths.iter().map(String::as_str));
+    git::run(root, &args).map(drop)
+}
+
+/// What one commit changed, against its first parent.
+pub fn commit_diff(root: &Path, hash: &str) -> git::Result<Diff> {
+    if hash.len() < 4 || hash.len() > 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(crate::tr!("잘못된 커밋이에요", "Invalid commit"));
+    }
+    let parent = format!("{hash}^1");
+    let base = if git::run(root, &["rev-parse", "--verify", "--quiet", &parent]).is_ok() {
+        parent.as_str()
+    } else {
+        EMPTY_TREE
+    };
+    let raw = git::run_raw(
+        root,
+        &[
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "-M",
+            base,
+            hash,
+        ],
+    )?;
+    Ok(clean_diff(&raw))
+}
+
+/// The diff `claude` drafts a commit message from: what would be committed
+/// (staged, or everything with `all`), plus new files' names and recent
+/// subjects so the draft matches the repository's style.
+pub fn message_context(root: &Path, all: bool) -> git::Result<String> {
+    /// Enough for a message; a huge diff is cut.
+    const MAX: usize = 60 * 1024;
+    let has_head = git::run(root, &["rev-parse", "--verify", "--quiet", "HEAD"]).is_ok();
+    let base = if has_head { "HEAD" } else { EMPTY_TREE };
+    let diff_args: Vec<&str> = if all {
+        vec!["diff", "--no-color", "--no-ext-diff", "-M", base]
+    } else {
+        vec![
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "-M",
+            "--cached",
+            base,
+        ]
+    };
+    let diff = git::run_raw(root, &diff_args)?;
+    let mut diff = String::from_utf8_lossy(&diff).into_owned();
+    if all {
+        let new = git::run(root, &["ls-files", "--others", "--exclude-standard"])?;
+        if !new.trim().is_empty() {
+            diff.push_str("\nNew files:\n");
+            diff.push_str(&new);
+        }
+    }
+    if diff.trim().is_empty() {
+        return Err(crate::tr!(
+            "커밋할 변경이 없어요",
+            "There's nothing to commit"
+        ));
+    }
+    if diff.len() > MAX {
+        let mut cut = MAX;
+        while !diff.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        diff.truncate(cut);
+        diff.push_str("\n[diff cut here]\n");
+    }
+    let recent = if has_head {
+        git::run(root, &["log", "-n10", "--no-merges", "--format=%s"]).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    Ok(format!(
+        "<recent_commit_subjects>\n{recent}\n</recent_commit_subjects>\n<diff>\n{diff}\n</diff>\n"
+    ))
+}
+
 /// Commits with `message`: every change (`all`, like `git add -A`) or only
 /// what is staged. Returns the new commit's short hash.
 pub fn commit(root: &Path, message: &str, all: bool) -> git::Result<String> {
@@ -661,9 +776,54 @@ mod tests {
         assert!(commit(&root, "x", false).is_err());
         let hash = commit(&root, "Change a", true).unwrap();
         assert!(!hash.is_empty());
+        // Nothing is on the remote yet.
+        let before = super::super::read::overview(&root, false).unwrap();
+        assert_eq!(before.unpushed as usize, before.log.len());
+        assert_eq!(before.log[0].subject, "Change a");
+        assert!(!before.log[0].pushed);
 
         // The first push sets the upstream.
         push(&root, &[]).unwrap();
+        let after = super::super::read::overview(&root, false).unwrap();
+        assert_eq!(after.unpushed, 0);
+        assert!(after.log.iter().all(|c| c.pushed));
+        assert!(after.base.is_none(), "main is its own base");
+
+        // Files go in and out of the next commit one by one.
+        std::fs::write(root.join("x.txt"), "x").unwrap();
+        std::fs::write(root.join("y.txt"), "y").unwrap();
+        stage(&root, &["x.txt".into()], true).unwrap();
+        let staged = git::run(&root, &["diff", "--cached", "--name-only"]).unwrap();
+        assert_eq!(staged, "x.txt");
+        assert!(message_context(&root, false).unwrap().contains("x.txt"));
+        assert!(!message_context(&root, false).unwrap().contains("y.txt"));
+        assert!(message_context(&root, true).unwrap().contains("y.txt"));
+        stage(&root, &["x.txt".into()], false).unwrap();
+        assert!(
+            git::run(&root, &["diff", "--cached", "--name-only"])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(stage(&root, &["../out".into()], true).is_err());
+        commit(&root, "Add x and y", true).unwrap();
+        let head = git::run(&root, &["rev-parse", "HEAD"]).unwrap();
+        let shown = commit_diff(&root, &head).unwrap();
+        assert!(shown.text.contains("+++ b/x.txt") && shown.text.contains("+++ b/y.txt"));
+        assert!(commit_diff(&root, "HEAD; rm").is_err());
+        push(&root, &[]).unwrap();
+
+        // A feature branch is measured against origin/main.
+        git(&root, &["switch", "-q", "-c", "feat"]);
+        std::fs::write(root.join("c.txt"), "c").unwrap();
+        commit(&root, "Add c", true).unwrap();
+        let feat = super::super::read::overview(&root, false).unwrap();
+        let base = feat.base.unwrap();
+        assert_eq!(
+            (base.name.as_str(), base.ahead, base.behind),
+            ("origin/main", 1, 0)
+        );
+        assert_eq!(feat.unpushed, 1);
+        git(&root, &["switch", "-q", "main"]);
         let upstream = git::run(&root, &["rev-parse", "--abbrev-ref", "@{u}"]).unwrap();
         assert_eq!(upstream, "origin/main");
 

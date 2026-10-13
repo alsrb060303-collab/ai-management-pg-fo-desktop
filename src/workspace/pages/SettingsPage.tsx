@@ -6,6 +6,7 @@ import { ModsCard } from "../../features/mods/ModsCard";
 import { type LocalePref, timeAgo, useLocaleStore, useT } from "../../i18n";
 import { useDockStore } from "../../store/dock";
 import { useLibraryStore } from "../../store/library";
+import { useNotifyStore } from "../../store/notify";
 import { useSyncStore } from "../../store/sync";
 import { type ThemePref, useThemeStore } from "../../store/theme";
 
@@ -78,6 +79,8 @@ export function SettingsPage() {
         </Row>
       </Card>
 
+      <NotifyCard />
+
       <SyncCard />
 
       <ModsCard />
@@ -109,6 +112,18 @@ export function SettingsPage() {
         <Row title={t("settings.license")} description={t("settings.licenseHint")} />
       </Card>
     </div>
+  );
+}
+
+function NotifyCard() {
+  const t = useT();
+  const { on, setOn } = useNotifyStore();
+  return (
+    <Card title={t("settings.notify")}>
+      <Row title={t("settings.notifyGitHub")} description={t("settings.notifyGitHubHint")}>
+        <Switch label={t("settings.notifyGitHub")} checked={on} onChange={setOn} />
+      </Row>
+    </Card>
   );
 }
 

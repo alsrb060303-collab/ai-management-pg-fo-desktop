@@ -418,6 +418,17 @@ pub struct Commit {
     pub author: String,
     pub date: String,
     pub url: String,
+    /// Has more than one parent.
+    pub merge: bool,
+}
+
+/// The chosen branch against the default branch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BaseCompare {
+    pub name: String,
+    pub ahead: u32,
+    pub behind: u32,
 }
 
 /// A repository seen on GitHub only (not cloned): its branches, the chosen
@@ -430,6 +441,8 @@ pub struct RemoteView {
     pub branch: String,
     pub branches: Vec<RemoteBranch>,
     pub commits: Vec<Commit>,
+    /// `None` on the default branch, or when GitHub couldn't compare.
+    pub base: Option<BaseCompare>,
     pub view: RepoView,
 }
 
@@ -458,6 +471,14 @@ struct RawCommit {
     html_url: String,
     commit: RawCommitDetail,
     author: Option<RawUser>,
+    #[serde(default)]
+    parents: Vec<serde::de::IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+struct RawCompare {
+    ahead_by: u32,
+    behind_by: u32,
 }
 
 /// `branch` defaults to the repository's default branch.
@@ -510,15 +531,35 @@ pub fn remote_view(api: &Api, slug: &str, branch: Option<&str>) -> Result<Remote
                     .unwrap_or_default(),
                 date: author.and_then(|a| a.date.clone()).unwrap_or_default(),
                 url: c.html_url,
+                merge: c.parents.len() > 1,
             }
         })
         .collect();
+    let base = if branch == repo.default_branch {
+        None
+    } else {
+        // Optional: a compare can fail (e.g. unrelated histories) without
+        // hiding the rest of the view.
+        api.get_opt::<RawCompare>(&format!(
+            "/repos/{slug}/compare/{}...{}",
+            enc(&repo.default_branch),
+            enc(&branch)
+        ))
+        .ok()
+        .flatten()
+        .map(|c| BaseCompare {
+            name: repo.default_branch.clone(),
+            ahead: c.ahead_by,
+            behind: c.behind_by,
+        })
+    };
     let view = repo_view(api, slug, Some(&branch))?;
     Ok(RemoteView {
         origin: repo.full_name,
         branch,
         branches,
         commits,
+        base,
         view,
     })
 }

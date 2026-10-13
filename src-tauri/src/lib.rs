@@ -30,6 +30,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             dock::dock_status,
@@ -86,6 +87,13 @@ pub fn run() {
             work::work_push,
             work::work_pull,
             work::work_git_version,
+            work::work_stage,
+            work::work_commit_diff,
+            work::work_draft_message,
+            work::work_conflict,
+            work::work_resolve,
+            work::work_continue,
+            work::work_abort,
             i18n::set_locale,
             bridge::bridge_github,
             claude_mod::claude_mod_status,

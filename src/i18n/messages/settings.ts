@@ -81,6 +81,10 @@ export const ko = {
   "settings.license": "라이선스",
   "settings.licenseHint":
     "Apache-2.0 오픈소스. Anthropic 또는 Claude와 관련 없는 독립 프로젝트예요.",
+  "settings.notify": "알림",
+  "settings.notifyGitHub": "GitHub 알림",
+  "settings.notifyGitHubHint":
+    "열어 둔 프로젝트 브랜치의 PR이 병합·닫히거나 CI가 끝나면 데스크톱 알림을 보내요.",
 } as const;
 
 export const en: Messages<typeof ko> = {
@@ -165,4 +169,8 @@ export const en: Messages<typeof ko> = {
   "settings.license": "License",
   "settings.licenseHint":
     "Apache-2.0 open source. An independent project, not affiliated with Anthropic or Claude.",
+  "settings.notify": "Notifications",
+  "settings.notifyGitHub": "GitHub notifications",
+  "settings.notifyGitHubHint":
+    "A desktop notification when the open project branch's PR is merged or closed, or its CI finishes.",
 };

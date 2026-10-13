@@ -7,16 +7,21 @@ import {
   CircleDot,
   Clock,
   ExternalLink,
+  GitMerge,
   GitPullRequest,
+  GitPullRequestClosed,
+  GitPullRequestDraft,
   MessageSquare,
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useT } from "../../i18n";
 import { type Checks, type Issue, type Pull, useGitHubStore } from "../../store/github";
+import { useNotifyStore } from "../../store/notify";
 import { useProjectStore } from "../../store/project";
 import { useWorkStore } from "../../store/work";
 import { Command, rich } from "./GitSetupGuide";
+import { useWorkUi } from "./ui";
 
 /** GitHub is polled far less often than local git (5,000 requests an hour). */
 const POLL_MS = 60_000;
@@ -27,32 +32,34 @@ export const open = (url: string) => {
 };
 
 /**
- * The work panel's GitHub part: sign-in, the checked-out branch's pull
- * request and checks (or a form to open one), and open PRs and issues.
+ * Keeps the GitHub view of the open project current: on project, sign-in,
+ * branch and push changes, and every minute while the window is shown.
+ * Called once per window (main and sidebar), whatever page is shown.
  */
-export function GitHubSection({ compact }: { compact: boolean }) {
-  const t = useT();
+export function useGitHubSync() {
   const project = useProjectStore((s) => s.current);
   const overview = useWorkStore((s) => s.overview);
-  const { status, view, loading, error, init, load } = useGitHubStore();
+  const { status, init, load } = useGitHubStore();
   const signedIn = !!status?.account;
   const branch = overview?.head.branch ?? null;
   const commit = overview?.head.commit ?? null;
-  const ahead = overview?.head.ahead ?? 0;
+  const unpushed = overview?.unpushed ?? 0;
 
   useEffect(() => {
     void init();
   }, [init]);
 
-  // Reload when the project, sign-in, branch or pushed state changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: branch, commit and ahead are reload triggers
+  // biome-ignore lint/correctness/useExhaustiveDependencies: branch, commit and unpushed are reload triggers
   useEffect(() => {
     void load(project);
-  }, [project, signedIn, branch, commit, ahead, load]);
+  }, [project, signedIn, branch, commit, unpushed, load]);
 
   useEffect(() => {
     const tick = () => {
-      if (document.visibilityState === "visible") void load(useGitHubStore.getState().project);
+      // Hidden, keep watching an open PR so its merge or CI result is notified.
+      const { view, project } = useGitHubStore.getState();
+      const watching = useNotifyStore.getState().on && view?.current?.state === "open";
+      if (document.visibilityState === "visible" || watching) void load(project);
     };
     const timer = setInterval(tick, POLL_MS);
     window.addEventListener("focus", tick);
@@ -61,6 +68,17 @@ export function GitHubSection({ compact }: { compact: boolean }) {
       window.removeEventListener("focus", tick);
     };
   }, [load]);
+}
+
+/**
+ * The work panel's GitHub part: sign-in, the checked-out branch's pull
+ * request and checks (or a form to open one), and open PRs and issues.
+ */
+export function GitHubSection({ compact }: { compact: boolean }) {
+  const t = useT();
+  const overview = useWorkStore((s) => s.overview);
+  const { status, view, loading, error } = useGitHubStore();
+  const signedIn = !!status?.account;
 
   // No client ID in this build. Signed out, the sign-in shows for any
   // project; signed in, a project without a remote has nothing to show (the
@@ -190,21 +208,27 @@ export function SignIn() {
 }
 
 /** Labels are `work.github.state.<state>`. */
-const STATE: Record<Pull["state"], string> = {
-  open: "bg-success/15 text-success",
-  merged: "bg-info/15 text-info",
-  closed: "bg-danger/15 text-danger",
-};
+/** GitHub's colors: open green, merged purple, closed red, draft grey. */
+export function pullStyle(pull: Pick<Pull, "state" | "draft">) {
+  if (pull.draft && pull.state === "open")
+    return { key: "draft", Icon: GitPullRequestDraft, text: "text-text-muted", chip: "bg-sunken" };
+  if (pull.state === "merged")
+    return { key: "merged", Icon: GitMerge, text: "text-merged", chip: "bg-merged/15" };
+  if (pull.state === "closed")
+    return { key: "closed", Icon: GitPullRequestClosed, text: "text-danger", chip: "bg-danger/15" };
+  return { key: "open", Icon: GitPullRequest, text: "text-success", chip: "bg-success/15" };
+}
 
-export function PullBadge({ pull }: { pull: Pull }) {
+export function PullBadge({ pull, number }: { pull: Pull; number?: boolean }) {
   const t = useT();
-  const s =
-    pull.draft && pull.state === "open"
-      ? { label: t("work.github.draft"), className: "bg-sunken text-text-muted" }
-      : { label: t(`work.github.state.${pull.state}`), className: STATE[pull.state] };
+  const s = pullStyle(pull);
   return (
-    <span className={`shrink-0 rounded-full px-1.5 py-px text-[10px] ${s.className}`}>
-      {s.label}
+    <span
+      className={`flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ${s.chip} ${s.text}`}
+    >
+      <s.Icon size={11} />
+      {number && `#${pull.number} `}
+      {t(s.key === "draft" ? "work.github.draft" : `work.github.state.${pull.state}`)}
     </span>
   );
 }
@@ -250,7 +274,8 @@ function CurrentBranch({ compact }: { compact: boolean }) {
   const t = useT();
   const view = useGitHubStore((s) => s.view);
   const overview = useWorkStore((s) => s.overview);
-  const [creating, setCreating] = useState(false);
+  const creating = useWorkUi((s) => s.creatingPull);
+  const setCreating = useWorkUi((s) => s.setCreatingPull);
   if (!view || !overview) return null;
   const branch = overview.head.branch;
   if (!branch) return null;
@@ -277,7 +302,10 @@ function CurrentBranch({ compact }: { compact: boolean }) {
           className="flex w-full items-center gap-2 text-left"
           title={`${current.head} → ${current.base}`}
         >
-          <GitPullRequest size={15} className="shrink-0 text-text-subtle" />
+          {(() => {
+            const { Icon, text } = pullStyle(current);
+            return <Icon size={15} className={`shrink-0 ${text}`} />;
+          })()}
           <span className="min-w-0 flex-1 truncate">
             <span className="text-text-subtle">#{current.number}</span> {current.title}
           </span>
@@ -478,17 +506,20 @@ export function PullList({ pulls }: { pulls: Pull[] }) {
   const t = useT();
   return (
     <Collapsible title={t("work.github.openPulls")} count={pulls.length}>
-      {pulls.map((p) => (
-        <Row
-          key={p.number}
-          url={p.url}
-          icon={<GitPullRequest size={13} className="shrink-0 text-success" />}
-          number={p.number}
-          title={p.title}
-          tooltip={`${p.head} → ${p.base} · @${p.author}`}
-          aside={p.draft ? <PullBadge pull={p} /> : null}
-        />
-      ))}
+      {pulls.map((p) => {
+        const { Icon, text } = pullStyle(p);
+        return (
+          <Row
+            key={p.number}
+            url={p.url}
+            icon={<Icon size={13} className={`shrink-0 ${text}`} />}
+            number={p.number}
+            title={p.title}
+            tooltip={`${p.head} → ${p.base} · @${p.author}`}
+            aside={p.draft ? <PullBadge pull={p} /> : null}
+          />
+        );
+      })}
     </Collapsible>
   );
 }

@@ -27,6 +27,7 @@ export interface Commit {
   author: string;
   date: string;
   url: string;
+  merge: boolean;
 }
 
 export interface RemoteView {
@@ -34,6 +35,8 @@ export interface RemoteView {
   branch: string;
   branches: RemoteBranch[];
   commits: Commit[];
+  /** The branch against the default branch; `null` on the default branch. */
+  base: { name: string; ahead: number; behind: number } | null;
   view: RepoView;
 }
 
@@ -118,8 +121,34 @@ const noFiles = {
   openPath: null,
 };
 
+/** The repository (and branch) picked last, restored when the app starts. */
+const SAVED_KEY = "work.remoteRepo";
+
+function loadSaved(): { slug: string; branch: string | null } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null");
+    return typeof saved?.slug === "string"
+      ? { slug: saved.slug, branch: typeof saved.branch === "string" ? saved.branch : null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function save(slug: string | null, branch: string | null = null) {
+  try {
+    if (slug) localStorage.setItem(SAVED_KEY, JSON.stringify({ slug, branch }));
+    else localStorage.removeItem(SAVED_KEY);
+  } catch {
+    // Only a convenience: the repository has to be picked again.
+  }
+}
+
 export const useRemoteStore = create<RemoteState>((set, get) => {
   let seq = 0;
+  const saved = loadSaved();
+  /** The saved branch, used for the first load only. */
+  let savedBranch = saved?.branch ?? null;
 
   /** Runs a change, then reloads the view; returns whether it worked. */
   const change = async (run: () => Promise<unknown>, branch?: string) => {
@@ -139,7 +168,7 @@ export const useRemoteStore = create<RemoteState>((set, get) => {
     repos: null,
     reposLoading: false,
     clones: {},
-    slug: null,
+    slug: saved?.slug ?? null,
     data: null,
     loading: false,
     busy: false,
@@ -166,12 +195,16 @@ export const useRemoteStore = create<RemoteState>((set, get) => {
     open: (slug) => {
       if (get().slug === slug) return;
       seq++;
+      savedBranch = null;
+      save(slug);
       set({ slug, data: null, error: null, loading: false, ...noFiles });
       void get().load();
     },
 
     close: () => {
       seq++;
+      savedBranch = null;
+      save(null);
       set({ slug: null, data: null, error: null, loading: false, ...noFiles });
     },
 
@@ -183,14 +216,22 @@ export const useRemoteStore = create<RemoteState>((set, get) => {
       try {
         const data = await invoke<RemoteView>("github_remote", {
           slug,
-          branch: branch ?? get().data?.branch ?? null,
+          branch: branch ?? get().data?.branch ?? savedBranch,
         });
         if (id !== seq) return;
+        savedBranch = null;
+        save(slug, data.branch);
         // Another branch: its own files.
         if (data.branch !== get().data?.branch) set(noFiles);
         set({ data, loading: false, error: null });
       } catch (e) {
-        if (id === seq) set({ loading: false, error: String(e) });
+        if (id !== seq) return;
+        // The saved branch may be gone: fall back to the default branch.
+        if (savedBranch && !branch) {
+          savedBranch = null;
+          return get().load();
+        }
+        set({ loading: false, error: String(e) });
       }
     },
 

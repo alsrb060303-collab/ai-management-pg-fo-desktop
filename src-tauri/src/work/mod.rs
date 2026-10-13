@@ -2,6 +2,7 @@
 //! and worktrees, and the branch and worktree operations it offers, plus
 //! committing, pushing and pulling (with the GitHub sign-in when there is one).
 
+mod conflict;
 mod ops;
 mod read;
 
@@ -125,6 +126,104 @@ pub async fn work_pull(app: tauri::AppHandle, project: String) -> Result<(), Str
     blocking(project, move |root| ops::pull(root, &auth)).await
 }
 
+#[tauri::command]
+pub async fn work_stage(project: String, paths: Vec<String>, stage: bool) -> Result<(), String> {
+    blocking(project, move |root| ops::stage(root, &paths, stage)).await
+}
+
+#[tauri::command]
+pub async fn work_commit_diff(project: String, hash: String) -> Result<Diff, String> {
+    blocking(project, move |root| ops::commit_diff(root, &hash)).await
+}
+
+/// How `claude` is asked for a commit message. The diff follows on stdin.
+const DRAFT_PROMPT: &str = "Write a git commit message for the diff on stdin. \
+Match the language and style of the recent commit subjects if there are any, otherwise write in English. \
+First line: an imperative summary under 72 characters. If the change needs it, add a blank line and a short body. \
+Reply with the message only: no quotes, no code fences, no explanation.";
+
+/// A commit message drafted by the user's own `claude` (`claude -p`, no
+/// tools, not saved as a session) from what would be committed.
+#[tauri::command]
+pub async fn work_draft_message(project: String, all: bool) -> Result<String, String> {
+    blocking(project, move |root| {
+        let context = ops::message_context(root, all)?;
+        let (ok, out, err) = crate::claude_mod::claude_with_input(
+            root,
+            &[
+                "-p",
+                DRAFT_PROMPT,
+                "--model",
+                "haiku",
+                "--tools",
+                "",
+                "--no-session-persistence",
+                "--output-format",
+                "text",
+            ],
+            Some(context),
+            std::time::Duration::from_secs(120),
+        )?;
+        let text = out.trim();
+        if !ok || text.is_empty() {
+            let why = if err.trim().is_empty() {
+                text
+            } else {
+                err.trim()
+            };
+            return Err(crate::tr!(
+                "claude가 메시지를 만들지 못했어요: {why}",
+                "claude couldn't draft a message: {why}"
+            ));
+        }
+        Ok(strip_fences(text))
+    })
+    .await
+}
+
+/// Drops a ``` fence the model may wrap the message in anyway.
+fn strip_fences(text: &str) -> String {
+    let t = text.trim();
+    match t.strip_prefix("```") {
+        Some(rest) => {
+            let rest = rest.split_once('\n').map_or("", |(_, r)| r);
+            rest.trim_end().trim_end_matches("```").trim().to_string()
+        }
+        None => t.to_string(),
+    }
+}
+
+#[tauri::command]
+pub async fn work_conflict(
+    project: String,
+    path: String,
+) -> Result<conflict::ConflictFile, String> {
+    blocking(project, move |root| conflict::read(root, &path)).await
+}
+
+/// Saves the resolved file (`text`), or deletes it (`None`), and marks it resolved.
+#[tauri::command]
+pub async fn work_resolve(
+    project: String,
+    path: String,
+    text: Option<String>,
+) -> Result<(), String> {
+    blocking(project, move |root| {
+        conflict::resolve(root, &path, text.as_deref())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn work_continue(project: String) -> Result<(), String> {
+    blocking(project, conflict::continue_operation).await
+}
+
+#[tauri::command]
+pub async fn work_abort(project: String) -> Result<(), String> {
+    blocking(project, conflict::abort_operation).await
+}
+
 /// The installed git's version (`git version 2.47.0.windows.1`), or `None`
 /// when git cannot be run, so the setup guide can start with installing it.
 #[tauri::command]
@@ -137,4 +236,17 @@ pub async fn work_git_version(project: String) -> Option<String> {
     .await
     .ok()
     .flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fenced_drafts_are_unwrapped() {
+        assert_eq!(
+            super::strip_fences("```\nAdd x\n\nBody\n```"),
+            "Add x\n\nBody"
+        );
+        assert_eq!(super::strip_fences("```text\nAdd x\n```\n"), "Add x");
+        assert_eq!(super::strip_fences("  Add x \n"), "Add x");
+    }
 }
