@@ -60,7 +60,7 @@ export function PageHeader({
   return (
     <header className="mb-6 flex items-start gap-4">
       <div className="min-w-0 flex-1">
-        <h1 className="font-serif text-[26px] leading-tight font-medium tracking-tight">{title}</h1>
+        <h1 className="font-serif text-fs-26 leading-tight font-medium tracking-tight">{title}</h1>
         {description && <p className="mt-1.5 text-sm text-text-muted">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}

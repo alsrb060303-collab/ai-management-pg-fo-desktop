@@ -161,10 +161,10 @@ function Toolbar({ preview, onTogglePreview }: { preview: boolean; onTogglePrevi
         onChange={(e) => setName(e.target.value)}
         onBlur={commitName}
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        className="min-w-0 max-w-80 flex-1 rounded-md bg-transparent px-2 py-1 font-serif text-[15px] font-medium outline-none hover:bg-hover focus:bg-surface-raised"
+        className="min-w-0 max-w-80 flex-1 rounded-md bg-transparent px-2 py-1 font-serif text-fs-15 font-medium outline-none hover:bg-hover focus:bg-surface-raised"
       />
       <span
-        className="ml-1 flex items-center gap-1 text-[11px] text-text-subtle"
+        className="ml-1 flex items-center gap-1 text-fs-11 text-text-subtle"
         title={error ?? undefined}
       >
         {saveState === "saving" && <Loader2 size={12} className="animate-spin" />}

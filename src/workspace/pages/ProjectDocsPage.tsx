@@ -150,7 +150,7 @@ export function ProjectDocsPage() {
                   if (!items.length) return null;
                   return (
                     <section key={kind}>
-                      <h3 className="mb-1 text-[11px] font-semibold text-text-muted">
+                      <h3 className="mb-1 text-fs-11 font-semibold text-text-muted">
                         {t(label)} <span className="font-normal">{items.length}</span>
                       </h3>
                       <ul className="space-y-px">
@@ -256,7 +256,7 @@ function NewDocForm({ onDone }: { onDone: () => void }) {
         placeholder={t(kind === "instructions" ? "files.new.folder" : "files.new.name")}
         className={input}
       />
-      {doc && <p className="truncate text-[11px] text-text-subtle">{doc.rel}</p>}
+      {doc && <p className="truncate text-fs-11 text-text-subtle">{doc.rel}</p>}
       <div className="flex justify-end gap-1.5 text-xs">
         <button
           type="button"
@@ -359,7 +359,7 @@ function Editor({ project }: { project: string }) {
         onChange={(e) => edit(e.target.value)}
         spellCheck={false}
         aria-label={rel}
-        className="selectable min-h-[60vh] w-full flex-1 resize-none rounded-lg border border-border bg-surface-raised p-3 font-mono text-[13px] leading-relaxed outline-none focus:border-border-strong"
+        className="selectable min-h-[60vh] w-full flex-1 resize-none rounded-lg border border-border bg-surface-raised p-3 font-mono text-fs-13 leading-relaxed outline-none focus:border-border-strong"
       />
     </div>
   );

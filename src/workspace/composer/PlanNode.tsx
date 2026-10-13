@@ -58,7 +58,7 @@ export const PlanNodeView = memo(function PlanNodeView({
     >
       <div className="h-1.5 rounded-t-2xl" style={{ background: color }} />
       <div className="px-3.5 pt-2.5 pb-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold" style={{ color }}>
+        <div className="flex items-center gap-1.5 text-fs-11 font-semibold" style={{ color }}>
           <Flag size={12} />
           {t("composer.plan.main")}
           <span className="ml-auto flex items-center gap-1">
@@ -90,7 +90,7 @@ export const PlanNodeView = memo(function PlanNodeView({
               onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
               placeholder={t("composer.plan.titlePlaceholder")}
               aria-label={t("composer.plan.main")}
-              className={`${field} text-[15px] font-semibold`}
+              className={`${field} text-fs-15 font-semibold`}
             />
           </div>
           <textarea
@@ -149,7 +149,7 @@ export const PlanNodeView = memo(function PlanNodeView({
                 key={kind}
                 type="button"
                 onClick={() => addPlanItem(id, { kind })}
-                className="flex items-center gap-0.5 rounded-md border border-border px-1.5 py-0.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text"
+                className="flex items-center gap-0.5 rounded-md border border-border px-1.5 py-0.5 text-fs-11 text-text-muted hover:border-border-strong hover:text-text"
               >
                 <Plus size={11} />
                 {t(`composer.plan.${kind}`)}
@@ -157,7 +157,7 @@ export const PlanNodeView = memo(function PlanNodeView({
             ))}
           </div>
         </div>
-        {!on && <p className="mt-1.5 text-[11px] text-text-subtle">{t("composer.node.off")}</p>}
+        {!on && <p className="mt-1.5 text-fs-11 text-text-subtle">{t("composer.node.off")}</p>}
       </div>
       <Handle
         type="source"
@@ -274,9 +274,7 @@ function PlanRow({
             status={item.status}
             onChange={(status) => setPlanItem(nodeId, item.id, { status })}
           />
-          <span className="mt-px w-6 shrink-0 font-mono text-[10px] text-text-subtle">
-            {number}
-          </span>
+          <span className="mt-px w-6 shrink-0 font-mono text-fs-10 text-text-subtle">{number}</span>
           <input
             {...text}
             onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
@@ -355,13 +353,13 @@ function StepFields({
     setPlanItem(nodeId, item.id, { name: next.trim() }),
   );
   const select =
-    "nodrag nowheel rounded-md border border-border bg-surface px-1 py-0.5 text-[11px] outline-none focus:border-accent";
+    "nodrag nowheel rounded-md border border-border bg-surface px-1 py-0.5 text-fs-11 outline-none focus:border-accent";
 
   return (
     <div className="min-w-0 flex-1 space-y-1">
       <div className="flex flex-wrap items-center gap-1">
         <span
-          className="rounded px-1 py-px text-[10px] font-semibold text-white"
+          className="rounded px-1 py-px text-fs-10 font-semibold text-white"
           style={{ background: color }}
         >
           {t("composer.plan.step")}
@@ -420,7 +418,7 @@ function StepFields({
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           placeholder={t(kind === "agent" ? "composer.plan.agentName" : "composer.plan.skillName")}
           aria-label={t(kind === "agent" ? "composer.plan.agentName" : "composer.plan.skillName")}
-          className={`${field} block w-full font-mono text-[11px]`}
+          className={`${field} block w-full font-mono text-fs-11`}
         />
       )}
       <textarea

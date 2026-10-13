@@ -238,7 +238,7 @@ export function GitSetupGuide({
     <ol className="space-y-3">
       {steps.map((step, i) => (
         <li key={step.title} className="flex gap-2.5">
-          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[11px] font-semibold text-accent">
+          <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-fs-11 font-semibold text-accent">
             {i + 1}
           </span>
           <div className="min-w-0 flex-1 space-y-1.5">
@@ -288,7 +288,7 @@ export function GitSetupGuide({
               dismiss(project);
               setHidden(true);
             }}
-            className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-text-subtle hover:bg-hover hover:text-text"
+            className="shrink-0 rounded px-1.5 py-0.5 text-fs-11 text-text-subtle hover:bg-hover hover:text-text"
           >
             {t("work.setup.localOnly")}
           </button>
@@ -324,7 +324,7 @@ export function Command({ lines }: { lines: string[] }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="group relative rounded-md border border-border bg-sunken">
-      <pre className="selectable overflow-x-auto py-1.5 pr-9 pl-2.5 font-mono text-[11.5px] leading-relaxed text-text">
+      <pre className="selectable overflow-x-auto py-1.5 pr-9 pl-2.5 font-mono text-fs-11.5 leading-relaxed text-text">
         {lines.join("\n")}
       </pre>
       <button

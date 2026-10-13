@@ -246,7 +246,7 @@ export function Palette() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5 px-1 text-[11px] text-text-subtle">
+        <div className="flex items-center gap-1.5 px-1 text-fs-11 text-text-subtle">
           <button
             type="button"
             onClick={() => void refresh()}
@@ -290,7 +290,7 @@ export function Palette() {
                       style={{ background: kindColor("plan") }}
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px] font-medium">{t(p.label)}</div>
+                      <div className="text-fs-13 font-medium">{t(p.label)}</div>
                       <div className="text-xs leading-snug text-text-muted">{t(p.hint)}</div>
                     </div>
                   </div>
@@ -329,16 +329,16 @@ export function Palette() {
                         style={{ background: kindColor(block.kind) }}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-[13px] font-medium">
+                        <div className="flex items-center gap-1.5 text-fs-13 font-medium">
                           <span className="truncate">{block.title}</span>
                           {block.source === "library" && (
-                            <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-subtle">
+                            <span className="shrink-0 rounded bg-sunken px-1 text-fs-10 text-text-subtle">
                               {t("composer.palette.myLibrary")}
                             </span>
                           )}
                           {block.origin && (
                             <span
-                              className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-subtle"
+                              className="shrink-0 rounded bg-sunken px-1 text-fs-10 text-text-subtle"
                               title={`${block.origin.repo} · ${block.origin.license}`}
                             >
                               {block.origin.repo.split("/")[0]}
@@ -455,7 +455,7 @@ function BlockDetail({ block, onAdd }: { block: Block; onAdd: () => void }) {
           <summary className="cursor-pointer">
             {t("composer.detail.companions", { n: block.companions.length })}
           </summary>
-          <ul className="mt-1 space-y-0.5 pl-3 font-mono text-[11px]">
+          <ul className="mt-1 space-y-0.5 pl-3 font-mono text-fs-11">
             {block.companions.map((path) => (
               <li key={path}>{path}</li>
             ))}
@@ -466,7 +466,7 @@ function BlockDetail({ block, onAdd }: { block: Block; onAdd: () => void }) {
         <button
           type="button"
           onClick={() => block.origin && openLink(originUrl(block.origin))}
-          className="flex items-center gap-1 text-[11px] text-text-subtle hover:text-text"
+          className="flex items-center gap-1 text-fs-11 text-text-subtle hover:text-text"
           title={block.origin.copyright}
         >
           {block.origin.repo} · {block.origin.license}
@@ -492,7 +492,7 @@ function BlockDetail({ block, onAdd }: { block: Block; onAdd: () => void }) {
         </button>
       </div>
       {showText && (
-        <pre className="selectable max-h-56 overflow-auto rounded-md bg-sunken p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+        <pre className="selectable max-h-56 overflow-auto rounded-md bg-sunken p-2 font-mono text-fs-11 leading-relaxed whitespace-pre-wrap">
           {block.body}
         </pre>
       )}

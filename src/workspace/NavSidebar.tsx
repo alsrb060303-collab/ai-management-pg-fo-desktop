@@ -64,7 +64,7 @@ export function NavSidebar() {
           <button
             type="button"
             onClick={() => go("home")}
-            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 font-serif text-[17px] font-semibold tracking-tight"
+            className="flex min-w-0 items-center gap-2 rounded-md px-1.5 font-serif text-fs-17 font-semibold tracking-tight"
           >
             <Logo size={20} />
             <span className="truncate">AI Management</span>
@@ -126,7 +126,7 @@ export function NavSidebar() {
                           void openDoc(d.id);
                           go("composer");
                         }}
-                        className={`w-full truncate rounded-lg py-1.5 pr-8 pl-2 text-left text-[13px] transition-colors ${
+                        className={`w-full truncate rounded-lg py-1.5 pr-8 pl-2 text-left text-fs-13 transition-colors ${
                           active
                             ? "bg-active text-text"
                             : "text-text-muted hover:bg-hover hover:text-text"
@@ -230,7 +230,7 @@ function NavButton({
         <span className={`truncate ${accent ? "font-medium text-text" : ""}`}>{label}</span>
       )}
       {!collapsed && badge && (
-        <span className="ml-auto shrink-0 rounded-full bg-sunken px-1.5 py-px text-[10px] text-text-subtle">
+        <span className="ml-auto shrink-0 rounded-full bg-sunken px-1.5 py-px text-fs-10 text-text-subtle">
           {badge}
         </span>
       )}

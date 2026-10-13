@@ -54,7 +54,7 @@ export function HomePage() {
     <div className="mx-auto flex min-h-full max-w-2xl flex-col justify-center px-8 py-16">
       <div className="mb-2 flex items-center gap-3">
         <Logo size={40} className="shrink-0 drop-shadow-sm" />
-        <h1 className="font-serif text-[32px] leading-tight font-medium tracking-tight">
+        <h1 className="font-serif text-fs-32 leading-tight font-medium tracking-tight">
           {t(greeting(new Date().getHours()))}
         </h1>
       </div>
@@ -73,7 +73,7 @@ export function HomePage() {
               className="mb-3 text-text-muted transition-colors group-hover:text-accent"
             />
             <div className="text-sm font-medium">{title}</div>
-            <div className="mt-1 text-[13px] leading-snug text-text-muted">{description}</div>
+            <div className="mt-1 text-fs-13 leading-snug text-text-muted">{description}</div>
           </button>
         ))}
       </div>

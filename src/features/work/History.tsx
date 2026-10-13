@@ -56,7 +56,7 @@ export function Timeline({
         {commits.map((c, i) => (
           <li key={c.hash}>
             {i === firstPushed && i > 0 && (
-              <div className="my-1 flex items-center gap-2 pl-1 text-[10.5px] font-medium text-accent">
+              <div className="my-1 flex items-center gap-2 pl-1 text-fs-10.5 font-medium text-accent">
                 <span className="h-px flex-1 border-t border-dashed border-accent/60" />
                 {t(unpushed === 1 ? "work.log.unpushed.one" : "work.log.unpushed", {
                   n: unpushed,
@@ -76,7 +76,7 @@ export function Timeline({
           </li>
         ))}
       </ol>
-      {hint && <p className="mt-2 text-[11px] text-text-subtle">{hint}</p>}
+      {hint && <p className="mt-2 text-fs-11 text-text-subtle">{hint}</p>}
     </div>
   );
 }
@@ -153,12 +153,12 @@ function CommitRow({
             <span className="min-w-0 truncate">{c.subject}</span>
           </button>
           {now && (
-            <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-medium text-primary-fg">
+            <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-fs-10 font-medium text-primary-fg">
               {t("work.log.now")}
             </span>
           )}
         </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-text-subtle">
+        <div className="mt-0.5 flex flex-wrap items-center gap-1 text-fs-11 text-text-subtle">
           <button
             type="button"
             onClick={() => (url ? open(url) : copy())}
@@ -176,7 +176,7 @@ function CommitRow({
           <span>·</span>
           <span className="shrink-0">{timeAgo(c.time)}</span>
           {unpushed && (
-            <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10px] text-accent">
+            <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-fs-10 text-accent">
               {t("work.log.notPushed")}
             </span>
           )}
@@ -199,7 +199,7 @@ function RefChip({ label }: { label: RefLabel }) {
         : "border-warning/50 text-warning";
   return (
     <span
-      className={`flex max-w-40 shrink-0 items-center gap-0.5 truncate rounded-full border px-1.5 text-[10px] ${style}`}
+      className={`flex max-w-40 shrink-0 items-center gap-0.5 truncate rounded-full border px-1.5 text-fs-10 ${style}`}
     >
       {label.kind === "remote" && <Cloud size={10} className="shrink-0" />}
       {label.kind === "tag" && <Tag size={10} className="shrink-0" />}

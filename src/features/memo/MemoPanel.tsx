@@ -252,7 +252,7 @@ function TodoList({ compact }: { compact: boolean }) {
 
       {done.length > 0 && (
         <div className="mt-2">
-          <div className="flex items-center gap-2 text-[11px] text-text-subtle">
+          <div className="flex items-center gap-2 text-fs-11 text-text-subtle">
             <button
               type="button"
               onClick={() => setShowDone(!showDone)}

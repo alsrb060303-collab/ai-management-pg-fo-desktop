@@ -181,7 +181,7 @@ export function ConfigMapPanel({
         <p className="text-xs text-text-muted">{t("docs.map.empty")}</p>
       )}
       {map && map.notes.length > 0 && (
-        <ul className="space-y-0.5 border-t border-border pt-2 text-[11px] text-text-muted">
+        <ul className="space-y-0.5 border-t border-border pt-2 text-fs-11 text-text-muted">
           {map.notes.map((note) => (
             <li key={note}>· {note}</li>
           ))}
@@ -285,19 +285,19 @@ function ConfigRow({
           >
             {item.name}
           </span>
-          <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-muted">
+          <span className="shrink-0 rounded bg-sunken px-1 text-fs-10 text-text-muted">
             {t(SCOPE_LABELS[item.scope])}
           </span>
-          <span className={`shrink-0 text-[10px] ${state.className}`}>{t(state.label)}</span>
+          <span className={`shrink-0 text-fs-10 ${state.className}`}>{t(state.label)}</span>
         </div>
         {!open && (item.description || item.detail) && (
-          <p className="mt-0.5 truncate text-[11px] text-text-muted">
+          <p className="mt-0.5 truncate text-fs-11 text-text-muted">
             {item.description ? firstSentence(item.description) : item.detail}
           </p>
         )}
       </button>
       {open && (
-        <div className="space-y-1.5 px-2.5 pb-2 text-[11px] leading-relaxed">
+        <div className="space-y-1.5 px-2.5 pb-2 text-fs-11 leading-relaxed">
           {item.description && <p className="text-text">{item.description}</p>}
           {item.detail && <p className="text-text-muted">{item.detail}</p>}
           <p className="text-text-muted">
@@ -310,7 +310,7 @@ function ConfigRow({
           </p>
           {item.path && (
             <div className="flex flex-wrap items-center gap-1">
-              <span className="selectable min-w-0 flex-1 truncate font-mono text-[10px] text-text-subtle">
+              <span className="selectable min-w-0 flex-1 truncate font-mono text-fs-10 text-text-subtle">
                 {item.path}
               </span>
               <button type="button" className={smallButton} onClick={reveal}>
@@ -318,7 +318,7 @@ function ConfigRow({
               </button>
             </div>
           )}
-          {failed && <p className="text-[10px] text-danger">{t("docs.item.openFailed")}</p>}
+          {failed && <p className="text-fs-10 text-danger">{t("docs.item.openFailed")}</p>}
         </div>
       )}
       {((kind && (switchable || canImport)) || (editRel && onEdit)) && (

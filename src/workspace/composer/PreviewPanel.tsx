@@ -99,7 +99,7 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                     type="button"
                     onClick={() => choose(f.path)}
                     title={f.path}
-                    className={`shrink-0 rounded-md px-2 py-1 font-mono text-[11px] ${
+                    className={`shrink-0 rounded-md px-2 py-1 font-mono text-fs-11 ${
                       f.path === file?.path && !alone
                         ? "bg-active text-text"
                         : "text-text-muted hover:bg-hover"
@@ -111,7 +111,7 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
               </div>
               {file && (
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-[11px] text-text-muted">
+                  <div className="flex shrink-0 items-center gap-2 px-3 py-2 text-fs-11 text-text-muted">
                     <span className="truncate font-mono">{file.path}</span>
                     {file.personal && (
                       <span className="rounded bg-sunken px-1 text-text-subtle">
@@ -129,12 +129,12 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                     </span>
                   </div>
                   {alone && (
-                    <p className="mx-3 mb-2 rounded-md bg-sunken px-2.5 py-1.5 text-[11px] text-text-muted">
+                    <p className="mx-3 mb-2 rounded-md bg-sunken px-2.5 py-1.5 text-fs-11 text-text-muted">
                       {t("composer.preview.unconnected")}
                     </p>
                   )}
                   {file.section && (
-                    <p className="mx-3 mb-2 rounded-md bg-accent-soft px-2.5 py-1.5 text-[11px] text-text-muted">
+                    <p className="mx-3 mb-2 rounded-md bg-accent-soft px-2.5 py-1.5 text-fs-11 text-text-muted">
                       {t("composer.preview.section", { path: file.path })}
                     </p>
                   )}
@@ -189,7 +189,7 @@ function TabButton({
 function CodeView({ text }: { text: string }) {
   const lines = text.split("\n");
   return (
-    <div className="selectable min-h-0 flex-1 overflow-auto px-1 pb-3 font-mono text-[12px] leading-[1.6]">
+    <div className="selectable min-h-0 flex-1 overflow-auto px-1 pb-3 font-mono text-fs-12 leading-[1.6]">
       <table className="border-collapse">
         <tbody>
           {lines.map((line, i) => (
@@ -231,7 +231,7 @@ function BlockEditor({ node }: { node: BlockNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
       <div>
-        <div className="text-[11px] font-medium" style={{ color: kindColor(block.kind) }}>
+        <div className="text-fs-11 font-medium" style={{ color: kindColor(block.kind) }}>
           {t(KIND_LABEL[block.kind])} · {block.category}
         </div>
         <div className="mt-0.5 font-medium">{block.title}</div>
@@ -242,7 +242,7 @@ function BlockEditor({ node }: { node: BlockNode }) {
             onClick={() => {
               if (block.origin && isTauri()) void openUrl(originUrl(block.origin));
             }}
-            className="mt-1.5 flex max-w-full items-center gap-1 text-left text-[11px] text-text-muted hover:text-text"
+            className="mt-1.5 flex max-w-full items-center gap-1 text-left text-fs-11 text-text-muted hover:text-text"
             title={originUrl(block.origin)}
           >
             <ExternalLink size={11} className="shrink-0" />
@@ -254,10 +254,7 @@ function BlockEditor({ node }: { node: BlockNode }) {
         {block.paths.length > 0 && (
           <div className="mt-1.5 flex flex-wrap gap-1">
             {block.paths.map((p) => (
-              <code
-                key={p}
-                className="rounded bg-sunken px-1 font-mono text-[11px] text-text-muted"
-              >
+              <code key={p} className="rounded bg-sunken px-1 font-mono text-fs-11 text-text-muted">
                 {p}
               </code>
             ))}
@@ -269,10 +266,10 @@ function BlockEditor({ node }: { node: BlockNode }) {
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         spellCheck={false}
-        className="selectable min-h-0 flex-1 resize-none rounded-lg border border-border bg-surface-raised p-3 font-mono text-[12px] leading-[1.6] outline-none focus:border-border-strong"
+        className="selectable min-h-0 flex-1 resize-none rounded-lg border border-border bg-surface-raised p-3 font-mono text-fs-12 leading-[1.6] outline-none focus:border-border-strong"
       />
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-text-subtle">
+        <span className="text-fs-11 text-text-subtle">
           {node.data.body !== undefined ? t("composer.block.edited") : t("composer.block.original")}
         </span>
         <Button

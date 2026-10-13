@@ -8,6 +8,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import { localeReady } from "./i18n";
+import { initFontSize } from "./store/fontSize";
 import { initTheme } from "./store/theme";
 
 // One bundle, two windows: the window label picks the UI, and each UI is
@@ -23,6 +24,7 @@ const Root =
     : lazy(() => import("./workspace/MainApp"));
 
 initTheme();
+initFontSize();
 
 // Dropping a file or folder on the window would make the webview navigate to
 // it and unload the app. Nothing here accepts file drops yet.

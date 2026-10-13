@@ -44,7 +44,7 @@ export const BlockNodeView = memo(function BlockNodeView({
     >
       <div className="h-1 rounded-t-xl" style={{ background: color }} />
       <div className="px-3 pt-2 pb-2.5">
-        <div className="flex items-center gap-1.5 text-[11px] font-medium" style={{ color }}>
+        <div className="flex items-center gap-1.5 text-fs-11 font-medium" style={{ color }}>
           <Icon size={12} />
           {t(KIND_LABEL[kind])}
           {block?.category && <span className="text-text-subtle">· {block.category}</span>}
@@ -86,7 +86,7 @@ export const BlockNodeView = memo(function BlockNodeView({
           {block?.kind === "agent" && <ModelPicker id={id} data={data} block={block} />}
           {block?.kind === "hook" && <HookFields id={id} data={data} block={block} />}
         </div>
-        {!on && <p className="mt-1.5 text-[11px] text-text-subtle">{t("composer.node.off")}</p>}
+        {!on && <p className="mt-1.5 text-fs-11 text-text-subtle">{t("composer.node.off")}</p>}
       </div>
       <Handle
         type="source"
@@ -98,7 +98,7 @@ export const BlockNodeView = memo(function BlockNodeView({
 });
 
 const fieldClass =
-  "nodrag nowheel w-full rounded-md border border-border bg-surface px-1.5 py-1 text-[11px] outline-none focus:border-accent";
+  "nodrag nowheel w-full rounded-md border border-border bg-surface px-1.5 py-1 text-fs-11 outline-none focus:border-accent";
 
 /** Subagents: which model runs it. "Auto" keeps what the document says. */
 function ModelPicker({ id, data, block }: { id: string; data: BlockData; block: Block }) {
@@ -124,7 +124,7 @@ function ModelPicker({ id, data, block }: { id: string; data: BlockData; block: 
   };
 
   return (
-    <label className="nodrag mt-2 flex items-center gap-1.5 text-[11px] text-text-muted">
+    <label className="nodrag mt-2 flex items-center gap-1.5 text-fs-11 text-text-muted">
       <span className="shrink-0">{t("composer.model.label")}</span>
       <select
         value={data.model ?? ""}
@@ -158,7 +158,7 @@ function HookFields({ id, data, block }: { id: string; data: BlockData; block: B
   const command = (data.body ?? block.body).trim();
 
   return (
-    <div className="nodrag mt-2 space-y-1.5 text-[11px] text-text-muted">
+    <div className="nodrag mt-2 space-y-1.5 text-fs-11 text-text-muted">
       <label className="flex items-center gap-1.5">
         <span className="w-12 shrink-0">{t("composer.hook.event")}</span>
         <select
@@ -203,7 +203,7 @@ function CustomFields({ id, data }: { id: string; data: OutputData }) {
   const path = useDraft(data.path ?? "", (next) => setOutputData(id, { path: next.trim() }));
   const text = useDraft(data.text ?? "", (next) => setOutputData(id, { text: next }));
   return (
-    <div className="nodrag space-y-1.5 border-b border-border px-3.5 py-2.5 text-[11px] text-text-muted">
+    <div className="nodrag space-y-1.5 border-b border-border px-3.5 py-2.5 text-fs-11 text-text-muted">
       <label className="block">
         <span className="mb-0.5 block">{t("composer.custom.path")}</span>
         <input
@@ -282,12 +282,12 @@ export const OutputNodeView = memo(function OutputNodeView({
           <Icon size={15} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-[13px] font-semibold">
+          <div className="truncate font-mono text-fs-13 font-semibold">
             {data.target === "custom" && !data.path?.trim()
               ? t("composer.target.custom")
               : targetTitle(data.target, personal, data.path)}
           </div>
-          <div className="text-[11px] text-text-subtle">
+          <div className="text-fs-11 text-text-subtle">
             {t("composer.node.accepts", {
               kinds:
                 data.target === "plans"
@@ -298,7 +298,7 @@ export const OutputNodeView = memo(function OutputNodeView({
         </div>
         <fieldset
           aria-label={t("composer.node.scope")}
-          className="nodrag flex rounded-md bg-sunken p-0.5 text-[11px]"
+          className="nodrag flex rounded-md bg-sunken p-0.5 text-fs-11"
         >
           {(["team", "personal"] as const).map((scope) => (
             <button
@@ -347,7 +347,7 @@ export const OutputNodeView = memo(function OutputNodeView({
         />
       )}
 
-      <div className="flex items-center gap-2 border-t border-border px-3.5 py-2 text-[11px] text-text-muted">
+      <div className="flex items-center gap-2 border-t border-border px-3.5 py-2 text-fs-11 text-text-muted">
         {isClaudeMd ? (
           <>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunken">
@@ -434,7 +434,7 @@ function OrderedInputs({
                 <GripVertical size={13} />
               </button>
             ) : null}
-            <span className="w-4 shrink-0 text-right font-mono text-[10px] text-text-subtle">
+            <span className="w-4 shrink-0 text-right font-mono text-fs-10 text-text-subtle">
               {i + 1}
             </span>
             <span

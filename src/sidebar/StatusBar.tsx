@@ -43,7 +43,7 @@ export function StatusBar() {
   const t = useT();
 
   return (
-    <footer className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-surface-raised px-3 text-[11px] text-text-muted">
+    <footer className="flex h-7 shrink-0 items-center justify-between border-t border-border bg-surface-raised px-3 text-fs-11 text-text-muted">
       <span className="flex items-center gap-1.5">
         <span
           className={`inline-block size-1.5 rounded-full ${attached ? "bg-accent" : "bg-text-muted"}`}

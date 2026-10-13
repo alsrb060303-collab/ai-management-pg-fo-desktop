@@ -97,7 +97,7 @@ export function RemoteFiles({
           {t("work.files.title", { branch: data.branch })}
         </button>
         {changed > 0 && (
-          <span className="rounded-full bg-warning/15 px-1.5 py-px text-[10px] font-normal text-warning">
+          <span className="rounded-full bg-warning/15 px-1.5 py-px text-fs-10 font-normal text-warning">
             {t("work.files.changed", { n: changed })}
           </span>
         )}
@@ -174,7 +174,7 @@ export function RemoteFiles({
             />
           </div>
           {!query && (
-            <div className="flex flex-wrap items-center gap-0.5 text-[11px] text-text-muted">
+            <div className="flex flex-wrap items-center gap-0.5 text-fs-11 text-text-muted">
               <button type="button" onClick={() => setDir("")} className="hover:text-text">
                 {data.branch}
               </button>
@@ -228,7 +228,7 @@ export function RemoteFiles({
                         {query ? p : p.slice(p.lastIndexOf("/") + 1)}
                       </span>
                       {kind && (
-                        <span className={`shrink-0 font-mono text-[10px] ${KIND_COLOR[kind]}`}>
+                        <span className={`shrink-0 font-mono text-fs-10 ${KIND_COLOR[kind]}`}>
                           {kind}
                         </span>
                       )}
@@ -239,7 +239,7 @@ export function RemoteFiles({
             </ul>
           )}
           {tree?.truncated && (
-            <p className="text-[11px] text-warning">{t("work.files.truncated")}</p>
+            <p className="text-fs-11 text-warning">{t("work.files.truncated")}</p>
           )}
           {openPath && <FileEditor path={openPath} compact={compact} />}
         </>
@@ -257,12 +257,12 @@ function FileEditor({ path, compact }: { path: string; compact: boolean }) {
   if (text === undefined) return <p className="text-xs text-text-muted">{t("work.loading")}</p>;
   if (text === null) return null;
   const button =
-    "flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-[11px] hover:border-border-strong disabled:opacity-50";
+    "flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-fs-11 hover:border-border-strong disabled:opacity-50";
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
-        <span className="selectable min-w-0 flex-1 truncate font-mono text-[11px]" title={path}>
+        <span className="selectable min-w-0 flex-1 truncate font-mono text-fs-11" title={path}>
           {path}
         </span>
         <button type="button" disabled={!draft} onClick={() => discard(path)} className={button}>
@@ -317,13 +317,13 @@ function CommitPanel() {
           const kind = kindOf(d);
           return (
             <li key={path} className="flex items-center gap-2 text-xs">
-              <span className={`w-3 shrink-0 font-mono text-[10px] ${KIND_COLOR[kind]}`}>
+              <span className={`w-3 shrink-0 font-mono text-fs-10 ${KIND_COLOR[kind]}`}>
                 {kind}
               </span>
               <button
                 type="button"
                 onClick={() => d.text !== null && void openFile(path)}
-                className="min-w-0 flex-1 truncate text-left font-mono text-[11px] hover:underline"
+                className="min-w-0 flex-1 truncate text-left font-mono text-fs-11 hover:underline"
               >
                 {path}
               </button>

@@ -31,7 +31,7 @@ export function TabBar<K extends string>({
           aria-selected={tab === x.key}
           onClick={() => onTab(x.key)}
           className={`flex shrink-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 py-1 ${
-            compact ? "text-[11px]" : "text-xs"
+            compact ? "text-fs-11" : "text-xs"
           } ${
             tab === x.key
               ? "bg-surface-raised font-semibold text-text shadow-card"
@@ -41,7 +41,7 @@ export function TabBar<K extends string>({
           {x.label}
           {x.count !== undefined && (
             <span
-              className={`rounded-full px-1 text-[10px] tabular-nums ${
+              className={`rounded-full px-1 text-fs-10 tabular-nums ${
                 x.dot ? "bg-accent-soft text-accent" : "text-text-subtle"
               }`}
             >

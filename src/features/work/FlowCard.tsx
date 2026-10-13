@@ -459,7 +459,7 @@ function PullChip({ pull }: { pull: Pull }) {
     <button
       type="button"
       onClick={() => open(pull.url)}
-      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${s.chip} ${s.text} hover:opacity-80`}
+      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-fs-11 font-medium ${s.chip} ${s.text} hover:opacity-80`}
     >
       <s.Icon size={12} />#{pull.number}
     </button>
@@ -485,7 +485,7 @@ function BaseLine({ base }: { base: { name: string; ahead: number; behind: numbe
     );
   return (
     <p
-      className="mt-1 flex flex-wrap items-center gap-x-2 pl-6 text-[11px] text-text-subtle"
+      className="mt-1 flex flex-wrap items-center gap-x-2 pl-6 text-fs-11 text-text-subtle"
       title={t("work.flow.baseTitle", { base: base.name, ahead: base.ahead, behind: base.behind })}
     >
       {parts.length ? (
@@ -519,8 +519,8 @@ function StepNode({ step, first, prev }: { step: Step; first: boolean; prev?: St
           <step.Icon size={13} strokeWidth={2.5} />
         </span>
       </span>
-      <span className="mt-1 text-[11px] font-medium text-text">{step.label}</span>
-      <span className={`max-w-full truncate px-0.5 text-[10.5px] leading-tight ${tone.text}`}>
+      <span className="mt-1 text-fs-11 font-medium text-text">{step.label}</span>
+      <span className={`max-w-full truncate px-0.5 text-fs-10.5 leading-tight ${tone.text}`}>
         {step.detail}
       </span>
     </>

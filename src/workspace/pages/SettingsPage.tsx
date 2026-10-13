@@ -7,6 +7,7 @@ import { ModsCard } from "../../features/mods/ModsCard";
 import { type LocalePref, timeAgo, useLocaleStore, useT } from "../../i18n";
 import { useAccountStore } from "../../store/account";
 import { useDockStore } from "../../store/dock";
+import { FONT_SIZES, useFontSizeStore } from "../../store/fontSize";
 import { useLibraryStore } from "../../store/library";
 import { useNotifyStore } from "../../store/notify";
 import { useSyncStore } from "../../store/sync";
@@ -25,6 +26,8 @@ export function SettingsPage() {
     { value: "en", label: "English" },
   ];
   const { status, setPinned } = useDockStore();
+  const fontSize = useFontSizeStore((s) => s.size);
+  const setFontSize = useFontSizeStore((s) => s.setSize);
   const { overview, busy, load, chooseDir } = useLibraryStore();
   const resetDir = useLibraryStore((s) => s.useDefaultDir);
   const [version, setVersion] = useState<string | null>(null);
@@ -45,6 +48,17 @@ export function SettingsPage() {
             value={pref}
             options={THEMES.map((value) => ({ value, label: t(`settings.theme.${value}`) }))}
             onChange={setPref}
+          />
+        </Row>
+        <Row title={t("settings.fontSize")} description={t("settings.fontSizeHint")}>
+          <Segmented
+            label={t("settings.fontSize")}
+            value={fontSize}
+            options={FONT_SIZES.map((value) => ({
+              value,
+              label: t(`settings.fontSize.${value}`),
+            }))}
+            onChange={setFontSize}
           />
         </Row>
         <Row title={t("settings.language")} description={t("settings.languageHint")}>

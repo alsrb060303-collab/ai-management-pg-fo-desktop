@@ -185,7 +185,7 @@ function ProviderButtons({ link }: { link: boolean }) {
         <GitHubMark />
         {busy === "github" ? t("account.working") : t("account.github")}
       </Button>
-      <p className="text-[11px] text-text-subtle">{t("account.githubHint")}</p>
+      <p className="text-fs-11 text-text-subtle">{t("account.githubHint")}</p>
     </div>
   );
 }
@@ -279,7 +279,7 @@ function Manage() {
 
       <section>
         <h3 className="text-xs font-semibold text-text-muted">{t("account.methods")}</h3>
-        <p className="mt-0.5 mb-2 text-[11px] text-text-subtle">{t("account.methodsHint")}</p>
+        <p className="mt-0.5 mb-2 text-fs-11 text-text-subtle">{t("account.methodsHint")}</p>
         <ul className="divide-y divide-border rounded-lg border border-border">
           {PROVIDERS.map((p) => (
             <MethodRow
@@ -303,7 +303,7 @@ function Manage() {
 
       <div className="flex items-center gap-3 border-t border-border pt-3">
         <div className="min-w-0 flex-1">
-          <p className="selectable truncate font-mono text-[10.5px] text-text-subtle">
+          <p className="selectable truncate font-mono text-fs-10.5 text-text-subtle">
             {t("account.id")}: {info.uid}
           </p>
         </div>

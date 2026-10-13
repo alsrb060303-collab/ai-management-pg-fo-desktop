@@ -54,9 +54,9 @@ export function ConflictView({ path, compact }: { path: string; compact: boolean
     );
   }, [project, path]);
 
-  if (error) return <p className="px-2 py-2 text-[11px] text-danger">{error}</p>;
+  if (error) return <p className="px-2 py-2 text-fs-11 text-danger">{error}</p>;
   if (!file)
-    return <p className="px-2 py-2 text-[11px] text-text-subtle">{t("work.diff.loading")}</p>;
+    return <p className="px-2 py-2 text-fs-11 text-text-subtle">{t("work.diff.loading")}</p>;
 
   const box = "my-1 space-y-2 rounded-lg border border-danger/40 bg-surface-raised p-2.5 text-xs";
   const deleteButton = (
@@ -113,12 +113,12 @@ export function ConflictView({ path, compact }: { path: string; compact: boolean
   return (
     <div className={box}>
       {overview?.operation === "rebase" && (
-        <p className="flex items-start gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
+        <p className="flex items-start gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-fs-11 text-warning">
           <TriangleAlert size={12} className="mt-px shrink-0" />
           {t("work.conflict.rebaseHint")}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-fs-11 text-text-muted">
         <span>{t("work.conflict.progress", { done, n: blocks.length })}</span>
         <span className="ml-auto flex gap-1">
           <button
@@ -151,7 +151,7 @@ export function ConflictView({ path, compact }: { path: string; compact: boolean
         ) : null,
       )}
       <div className="flex items-center gap-2 border-t border-border pt-2">
-        <span className="min-w-0 flex-1 text-[11px] text-text-subtle">
+        <span className="min-w-0 flex-1 text-fs-11 text-text-subtle">
           {done < blocks.length ? t("work.conflict.pickAll") : t("work.conflict.ready")}
         </span>
         <button
@@ -202,7 +202,7 @@ function Block({
         }`}
       >
         <div
-          className={`flex items-center gap-1 border-b border-border px-2 py-1 text-[11px] font-medium ${
+          className={`flex items-center gap-1 border-b border-border px-2 py-1 text-fs-11 font-medium ${
             which === "ours" ? "text-info" : "text-success"
           }`}
         >
@@ -210,7 +210,7 @@ function Block({
           {t(which === "ours" ? "work.conflict.ours" : "work.conflict.theirs")}
           <span className="min-w-0 truncate font-normal text-text-subtle">{label}</span>
         </div>
-        <pre className="max-h-48 overflow-auto px-2 py-1 font-mono text-[11px] leading-snug whitespace-pre-wrap">
+        <pre className="max-h-48 overflow-auto px-2 py-1 font-mono text-fs-11 leading-snug whitespace-pre-wrap">
           {text || <span className="text-text-subtle">{t("work.conflict.empty")}</span>}
         </pre>
       </button>
@@ -218,7 +218,7 @@ function Block({
   };
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2 text-[11px]">
+      <div className="flex items-center gap-2 text-fs-11">
         <span className="font-semibold">{t("work.conflict.block", { n: index, total })}</span>
         <span className="ml-auto flex gap-1">
           <button
