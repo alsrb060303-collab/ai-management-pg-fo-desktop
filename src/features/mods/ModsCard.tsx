@@ -110,6 +110,7 @@ export function ModsCard() {
 
   return (
     <Card title={t("mods.title")}>
+      <p className="px-4 pt-3 text-xs text-text-muted">{t("mods.scope")}</p>
       <Row
         title={t("mods.claude")}
         description={

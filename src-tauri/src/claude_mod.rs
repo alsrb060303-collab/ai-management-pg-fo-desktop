@@ -47,29 +47,7 @@ type Result<T> = std::result::Result<T, String>;
 
 /// The user's `claude`: on PATH, or where its installers put it.
 fn find_claude() -> Option<PathBuf> {
-    let names: &[&str] = if cfg!(windows) {
-        &["claude.exe", "claude.cmd"]
-    } else {
-        &["claude"]
-    };
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
-    let home =
-        std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
-    if let Some(home) = home {
-        dirs.push(home.join(".local").join("bin"));
-        dirs.push(home.join(".claude").join("local"));
-    }
-    for dir in dirs {
-        for name in names {
-            let path = dir.join(name);
-            if path.is_file() {
-                return Some(path);
-            }
-        }
-    }
-    None
+    crate::tools::cli::find(crate::tools::ToolId::Claude)
 }
 
 /// Runs `claude` with `args`; stdout, or stderr (or stdout) as the error.
@@ -125,80 +103,7 @@ pub(crate) fn claude_with_input(
     input: Option<String>,
     timeout: std::time::Duration,
 ) -> Result<(bool, String, String)> {
-    use std::io::{Read, Write};
-    let path = find_claude().ok_or_else(|| {
-        crate::tr!(
-            "Claude Code(claude 명령)를 찾지 못했어요. 설치한 뒤 다시 시도해 주세요",
-            "Couldn't find Claude Code (the claude command). Install it and try again"
-        )
-    })?;
-    let mut cmd = Command::new(&path);
-    cmd.args(args)
-        .current_dir(dir)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1")
-        .env("NO_COLOR", "1");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
-    let mut child = cmd.spawn().map_err(|e| {
-        crate::tr!(
-            "claude를 실행하지 못했어요: {e}",
-            "Couldn't run claude: {e}"
-        )
-    })?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        // Written on a thread and closed after, so claude sees the end.
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(input.as_bytes());
-        });
-    }
-    // Read both pipes on threads so a full pipe never blocks the child.
-    let mut stdout = child.stdout.take();
-    let mut stderr = child.stderr.take();
-    let out = std::thread::spawn(move || {
-        let mut s = String::new();
-        if let Some(p) = stdout.as_mut() {
-            let _ = p.read_to_string(&mut s);
-        }
-        s
-    });
-    let err = std::thread::spawn(move || {
-        let mut s = String::new();
-        if let Some(p) = stderr.as_mut() {
-            let _ = p.read_to_string(&mut s);
-        }
-        s
-    });
-    let start = std::time::Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if start.elapsed() < timeout => {
-                std::thread::sleep(std::time::Duration::from_millis(50))
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(crate::tr!(
-                    "claude가 {}초 안에 끝나지 않았어요",
-                    "claude didn't finish within {} seconds",
-                    timeout.as_secs()
-                ));
-            }
-        }
-    };
-    let stdout = out.join().unwrap_or_default();
-    let stderr = err.join().unwrap_or_default();
-    Ok((status.success(), stdout, stderr))
+    crate::tools::cli::run_with_input(crate::tools::ToolId::Claude, dir, args, input, timeout)
 }
 
 /// `2.1.296 (Claude Code)` → (2, 1, 296).
