@@ -25,7 +25,7 @@ import {
 } from "../../store/work";
 import { ConflictView } from "./ConflictView";
 import { DiffView } from "./DiffView";
-import { FlowCard } from "./FlowCard";
+import { FlowCard, LoadingSpin } from "./FlowCard";
 import { GitHubSection, PullBadge } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
 import { History } from "./History";
@@ -114,9 +114,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
           </button>
         </div>
       )}
-      {loading && !overview && !notGit && (
-        <p className="text-xs text-text-muted">{t("work.loading")}</p>
-      )}
+      {loading && !overview && !notGit && <LoadingSpin label={t("work.loading")} />}
       {notGit && (
         <GitSetupGuide
           key={project}

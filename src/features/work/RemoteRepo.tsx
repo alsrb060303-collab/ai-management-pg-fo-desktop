@@ -19,7 +19,15 @@ import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, type RepoSummary, useRemoteStore } from "../../store/remote";
-import { ciStep, FlowShell, type Next, pullNext, pullStep, type Step } from "./FlowCard";
+import {
+  ciStep,
+  FlowShell,
+  LoadingSpin,
+  type Next,
+  pullNext,
+  pullStep,
+  type Step,
+} from "./FlowCard";
 import {
   ChecksSummary,
   IssueList,
@@ -210,9 +218,15 @@ export function RemoteRepo({ compact }: { compact: boolean }) {
         </div>
       )}
       {!data ? (
-        loading && <p className="text-xs text-text-muted">{t("work.loading")}</p>
+        loading && <LoadingSpin label={t("work.loading")} />
       ) : (
-        <RemoteBody data={data} compact={compact} busy={loading || busy} onRefresh={load} />
+        <RemoteBody
+          data={data}
+          compact={compact}
+          busy={loading || busy}
+          // Not `onRefresh={load}`: the click event would become the branch.
+          onRefresh={() => void load()}
+        />
       )}
     </div>
   );

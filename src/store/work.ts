@@ -112,6 +112,8 @@ interface WorkState {
   loading: boolean;
   /** An operation is running; buttons are disabled meanwhile. */
   busy: boolean;
+  /** A full refresh (the user's, or after an operation) is running; polls don't count. */
+  refreshing: boolean;
   error: string | null;
   /** The changed file whose diff is open. */
   selected: Change | null;
@@ -142,6 +144,7 @@ export const useWorkStore = create<WorkState>((set, get) => {
   let diffSeq = 0;
   /** Refreshes running; a poll never supersedes (and so drops) one. */
   let inFlight = 0;
+  let fullInFlight = 0;
 
   const loadDiff = async () => {
     const { project, selected } = get();
@@ -167,6 +170,7 @@ export const useWorkStore = create<WorkState>((set, get) => {
     gitMissing: false,
     loading: false,
     busy: false,
+    refreshing: false,
     error: null,
     selected: null,
     diff: null,
@@ -231,6 +235,7 @@ export const useWorkStore = create<WorkState>((set, get) => {
       if (!project || !isTauri() || (!full && inFlight > 0)) return;
       const id = ++seq;
       inFlight++;
+      if (full) set({ refreshing: ++fullInFlight > 0 });
       try {
         const next = await invoke<Overview | null>("work_overview", {
           project,
@@ -264,6 +269,8 @@ export const useWorkStore = create<WorkState>((set, get) => {
       } catch (e) {
         // Polls keep what is shown; a full refresh reports the problem.
         if (id === seq && full) set({ error: String(e) });
+      } finally {
+        if (full) set({ refreshing: --fullInFlight > 0 });
       }
     },
 
