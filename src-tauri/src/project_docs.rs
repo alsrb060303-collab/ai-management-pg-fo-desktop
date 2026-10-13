@@ -1,6 +1,15 @@
-//! The Claude Code documents inside a project folder, to read and edit in the
-//! app: every CLAUDE.md / CLAUDE.local.md / AGENTS.md (subfolders included),
-//! and the Markdown and settings files under `.claude/`, plus `.mcp.json`.
+//! The AI tool documents inside a project folder, to read and edit in the
+//! app. Which files depends on the project's tool:
+//!
+//! - Claude Code: every CLAUDE.md / CLAUDE.local.md / AGENTS.md (subfolders
+//!   included), the Markdown and settings files under `.claude/`, and
+//!   `.mcp.json`.
+//! - Codex: every AGENTS.md / AGENTS.override.md (subfolders included),
+//!   `.codex/config.toml`, `.codex/hooks.json`, `.codex/agents/*.toml`,
+//!   `.codex/rules/*.rules` and the Markdown files under `.agents/skills/`.
+//!   Configured fallback names (`project_doc_fallback_filenames`) are not
+//!   listed.
+//!
 //! Paths go back and forth relative to the project (`/`-separated) and are
 //! checked to stay inside it.
 
@@ -9,6 +18,8 @@ use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+
+use crate::tools::ToolId;
 
 /// Folders never worth walking (build output, dependencies, VCS data).
 const SKIP_DIRS: &[&str] = &[
@@ -23,6 +34,7 @@ const SKIP_DIRS: &[&str] = &[
     "coverage",
 ];
 const INSTRUCTION_FILES: &[&str] = &["CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"];
+const CODEX_INSTRUCTION_FILES: &[&str] = &["AGENTS.md", "AGENTS.override.md"];
 const MAX_DEPTH: usize = 10;
 const MAX_FILES: usize = 1000;
 /// Larger files are listed but not opened in the editor.
@@ -36,7 +48,7 @@ pub struct DocEntry {
     /// Relative to the project, `/`-separated.
     pub rel: String,
     /// "instructions", "rule", "skill", "agent", "command", "settings",
-    /// "mcp" or "other".
+    /// "mcp", "hook", "policy" or "other".
     pub kind: &'static str,
     pub size: u64,
     /// Epoch ms of the last change.
@@ -50,8 +62,59 @@ pub struct DocText {
     pub modified: i64,
 }
 
-/// What a project-relative path is, or `None` when the app doesn't edit it.
-fn kind_of(rel: &str) -> Option<&'static str> {
+/// What a project-relative path is for `tool`, or `None` when the app
+/// doesn't edit it.
+fn kind_of(tool: ToolId, rel: &str) -> Option<&'static str> {
+    match tool {
+        ToolId::Claude => claude_kind(rel),
+        ToolId::Codex => codex_kind(rel),
+    }
+}
+
+/// Hidden folders the walk enters for `tool`.
+fn tool_dirs(tool: ToolId) -> &'static [&'static str] {
+    match tool {
+        ToolId::Claude => &[".claude"],
+        ToolId::Codex => &[".codex", ".agents"],
+    }
+}
+
+/// `rel` is directly in, or anywhere under, `<any folder>/<dir>/`.
+fn in_dir(rel: &str, dir: &str) -> bool {
+    rel.starts_with(&format!("{dir}/")) || rel.contains(&format!("/{dir}/"))
+}
+
+/// `rel` is a file directly in `<any folder>/<dir>/` (no subfolder).
+fn directly_in(rel: &str, dir: &str) -> bool {
+    let parent = rel.rsplit_once('/').map_or("", |(p, _)| p);
+    parent == dir || parent.ends_with(&format!("/{dir}"))
+}
+
+fn codex_kind(rel: &str) -> Option<&'static str> {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    if CODEX_INSTRUCTION_FILES.contains(&name) {
+        return Some("instructions");
+    }
+    if directly_in(rel, ".codex") {
+        return match name {
+            "config.toml" => Some("settings"),
+            "hooks.json" => Some("hook"),
+            _ => None,
+        };
+    }
+    if directly_in(rel, ".codex/agents") && name.ends_with(".toml") {
+        return Some("agent");
+    }
+    if directly_in(rel, ".codex/rules") && name.ends_with(".rules") {
+        return Some("policy");
+    }
+    if in_dir(rel, ".agents/skills") && name.ends_with(".md") {
+        return Some("skill");
+    }
+    None
+}
+
+fn claude_kind(rel: &str) -> Option<&'static str> {
     let name = rel.rsplit('/').next().unwrap_or(rel);
     let in_claude = rel.starts_with(".claude/") || rel.contains("/.claude/");
     let under = |dir: &str| {
@@ -103,7 +166,7 @@ fn rel_of(root: &Path, path: &Path) -> String {
         .join("/")
 }
 
-pub fn list(root: &Path) -> Result<Vec<DocEntry>> {
+pub fn list(root: &Path, tool: ToolId) -> Result<Vec<DocEntry>> {
     if !root.is_dir() {
         return Err(crate::tr!(
             "폴더를 찾을 수 없어요: {path}",
@@ -112,7 +175,7 @@ pub fn list(root: &Path) -> Result<Vec<DocEntry>> {
         ));
     }
     let mut out = Vec::new();
-    walk(root, root, 0, &mut out);
+    walk(root, root, tool, 0, &mut out);
     out.sort_by(|a, b| {
         // Root files before subfolders', then by path.
         (a.rel.matches('/').count(), &a.rel).cmp(&(b.rel.matches('/').count(), &b.rel))
@@ -120,7 +183,7 @@ pub fn list(root: &Path) -> Result<Vec<DocEntry>> {
     Ok(out)
 }
 
-fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<DocEntry>) {
+fn walk(root: &Path, dir: &Path, tool: ToolId, depth: usize, out: &mut Vec<DocEntry>) {
     if depth > MAX_DEPTH || out.len() >= MAX_FILES {
         return;
     }
@@ -140,13 +203,13 @@ fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<DocEntry>) {
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
         if kind.is_dir() {
-            let hidden = name.starts_with('.') && name != ".claude";
+            let hidden = name.starts_with('.') && !tool_dirs(tool).contains(&name.as_str());
             if !hidden && !SKIP_DIRS.contains(&name.as_str()) {
-                walk(root, &path, depth + 1, out);
+                walk(root, &path, tool, depth + 1, out);
             }
         } else if kind.is_file() {
             let rel = rel_of(root, &path);
-            if let (Some(kind), Ok(meta)) = (kind_of(&rel), entry.metadata()) {
+            if let (Some(kind), Ok(meta)) = (kind_of(tool, &rel), entry.metadata()) {
                 out.push(DocEntry {
                     rel,
                     kind,
@@ -160,7 +223,7 @@ fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<DocEntry>) {
 
 /// The file for `rel`, refusing paths that leave the project or that the app
 /// doesn't edit.
-fn resolve(root: &Path, rel: &str) -> Result<PathBuf> {
+fn resolve(root: &Path, tool: ToolId, rel: &str) -> Result<PathBuf> {
     let rel = rel.trim().replace('\\', "/");
     let bad = || {
         crate::tr!(
@@ -177,7 +240,7 @@ fn resolve(root: &Path, rel: &str) -> Result<PathBuf> {
     {
         return Err(bad());
     }
-    if kind_of(&rel).is_none() {
+    if kind_of(tool, &rel).is_none() {
         return Err(bad());
     }
     let full = root.join(path);
@@ -196,8 +259,8 @@ fn resolve(root: &Path, rel: &str) -> Result<PathBuf> {
     Ok(full)
 }
 
-pub fn read(root: &Path, rel: &str) -> Result<DocText> {
-    let path = resolve(root, rel)?;
+pub fn read(root: &Path, tool: ToolId, rel: &str) -> Result<DocText> {
+    let path = resolve(root, tool, rel)?;
     let meta = fs::metadata(&path).map_err(|e| e.to_string())?;
     if meta.len() > MAX_EDIT_BYTES {
         return Err(crate::tr!(
@@ -225,12 +288,23 @@ pub const CONFLICT: &str = "conflict";
 /// `CONFLICT` unless `force`. Returns the new change time.
 pub fn write(
     root: &Path,
+    tool: ToolId,
     rel: &str,
     text: &str,
     expected: Option<i64>,
     force: bool,
 ) -> Result<i64> {
-    let path = resolve(root, rel)?;
+    let path = resolve(root, tool, rel)?;
+    if rel.ends_with(".toml")
+        && let Err(e) = text.parse::<toml_edit::DocumentMut>()
+    {
+        let e = e.to_string();
+        let e = e.lines().next().unwrap_or_default().trim().to_string();
+        return Err(crate::tr!(
+            "TOML 형식이 올바르지 않아서 저장하지 않았어요: {e}",
+            "Not saved: the TOML isn't valid ({e})"
+        ));
+    }
     if rel.ends_with(".json")
         && !text.trim().is_empty()
         && let Err(e) = serde_json::from_str::<serde_json::Value>(text)
@@ -259,8 +333,8 @@ pub fn write(
         .map_err(|e| e.to_string())
 }
 
-pub fn delete(root: &Path, rel: &str) -> Result<()> {
-    let path = resolve(root, rel)?;
+pub fn delete(root: &Path, tool: ToolId, rel: &str) -> Result<()> {
+    let path = resolve(root, tool, rel)?;
     fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
@@ -271,34 +345,38 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 }
 
 #[tauri::command]
-pub async fn project_docs_list(project: String) -> Result<Vec<DocEntry>> {
-    blocking(move || list(Path::new(&project))).await
+pub async fn project_docs_list(project: String, tool: ToolId) -> Result<Vec<DocEntry>> {
+    blocking(move || list(Path::new(&project), tool)).await
 }
 
 #[tauri::command]
-pub async fn project_doc_read(project: String, rel: String) -> Result<DocText> {
-    blocking(move || read(Path::new(&project), &rel)).await
+pub async fn project_doc_read(project: String, tool: ToolId, rel: String) -> Result<DocText> {
+    blocking(move || read(Path::new(&project), tool, &rel)).await
 }
 
 #[tauri::command]
 pub async fn project_doc_write(
     project: String,
+    tool: ToolId,
     rel: String,
     text: String,
     expected: Option<i64>,
     force: bool,
 ) -> Result<i64> {
-    blocking(move || write(Path::new(&project), &rel, &text, expected, force)).await
+    blocking(move || write(Path::new(&project), tool, &rel, &text, expected, force)).await
 }
 
 #[tauri::command]
-pub async fn project_doc_delete(project: String, rel: String) -> Result<()> {
-    blocking(move || delete(Path::new(&project), &rel)).await
+pub async fn project_doc_delete(project: String, tool: ToolId, rel: String) -> Result<()> {
+    blocking(move || delete(Path::new(&project), tool, &rel)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const C: ToolId = ToolId::Claude;
+    const X: ToolId = ToolId::Codex;
 
     fn project(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("aim-docs-{name}-{}", std::process::id()));
@@ -328,7 +406,7 @@ mod tests {
     #[test]
     fn lists_claude_docs_in_subfolders_and_skips_the_rest() {
         let dir = project("list");
-        let found: Vec<_> = list(&dir)
+        let found: Vec<_> = list(&dir, C)
             .unwrap()
             .into_iter()
             .map(|d| (d.rel, d.kind))
@@ -353,25 +431,34 @@ mod tests {
     #[test]
     fn writes_check_for_outside_changes() {
         let dir = project("write");
-        let doc = read(&dir, "src/CLAUDE.md").unwrap();
+        let doc = read(&dir, C, "src/CLAUDE.md").unwrap();
         assert_eq!(doc.text, "sub");
         // A stale change time is a conflict; forcing overwrites.
         assert_eq!(
-            write(&dir, "src/CLAUDE.md", "x", Some(doc.modified - 1), false),
+            write(&dir, C, "src/CLAUDE.md", "x", Some(doc.modified - 1), false),
             Err(CONFLICT.to_string())
         );
-        let at = write(&dir, "src/CLAUDE.md", "edited", Some(doc.modified), false).unwrap();
-        assert_eq!(read(&dir, "src/CLAUDE.md").unwrap().text, "edited");
-        assert_eq!(read(&dir, "src/CLAUDE.md").unwrap().modified, at);
-        write(&dir, "src/CLAUDE.md", "forced", None, true).unwrap();
+        let at = write(
+            &dir,
+            C,
+            "src/CLAUDE.md",
+            "edited",
+            Some(doc.modified),
+            false,
+        )
+        .unwrap();
+        assert_eq!(read(&dir, C, "src/CLAUDE.md").unwrap().text, "edited");
+        assert_eq!(read(&dir, C, "src/CLAUDE.md").unwrap().modified, at);
+        write(&dir, C, "src/CLAUDE.md", "forced", None, true).unwrap();
 
         // New files: refused when one exists, folders created as needed.
         assert_eq!(
-            write(&dir, "CLAUDE.md", "x", None, false),
+            write(&dir, C, "CLAUDE.md", "x", None, false),
             Err(CONFLICT.to_string())
         );
         write(
             &dir,
+            C,
             ".claude/skills/new/SKILL.md",
             "---\nname: new\n---\n",
             None,
@@ -381,10 +468,11 @@ mod tests {
         assert!(dir.join(".claude/skills/new/SKILL.md").is_file());
 
         // Settings must stay valid JSON.
-        let settings = read(&dir, ".claude/settings.json").unwrap();
+        let settings = read(&dir, C, ".claude/settings.json").unwrap();
         assert!(
             write(
                 &dir,
+                C,
                 ".claude/settings.json",
                 "{",
                 Some(settings.modified),
@@ -393,7 +481,7 @@ mod tests {
             .is_err()
         );
 
-        delete(&dir, ".claude/skills/new/SKILL.md").unwrap();
+        delete(&dir, C, ".claude/skills/new/SKILL.md").unwrap();
         assert!(!dir.join(".claude/skills/new/SKILL.md").exists());
         fs::remove_dir_all(dir).unwrap();
     }
@@ -409,9 +497,116 @@ mod tests {
             ".claude/skills/deploy/run.sh",
             "",
         ] {
-            assert!(read(&dir, bad).is_err(), "{bad}");
-            assert!(write(&dir, bad, "x", None, true).is_err(), "{bad}");
+            assert!(read(&dir, C, bad).is_err(), "{bad}");
+            assert!(write(&dir, C, bad, "x", None, true).is_err(), "{bad}");
         }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn codex_project(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("aim-docs-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        for (rel, text) in [
+            ("AGENTS.md", "root"),
+            ("CLAUDE.md", "claude only"),
+            ("src/AGENTS.override.md", "override"),
+            (".codex/config.toml", "model = \"x\"\n"),
+            (".codex/hooks.json", "{}"),
+            (".codex/agents/reviewer.toml", "name = \"reviewer\"\n"),
+            (".codex/agents/notes.md", "not an agent"),
+            (".codex/rules/default.rules", "prefix_rule()"),
+            (".codex/auth.json", "{}"),
+            (".agents/skills/deploy/SKILL.md", "skill"),
+            (".agents/skills/deploy/references/guide.md", "ref"),
+            (".agents/skills/deploy/run.sh", "echo"),
+            (".claude/skills/x/SKILL.md", "claude skill"),
+            ("pkg/.codex/config.toml", "x = 1\n"),
+            ("node_modules/a/AGENTS.md", "skipped"),
+        ] {
+            let path = dir.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn lists_codex_docs() {
+        let dir = codex_project("codex-list");
+        let found: Vec<_> = list(&dir, X)
+            .unwrap()
+            .into_iter()
+            .map(|d| (d.rel, d.kind))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("AGENTS.md".to_string(), "instructions"),
+                (".codex/config.toml".into(), "settings"),
+                (".codex/hooks.json".into(), "hook"),
+                ("src/AGENTS.override.md".into(), "instructions"),
+                (".codex/agents/reviewer.toml".into(), "agent"),
+                (".codex/rules/default.rules".into(), "policy"),
+                ("pkg/.codex/config.toml".into(), "settings"),
+                (".agents/skills/deploy/SKILL.md".into(), "skill"),
+                (".agents/skills/deploy/references/guide.md".into(), "skill"),
+            ]
+        );
+        // The Claude list doesn't change for a folder set up for Codex.
+        let claude: Vec<_> = list(&dir, C).unwrap().into_iter().map(|d| d.rel).collect();
+        assert_eq!(
+            claude,
+            ["AGENTS.md", "CLAUDE.md", ".claude/skills/x/SKILL.md"]
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn codex_paths_and_toml_are_checked() {
+        let dir = codex_project("codex-write");
+        for bad in [
+            "CLAUDE.md",
+            ".codex/auth.json",
+            ".codex/agents/notes.md",
+            ".agents/skills/deploy/run.sh",
+            ".claude/skills/x/SKILL.md",
+            "../AGENTS.md",
+        ] {
+            assert!(read(&dir, X, bad).is_err(), "{bad}");
+            assert!(write(&dir, X, bad, "x", None, true).is_err(), "{bad}");
+        }
+        let config = read(&dir, X, ".codex/config.toml").unwrap();
+        assert!(
+            write(
+                &dir,
+                X,
+                ".codex/config.toml",
+                "model = ",
+                Some(config.modified),
+                false
+            )
+            .is_err()
+        );
+        write(
+            &dir,
+            X,
+            ".codex/agents/new.toml",
+            "name = \"new\"\ndescription = \"\"\ndeveloper_instructions = \"\"\"\n\"\"\"\n",
+            None,
+            false,
+        )
+        .unwrap();
+        write(
+            &dir,
+            X,
+            ".agents/skills/new/SKILL.md",
+            "---\n---\n",
+            None,
+            false,
+        )
+        .unwrap();
+        delete(&dir, X, ".codex/agents/new.toml").unwrap();
+        assert!(!dir.join(".codex/agents/new.toml").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 }
