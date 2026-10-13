@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use super::read::{self, WORKTREES_DIR};
+use super::read;
 use crate::git;
+use crate::tools::ToolId;
 
 /// Diffs beyond this are cut (the panel is not an editor).
 const MAX_DIFF: usize = 512 * 1024;
@@ -150,11 +151,17 @@ fn valid_worktree_name(name: &str) -> git::Result<()> {
     }
 }
 
-/// Adds `<main>/.claude/worktrees/<name>` on a new branch `worktree-<name>`,
-/// like Claude Code's own worktrees. Returns its path.
-pub fn add_worktree(root: &Path, name: &str, base: Option<&str>) -> git::Result<String> {
+/// Adds `<main>/<tool's worktrees folder>/<name>` (`.claude/worktrees` or
+/// `.codex/worktrees`) on a new branch `worktree-<name>`, like Claude Code's
+/// own worktrees. Returns its path.
+pub fn add_worktree(
+    root: &Path,
+    name: &str,
+    base: Option<&str>,
+    tool: ToolId,
+) -> git::Result<String> {
     valid_worktree_name(name)?;
-    let overview = read::overview(root, false)?;
+    let overview = read::overview(root, false, None)?;
     if overview.head.commit.is_none() {
         return Err(crate::tr!(
             "첫 커밋을 만든 뒤에 worktree를 추가할 수 있어요",
@@ -166,7 +173,7 @@ pub fn add_worktree(root: &Path, name: &str, base: Option<&str>) -> git::Result<
     if let Some(base) = base {
         require_branch(root, base)?;
     }
-    let dir = PathBuf::from(&overview.main_root).join(WORKTREES_DIR);
+    let dir = PathBuf::from(&overview.main_root).join(tool.worktrees_dir());
     let path = dir.join(name);
     if path.exists() {
         return Err(crate::tr!(
@@ -186,7 +193,7 @@ pub fn add_worktree(root: &Path, name: &str, base: Option<&str>) -> git::Result<
 
 /// Removes a worktree (never the main one or the open one). Its branch stays.
 pub fn remove_worktree(root: &Path, path: &str, force: bool) -> git::Result<()> {
-    let overview = read::overview(root, false)?;
+    let overview = read::overview(root, false, None)?;
     let key = read::path_key(path);
     let Some(wt) = overview
         .worktrees
@@ -639,15 +646,19 @@ mod tests {
     #[test]
     fn worktrees_follow_claude_code_and_refuse_losing_work() {
         let (_tmp, root) = repo();
-        assert!(add_worktree(&root, "../x", None).is_err());
-        let path = add_worktree(&root, "task", None).unwrap();
+        assert!(add_worktree(&root, "../x", None, ToolId::Claude).is_err());
+        let path = add_worktree(&root, "task", None, ToolId::Claude).unwrap();
         assert!(
             read::path_key(&path).ends_with(".claude/worktrees/task"),
             "{path}"
         );
 
-        let ov = read::overview(&root, true).unwrap();
-        let wt = ov.worktrees.iter().find(|w| w.managed).unwrap();
+        let ov = read::overview(&root, true, None).unwrap();
+        let wt = ov
+            .worktrees
+            .iter()
+            .find(|w| w.managed_by == Some(read::ManagedBy::Claude))
+            .unwrap();
         assert_eq!(wt.branch.as_deref(), Some("worktree-task"));
         assert_eq!(wt.changes, Some(0));
         // The nested worktree is excluded, so the main one stays clean.
@@ -666,6 +677,26 @@ mod tests {
                 .unwrap()
                 .contains(&"worktree-task".to_string())
         );
+    }
+
+    #[test]
+    fn codex_projects_get_worktrees_under_dot_codex() {
+        let (_tmp, root) = repo();
+        let path = add_worktree(&root, "task", None, ToolId::Codex).unwrap();
+        assert!(
+            read::path_key(&path).ends_with(".codex/worktrees/task"),
+            "{path}"
+        );
+        let ov = read::overview(&root, false, None).unwrap();
+        let wt = ov
+            .worktrees
+            .iter()
+            .find(|w| w.managed_by == Some(read::ManagedBy::Codex))
+            .unwrap();
+        assert_eq!(wt.branch.as_deref(), Some("worktree-task"));
+        // Excluded from the main worktree's status, like the Claude folder.
+        assert!(ov.changes.is_empty());
+        remove_worktree(&root, &path, true).unwrap();
     }
 
     #[test]
@@ -696,7 +727,7 @@ mod tests {
         std::fs::remove_dir_all(&gone_a).unwrap();
         std::fs::remove_dir_all(&gone_b).unwrap();
         remove_worktree(&root, gone_a.to_str().unwrap(), false).unwrap();
-        let left: Vec<_> = read::overview(&root, false)
+        let left: Vec<_> = read::overview(&root, false, None)
             .unwrap()
             .worktrees
             .into_iter()
@@ -737,7 +768,7 @@ mod tests {
                 .contains("+x\r\n")
         );
 
-        let ov = read::overview(&root, false).unwrap();
+        let ov = read::overview(&root, false, None).unwrap();
         assert_eq!(ov.change_count, if cfg!(unix) { 5 } else { 4 });
         assert_eq!(ov.head.branch.as_deref(), Some("main"));
     }
@@ -751,7 +782,7 @@ mod tests {
         git(root, &["add", "."]);
         let d = diff(root, "a.txt", None, false).unwrap();
         assert!(d.text.contains("+x"), "{}", d.text);
-        assert!(add_worktree(root, "t", None).is_err());
+        assert!(add_worktree(root, "t", None, ToolId::Claude).is_err());
     }
     #[test]
     fn commits_push_and_pull_through_a_remote() {
@@ -777,14 +808,14 @@ mod tests {
         let hash = commit(&root, "Change a", true).unwrap();
         assert!(!hash.is_empty());
         // Nothing is on the remote yet.
-        let before = super::super::read::overview(&root, false).unwrap();
+        let before = super::super::read::overview(&root, false, None).unwrap();
         assert_eq!(before.unpushed as usize, before.log.len());
         assert_eq!(before.log[0].subject, "Change a");
         assert!(!before.log[0].pushed);
 
         // The first push sets the upstream.
         push(&root, &[]).unwrap();
-        let after = super::super::read::overview(&root, false).unwrap();
+        let after = super::super::read::overview(&root, false, None).unwrap();
         assert_eq!(after.unpushed, 0);
         assert!(after.log.iter().all(|c| c.pushed));
         assert!(after.base.is_none(), "main is its own base");
@@ -816,7 +847,7 @@ mod tests {
         git(&root, &["switch", "-q", "-c", "feat"]);
         std::fs::write(root.join("c.txt"), "c").unwrap();
         commit(&root, "Add c", true).unwrap();
-        let feat = super::super::read::overview(&root, false).unwrap();
+        let feat = super::super::read::overview(&root, false, None).unwrap();
         let base = feat.base.unwrap();
         assert_eq!(
             (base.name.as_str(), base.ahead, base.behind),

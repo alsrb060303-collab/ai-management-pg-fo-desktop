@@ -45,6 +45,14 @@ impl ToolId {
         }
     }
 
+    /// Folder (relative to the main worktree) the app creates worktrees in.
+    pub fn worktrees_dir(self) -> &'static str {
+        match self {
+            ToolId::Claude => ".claude/worktrees",
+            ToolId::Codex => ".codex/worktrees",
+        }
+    }
+
     /// File (relative to the project) a subagent `<id>` is written to.
     pub fn agent_file(self, id: &str) -> String {
         match self {

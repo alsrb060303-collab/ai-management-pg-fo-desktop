@@ -23,6 +23,7 @@ import {
   useWorkStore,
   type Worktree,
 } from "../../store/work";
+import { TOOLS } from "../../tools";
 import { ConflictView } from "./ConflictView";
 import { DiffView } from "./DiffView";
 import { FlowCard, LoadingSpin } from "./FlowCard";
@@ -623,9 +624,12 @@ function Branches({ compact }: { compact: boolean }) {
   );
 }
 
-function Badge({ children }: { children: ReactNode }) {
+function Badge({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <span className="shrink-0 rounded-full bg-sunken px-1.5 py-px text-fs-10 text-text-muted">
+    <span
+      title={title}
+      className="shrink-0 rounded-full bg-sunken px-1.5 py-px text-fs-10 text-text-muted"
+    >
       {children}
     </span>
   );
@@ -813,7 +817,11 @@ function Worktrees({ compact }: { compact: boolean }) {
               {wt.isMain ? t("work.worktree.main") : folderName(wt.path)}
             </span>
             {wt.isCurrent && <Badge>{t("work.worktree.open")}</Badge>}
-            {wt.managed && <Badge>Claude Code</Badge>}
+            {wt.managedBy === "claude" && <Badge>{TOOLS.claude.name}</Badge>}
+            {wt.managedBy === "codex" && <Badge>{TOOLS.codex.name}</Badge>}
+            {wt.managedBy === "codexApp" && (
+              <Badge title={t("work.worktree.byCodexApp")}>{TOOLS.codex.name}</Badge>
+            )}
             {wt.locked && <Badge>{t("work.worktree.locked")}</Badge>}
             {wt.prunable && <Badge>{t("work.worktree.missing")}</Badge>}
             <span className="min-w-0 flex-1 truncate text-fs-11 text-text-subtle">
@@ -864,6 +872,7 @@ function Worktrees({ compact }: { compact: boolean }) {
 function NewWorktree({ onDone }: { onDone: () => void }) {
   const t = useT();
   const { overview, busy, run } = useWorkStore();
+  const tool = useProjectStore((s) => s.tool);
   const [name, setName] = useState("");
   const current = overview?.branches.find((b) => b.name === overview.head.branch)?.name ?? "";
   const [base, setBase] = useState(current);
@@ -873,7 +882,7 @@ function NewWorktree({ onDone }: { onDone: () => void }) {
       onSubmit={async (e) => {
         e.preventDefault();
         if (!valid) return;
-        const ok = await run("work_add_worktree", { name, base: base || null });
+        const ok = await run("work_add_worktree", { name, base: base || null, tool });
         if (ok) onDone();
       }}
       className="mb-2 space-y-1.5 rounded-lg border border-border bg-surface p-2"
@@ -890,7 +899,7 @@ function NewWorktree({ onDone }: { onDone: () => void }) {
         {name && !valid
           ? t("work.worktree.invalidName")
           : t("work.worktree.hint", {
-              path: `.claude/worktrees/${name || t("work.worktree.nameToken")}`,
+              path: `${TOOLS[tool].worktreesDir}/${name || t("work.worktree.nameToken")}`,
               branch: `worktree-${name || t("work.worktree.nameToken")}`,
             })}
       </p>

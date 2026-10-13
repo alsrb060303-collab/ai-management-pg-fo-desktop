@@ -43,13 +43,17 @@ export interface Branch {
   worktree: string | null;
 }
 
+/** Mirrors `ManagedBy` in src-tauri/src/work/read.rs. */
+export type ManagedBy = "claude" | "codex" | "codexApp";
+
 export interface Worktree {
   path: string;
   branch: string | null;
   commit: string | null;
   isMain: boolean;
   isCurrent: boolean;
-  managed: boolean;
+  /** Who made it, by where it lives; `null` for any other folder. */
+  managedBy: ManagedBy | null;
   locked: boolean;
   prunable: boolean;
   changes: number | null;

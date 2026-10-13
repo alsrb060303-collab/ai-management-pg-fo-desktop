@@ -13,6 +13,8 @@ function appName(target: TargetApp, t: T): string {
       return "VS Code";
     case "claudeDesktop":
       return t("shell.dock.claudeDesktop");
+    case "codexDesktop":
+      return "Codex";
   }
 }
 

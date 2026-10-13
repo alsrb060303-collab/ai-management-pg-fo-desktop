@@ -565,6 +565,10 @@ fn classify(hwnd: HWND) -> Option<TargetApp> {
             Some(TargetApp::VsCode)
         }
         "claude.exe" if class.starts_with("Chrome_WidgetWin_") => Some(TargetApp::ClaudeDesktop),
+        // Codex: `codex.exe`, or the Windows "ChatGPT desktop app" that hosts it.
+        // Both process names still need a check on Windows. The window class is
+        // not required because it is unknown whether the app is Electron.
+        "codex.exe" | "chatgpt.exe" => Some(TargetApp::CodexDesktop),
         _ => None,
     }
 }
