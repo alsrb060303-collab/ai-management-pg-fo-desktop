@@ -1,7 +1,7 @@
 {
   "name": "ai-management",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.41",
   "description": "Floating sidebar for managing AI coding work (Claude Code docs, git, memos)",
   "license": "Apache-2.0",
   "repository": {

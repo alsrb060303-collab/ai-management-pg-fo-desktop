@@ -27,7 +27,7 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings &
 
 Run `pnpm lint`, `pnpm build`, and the cargo checks before committing.
 
-Every change to the app (a PR that touches `src/` or `src-tauri/`) raises the patch version once: `pnpm bump` (0.1.n → 0.1.n+1, in package.json, Cargo.toml, Cargo.lock and tauri.conf.json). Docs-only changes don't. Minor/major bumps only when the user asks. The Claude Code mod in `claude-mod/` keeps its own version.
+Every change to the app (a PR that touches `src/` or `src-tauri/`) raises the version once: `pnpm bump`. Updates add a last digit 1-9 to the base the user set (0.1.4 → 0.1.41 → 0.1.42 … → 0.1.49), in package.json, Cargo.toml, Cargo.lock and tauri.conf.json. Docs-only changes don't. Change the base (the `m` or `x` in 0.m.x, e.g. 0.1.5 or 0.2.0) only when the user asks, with `pnpm bump <version>`; after 0.1.49 the script stops, so ask. The Claude Code mod in `claude-mod/` keeps its own version.
 
 ## Rules
 
