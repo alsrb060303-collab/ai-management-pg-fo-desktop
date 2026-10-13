@@ -119,6 +119,7 @@ function Canvas() {
           style={{ width: 150, height: 100 }}
           position="bottom-right"
           nodeColor={(node) => {
+            if (node.type === "plan") return "var(--c-kind-plan)";
             if (node.type !== "block") return "var(--c-border-strong)";
             const kind = blocks.get((node.data as { blockId: string }).blockId)?.kind;
             return `var(--c-kind-${kind ?? "instruction"})`;

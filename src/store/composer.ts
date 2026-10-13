@@ -17,7 +17,7 @@ import { useSyncStore } from "./sync";
 
 // Mirrors src-tauri/src/composer.
 export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
-export type Target = "claudeMd" | "rules" | "skills" | "agents" | "custom" | "hooks";
+export type Target = "claudeMd" | "rules" | "skills" | "agents" | "custom" | "hooks" | "plans";
 
 export interface Block {
   id: string;
@@ -98,9 +98,49 @@ export type OutputData = {
   path?: string;
   text?: string;
 };
+/** Plan goals: `y` done, `p` in progress, `n` not yet. */
+export type PlanStatus = "y" | "p" | "n";
+export type PlanAction = "text" | "agent" | "skill" | "ask";
+/** A row under a main goal (mirrors `plans::PlanItem`). */
+export interface PlanItem {
+  id: string;
+  kind: "sub" | "detail" | "step";
+  text: string;
+  note?: string;
+  status?: PlanStatus;
+  /** Steps: what happens at this point. */
+  action?: PlanAction;
+  /** Agent and skill steps: the catalog block. */
+  block?: string;
+}
+/** A main goal and everything under it (a plan node). */
+export type PlanData = {
+  title: string;
+  note?: string;
+  status?: PlanStatus;
+  items: PlanItem[];
+  disabled?: boolean;
+};
 export type BlockNode = Node<BlockData, "block">;
 export type OutputNode = Node<OutputData, "output">;
-export type ComposerNode = BlockNode | OutputNode;
+export type PlanNode = Node<PlanData, "plan">;
+export type ComposerNode = BlockNode | OutputNode | PlanNode;
+
+/**
+ * A detail goal needs a sub-goal above it: one that ends up first becomes a
+ * sub-goal (compile.rs reads it the same way).
+ */
+export function fixPlan(items: PlanItem[]): PlanItem[] {
+  let sub = false;
+  return items.map((item) => {
+    if (item.kind === "sub") sub = true;
+    if (item.kind === "detail" && !sub) {
+      sub = true;
+      return { ...item, kind: "sub" };
+    }
+    return item;
+  });
+}
 
 export interface ComposerDoc {
   version: 1;
@@ -119,6 +159,8 @@ export const ACCEPTS: Record<Target, BlockKind[]> = {
   agents: ["agent"],
   custom: ["instruction", "rule"],
   hooks: ["hook"],
+  // Plan nodes (main goals), not catalog blocks.
+  plans: [],
 };
 
 /** Subagent model aliases (`MODEL_ALIASES` in compile.rs) and their current model. */
@@ -213,6 +255,18 @@ interface ComposerState {
   setBlockData: (nodeId: string, patch: Partial<Omit<BlockData, "blockId">>) => void;
   setOutputData: (nodeId: string, patch: Partial<Pick<OutputData, "path" | "text">>) => void;
   setScope: (nodeId: string, scope: Mode) => void;
+  /** A new main goal; returns its node id. */
+  addPlan: (position: XYPosition, title?: string) => string;
+  setPlan: (nodeId: string, patch: Partial<Omit<PlanData, "items">>) => void;
+  /** Inserts a row at `index` (the end when omitted); returns its id. */
+  addPlanItem: (
+    nodeId: string,
+    item: Pick<PlanItem, "kind"> & Partial<PlanItem>,
+    index?: number,
+  ) => string;
+  setPlanItem: (nodeId: string, itemId: string, patch: Partial<Omit<PlanItem, "id">>) => void;
+  movePlanItem: (nodeId: string, from: number, to: number) => void;
+  removePlanItem: (nodeId: string, itemId: string) => void;
   reorder: (nodeId: string, from: number, to: number) => void;
   undo: () => void;
   redo: () => void;
@@ -294,7 +348,8 @@ function persistable(doc: ComposerDoc): ComposerDoc {
   };
 }
 
-const edgeColor = (kind: BlockKind | undefined) => `var(--c-kind-${kind ?? "instruction"})`;
+const edgeColor = (kind: BlockKind | "plan" | undefined) =>
+  `var(--c-kind-${kind ?? "instruction"})`;
 
 /** The catalog as received; `catalog` in the store is it in the UI language. */
 let rawCatalog: Block[] = [];
@@ -379,10 +434,20 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     });
   };
 
-  const kindOf = (doc: ComposerDoc, nodeId: string): BlockKind | undefined => {
+  const kindOf = (doc: ComposerDoc, nodeId: string): BlockKind | "plan" | undefined => {
     const node = doc.nodes.find((n) => n.id === nodeId);
+    if (node?.type === "plan") return "plan";
     return node?.type === "block" ? get().blocks.get(node.data.blockId)?.kind : undefined;
   };
+
+  /** Applies `f` to a plan node's data. */
+  const updatePlan = (nodeId: string, f: (data: PlanData) => PlanData) =>
+    update((doc) => ({
+      ...doc,
+      nodes: doc.nodes.map((n) =>
+        n.id === nodeId && n.type === "plan" ? { ...n, data: f(n.data) } : n,
+      ),
+    }));
 
   const open = (doc: ComposerDoc) => {
     onDisk = canonical(doc);
@@ -606,9 +671,14 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       if (!doc) return false;
       const source = doc.nodes.find((n) => n.id === connection.source);
       const target = doc.nodes.find((n) => n.id === connection.target);
-      if (source?.type !== "block" || target?.type !== "output") return false;
-      const kind = blocks.get(source.data.blockId)?.kind;
-      if (!kind || !ACCEPTS[target.data.target].includes(kind)) return false;
+      if (target?.type !== "output") return false;
+      if (source?.type === "plan") {
+        if (target.data.target !== "plans") return false;
+      } else {
+        if (source?.type !== "block") return false;
+        const kind = blocks.get(source.data.blockId)?.kind;
+        if (!kind || !ACCEPTS[target.data.target].includes(kind)) return false;
+      }
       return !doc.edges.some((e) => e.source === source.id && e.target === target.id);
     },
 
@@ -650,10 +720,10 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       set({ focus: nodeId, standalone: null });
       const { doc, compiled, blocks } = get();
       const node = doc?.nodes.find((n) => n.id === nodeId);
-      if (!doc || !node || node.type !== "block" || !isTauri()) return;
+      if (!doc || !node || node.type === "output" || !isTauri()) return;
       // Already part of an output's file: the preview shows that one.
       if (compiled?.files.some((f) => f.blocks.includes(node.id))) return;
-      const kind = blocks.get(node.data.blockId)?.kind;
+      const kind = node.type === "plan" ? "plan" : blocks.get(node.data.blockId)?.kind;
       if (!kind) return;
       const { selected: _s, dragging: _d, ...block } = node;
       const out = "preview-output";
@@ -665,14 +735,20 @@ export const useComposerStore = create<ComposerState>((set, get) => {
             id: out,
             type: "output",
             position: { x: 0, y: 0 },
-            data: { target: PREVIEW_TARGET[kind], scope: "team", order: [node.id] },
+            data: {
+              target: kind === "plan" ? "plans" : PREVIEW_TARGET[kind],
+              scope: "team",
+              order: [node.id],
+            },
           },
         ],
         edges: [{ id: "preview-edge", source: node.id, target: out }],
       };
       try {
         const result = await invoke<Compiled>("composer_compile", { doc: temp });
-        if (get().focus === nodeId) set({ standalone: result.files[0] ?? null });
+        // A plan's preview also points CLAUDE.md to it; show PLANS.md.
+        const file = result.files.find((f) => f.node === out) ?? null;
+        if (get().focus === nodeId) set({ standalone: file });
       } catch (e) {
         set({ error: String(e) });
       }
@@ -727,6 +803,71 @@ export const useComposerStore = create<ComposerState>((set, get) => {
         nodes: doc.nodes.map((n) =>
           n.id === nodeId && n.type === "output" ? { ...n, data: { ...n.data, scope } } : n,
         ),
+      })),
+
+    addPlan: (position, title) => {
+      const id = newId("p");
+      update((doc) => ({
+        ...doc,
+        nodes: [
+          ...doc.nodes.map((n) => ({ ...n, selected: false })),
+          {
+            id,
+            type: "plan",
+            position,
+            data: { title: title ?? "", status: "n", items: [] },
+            selected: true,
+          },
+        ],
+      }));
+      return id;
+    },
+
+    setPlan: (nodeId, patch) => updatePlan(nodeId, (data) => ({ ...data, ...patch })),
+
+    addPlanItem: (nodeId, item, index) => {
+      const id = newId("i");
+      const row: PlanItem = {
+        text: "",
+        ...(item.kind === "step" ? { action: "text" as const } : { status: "n" as const }),
+        ...item,
+        id,
+      };
+      updatePlan(nodeId, (data) => {
+        const items = [...data.items];
+        items.splice(index ?? items.length, 0, row);
+        return { ...data, items: fixPlan(items) };
+      });
+      return id;
+    },
+
+    setPlanItem: (nodeId, itemId, patch) =>
+      updatePlan(nodeId, (data) => ({
+        ...data,
+        items: fixPlan(data.items.map((i) => (i.id === itemId ? { ...i, ...patch } : i))),
+      })),
+
+    movePlanItem: (nodeId, from, to) => {
+      if (from === to) return;
+      updatePlan(nodeId, (data) => {
+        const items = [...data.items];
+        if (!items[from]) return data;
+        // A sub-goal takes its detail goals and steps along.
+        let size = 1;
+        if (items[from].kind === "sub") {
+          while (from + size < items.length && items[from + size].kind !== "sub") size++;
+        }
+        if (to >= from && to < from + size) return data;
+        const moved = items.splice(from, size);
+        items.splice(to > from ? to - size + 1 : to, 0, ...moved);
+        return { ...data, items: fixPlan(items) };
+      });
+    },
+
+    removePlanItem: (nodeId, itemId) =>
+      updatePlan(nodeId, (data) => ({
+        ...data,
+        items: fixPlan(data.items.filter((i) => i.id !== itemId)),
       })),
 
     reorder: (nodeId, from, to) => {

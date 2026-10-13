@@ -10,12 +10,15 @@
 //!   the user's own text and the connected instruction and rule blocks
 //! - hooks: the `hooks` of `.claude/settings.json` (or `settings.local.json`),
 //!   merged into the file by `write`
+//! - plans: a managed section in `PLANS.md` (`PLANS.local.md`) holding the
+//!   connected plan nodes (`plans`), and a line in CLAUDE.md pointing to it
 
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
 use super::catalog::{Block, BlockKind, normalize};
+use super::plans::{self, Plan, PlanItem};
 use crate::library::{Mode, check_id};
 
 /// CLAUDE.md guidance: longer files are followed less reliably.
@@ -120,6 +123,12 @@ pub struct NodeData {
     /// own text put before the connected blocks.
     pub path: Option<String>,
     pub text: Option<String>,
+    /// Plan nodes (main goals): see `plans::Plan`.
+    pub title: Option<String>,
+    pub note: Option<String>,
+    pub status: Option<String>,
+    #[serde(default)]
+    pub items: Vec<PlanItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +146,7 @@ pub enum Target {
     Agents,
     Custom,
     Hooks,
+    Plans,
 }
 
 impl Target {
@@ -149,6 +159,8 @@ impl Target {
             Target::Skills => kind == BlockKind::Skill,
             Target::Agents => kind == BlockKind::Agent,
             Target::Hooks => kind == BlockKind::Hook,
+            // Plan nodes, not catalog blocks.
+            Target::Plans => false,
         }
     }
 }
@@ -257,6 +269,10 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             continue;
         };
         let personal = output.data.scope == Some(Mode::Personal);
+        // After the others: steps check which skills and subagents are written.
+        if target == Target::Plans {
+            continue;
+        }
 
         // Connected block nodes, in the node's saved order, then any others in
         // edge order (e.g. connected after the order was last saved).
@@ -468,6 +484,7 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
                     });
                 }
             }
+            Target::Plans => {}
             Target::Rules | Target::Skills | Target::Agents => {
                 for (node_id, block, body) in &resolved {
                     if check_id(&block.name).is_err() {
@@ -571,7 +588,145 @@ pub fn compile(doc: &Doc, catalog: &[Block]) -> Compiled {
             }
         }
     }
+    compile_plans(doc, &nodes, &blocks, &mut out);
     out
+}
+
+/// Connected node ids of an output, saved order first.
+fn inputs_of<'a>(doc: &'a Doc, output: &'a Node) -> Vec<&'a str> {
+    let connected: Vec<&str> = doc
+        .edges
+        .iter()
+        .filter(|e| e.target == output.id)
+        .map(|e| e.source.as_str())
+        .collect();
+    let mut inputs = Vec::new();
+    for id in output
+        .data
+        .order
+        .iter()
+        .map(String::as_str)
+        .chain(connected.iter().copied())
+    {
+        if connected.contains(&id) && !inputs.contains(&id) {
+            inputs.push(id);
+        }
+    }
+    inputs
+}
+
+/// PLANS outputs, and the line pointing CLAUDE.md to them.
+fn compile_plans(
+    doc: &Doc,
+    nodes: &HashMap<&str, &Node>,
+    blocks: &HashMap<&str, &Block>,
+    out: &mut Compiled,
+) {
+    // Catalog ids of the skills and subagents this document writes.
+    let written: Vec<String> = out
+        .files
+        .iter()
+        .filter(|f| matches!(f.target, Target::Skills | Target::Agents))
+        .flat_map(|f| f.blocks.iter())
+        .filter_map(|id| nodes.get(id.as_str())?.data.block_id.clone())
+        .collect();
+    for output in doc
+        .nodes
+        .iter()
+        .filter(|n| n.kind == "output" && n.data.target == Some(Target::Plans))
+    {
+        let personal = output.data.scope == Some(Mode::Personal);
+        let mut issues = Vec::new();
+        let mut parts = Vec::new();
+        let mut used = Vec::new();
+        for id in inputs_of(doc, output) {
+            let Some(node) = nodes.get(id).filter(|n| n.kind == "plan") else {
+                continue;
+            };
+            if node.data.disabled {
+                continue;
+            }
+            let plan = Plan {
+                title: node.data.title.clone().unwrap_or_default(),
+                note: node.data.note.clone(),
+                status: node.data.status.clone(),
+                items: node.data.items.clone(),
+            };
+            parts.push(plans::render(id, &plan, blocks, &written, &mut issues));
+            used.push(id.to_string());
+        }
+        for issue in issues {
+            out.warnings.push(Warning {
+                node: Some(issue.node),
+                message: issue.message,
+            });
+        }
+        if parts.is_empty() {
+            continue;
+        }
+        let path = if personal {
+            "PLANS.local.md"
+        } else {
+            "PLANS.md"
+        };
+        if out.files.iter().any(|f| f.path == path) {
+            out.warnings.push(Warning {
+                node: Some(output.id.clone()),
+                message: crate::tr!(
+                    "{path}을(를) 두 출력이 같이 쓰려고 해요. 하나만 남겨 주세요",
+                    "Two outputs both write {path}. Keep only one"
+                ),
+            });
+            continue;
+        }
+        let content = format!("{}\n\n{}", plans::header(), parts.join("\n\n"));
+        out.files.push(OutFile {
+            path: path.into(),
+            lines: content.lines().count(),
+            content,
+            section: true,
+            personal,
+            target: Target::Plans,
+            node: output.id.clone(),
+            blocks: used,
+        });
+
+        // Claude Code doesn't read PLANS.md by itself: CLAUDE.md points to it.
+        let pointer = plans::pointer(path);
+        let claude_md = if personal {
+            "CLAUDE.local.md"
+        } else {
+            "CLAUDE.md"
+        };
+        if let Some(file) = out.files.iter_mut().find(|f| f.path == claude_md) {
+            file.content = format!("{}\n\n{pointer}", file.content);
+            file.lines = file.content.lines().count();
+        } else if let Some(node) = doc.nodes.iter().find(|n| {
+            n.kind == "output"
+                && n.data.target == Some(Target::ClaudeMd)
+                && (n.data.scope == Some(Mode::Personal)) == personal
+        }) {
+            out.files.push(OutFile {
+                path: claude_md.into(),
+                lines: pointer.lines().count(),
+                content: pointer,
+                section: true,
+                personal,
+                target: Target::ClaudeMd,
+                node: node.id.clone(),
+                blocks: Vec::new(),
+            });
+        } else {
+            out.warnings.push(Warning {
+                node: Some(output.id.clone()),
+                message: crate::tr!(
+                    "Claude Code는 {path}를 스스로 읽지 않아요. {claude_md} 출력({})을 추가하면 계획을 읽으라는 안내가 들어가요",
+                    "Claude Code doesn't read {path} by itself. Add a {claude_md} output ({}) and it gets a line pointing to the plan",
+                    if personal { crate::tr!("나만", "Just me") } else { crate::tr!("팀", "Team") }
+                ),
+            });
+        }
+    }
 }
 
 /// YAML double-quoted scalar, safe for any text.
@@ -806,6 +961,62 @@ mod tests {
             block("builtin:review", BlockKind::Skill, "Steps"),
             block("builtin:reviewer", BlockKind::Agent, "You review."),
         ]
+    }
+
+    #[test]
+    fn plans_render_goals_steps_and_point_claude_md_to_them() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "r", "type": "block", "data": {"blockId": "builtin:reviewer"}},
+                {"id": "ag", "type": "output", "data": {"target": "agents", "scope": "team"}},
+                {"id": "c", "type": "output", "data": {"target": "claudeMd", "scope": "team"}},
+                {"id": "g", "type": "plan", "data": {"title": "App account", "status": "p", "note": "Sync follows the account", "items": [
+                    {"kind": "detail", "text": "Orphan becomes a sub-goal"},
+                    {"kind": "sub", "text": "Sign-in", "status": "y"},
+                    {"kind": "step", "action": "agent", "block": "builtin:reviewer", "text": "check the token handling"},
+                    {"kind": "detail", "text": "Google", "status": "p", "note": "loopback"},
+                    {"kind": "step", "action": "ask"},
+                    {"kind": "step", "action": "skill", "block": "builtin:review"},
+                    {"kind": "step", "action": "text", "text": "  "}
+                ]}},
+                {"id": "p", "type": "output", "data": {"target": "plans", "scope": "team", "order": ["g"]}}
+            ],
+            "edges": [{"source": "r", "target": "ag"}, {"source": "g", "target": "p"}]
+        }"#);
+        let out = compile(&d, &catalog());
+        let plan = out.files.iter().find(|f| f.path == "PLANS.md").unwrap();
+        assert!(plan.section);
+        assert_eq!(plan.blocks, ["g"]);
+        assert!(plan.content.starts_with("# PLANS\n\n"));
+        let body = &plan.content[plan.content.find("## [p]").unwrap()..];
+        assert_eq!(
+            body,
+            "## [p] App account\n\nSync follows the account\n\n### [n] 1. Orphan becomes a sub-goal\n\n### [y] 2. Sign-in\n\n> **단계 지침**: 이 일은 `reviewer` subagent에게 맡겨요: check the token handling\n\n- [p] 2.1 Google\n  loopback\n\n  > **단계 지침**: 여기서 멈추고, 다음 목표로 넘어가기 전에 사용자에게 확인받아요\n\n  > **단계 지침**: `review` skill을 써요"
+        );
+        // The skill step names a skill no output writes.
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("g"));
+        // CLAUDE.md had no blocks; it still gets the pointer.
+        let claude = out.files.iter().find(|f| f.path == "CLAUDE.md").unwrap();
+        assert!(claude.content.contains("`PLANS.md`"));
+        assert_eq!(claude.node, "c");
+    }
+
+    #[test]
+    fn plans_without_a_claude_md_output_warn() {
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "g", "type": "plan", "data": {"title": "Goal"}},
+                {"id": "p", "type": "output", "data": {"target": "plans", "scope": "personal"}}
+            ],
+            "edges": [{"source": "g", "target": "p"}]
+        }"#);
+        let out = compile(&d, &catalog());
+        assert_eq!(out.files.len(), 1);
+        assert_eq!(out.files[0].path, "PLANS.local.md");
+        assert!(out.files[0].personal);
+        assert_eq!(out.warnings.len(), 1);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("p"));
     }
 
     #[test]

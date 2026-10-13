@@ -7,6 +7,7 @@
 
 pub mod catalog;
 pub mod compile;
+mod plans;
 pub mod refresh;
 pub mod remote;
 pub mod write;

@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useReactFlow } from "@xyflow/react";
-import { ChevronDown, ExternalLink, Loader2, Plus, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, ExternalLink, Flag, Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResizeHandle, usePanelWidth } from "../../components/Resizable";
@@ -15,9 +15,13 @@ import {
 } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
 import { isLarge, LargeBlockDialog, largeWarningOff } from "./LargeBlockDialog";
+import { dropIndex, PLAN_ENTRIES, type PlanEntry } from "./plans";
 
-const FILTERS: { value: BlockKind | "all"; label: MessageKey }[] = [
+type Filter = BlockKind | "all" | "plans";
+
+const FILTERS: { value: Filter; label: MessageKey }[] = [
   { value: "all", label: "composer.palette.all" },
+  { value: "plans", label: "composer.target.plans" },
   { value: "instruction", label: "composer.kind.instruction" },
   { value: "rule", label: "composer.kind.rule" },
   { value: "skill", label: "composer.kind.skill" },
@@ -78,8 +82,8 @@ export function Palette() {
     }
   };
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<BlockKind | "all">("all");
-  const [ghost, setGhost] = useState<{ block: Block; x: number; y: number } | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [ghost, setGhost] = useState<{ title: string; x: number; y: number } | null>(null);
   /** The block whose details are open. */
   const [opened, setOpened] = useState<string | null>(null);
   const place = usePlacement();
@@ -107,7 +111,7 @@ export function Palette() {
     const move = (ev: PointerEvent) => {
       if (!dragging && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
       dragging = true;
-      setGhost({ block, x: ev.clientX, y: ev.clientY });
+      setGhost({ title: block.title, x: ev.clientX, y: ev.clientY });
     };
     const row = e.currentTarget;
     const stop = () => {
@@ -137,6 +141,67 @@ export function Palette() {
   };
 
   const addOutputNode = (target: Target) => addOutput(target, place.nearCenter());
+
+  /**
+   * Puts a plan entry where it was dropped: a main goal on the canvas, the
+   * rest into the plan node under the pointer (between its rows), else into
+   * the selected or last plan, else into a new one.
+   */
+  const placePlan = (entry: PlanEntry, x: number, y: number) => {
+    const store = useComposerStore.getState();
+    const at = place.atPoint(x, y);
+    if (entry === "main") {
+      store.addPlan(at ? { x: at.x - 200, y: at.y - 40 } : place.nearCenter());
+      return;
+    }
+    const kind = entry;
+    const over = at ? document.elementFromPoint(x, y)?.closest("[data-plan-node]") : null;
+    const overId = over?.getAttribute("data-plan-node");
+    if (over && overId) {
+      store.addPlanItem(overId, { kind }, dropIndex(over, y));
+      return;
+    }
+    const plans = (store.doc?.nodes ?? []).filter((n) => n.type === "plan");
+    const target = plans.find((n) => n.selected) ?? plans[plans.length - 1];
+    const id = target?.id ?? store.addPlan(at ?? place.nearCenter());
+    store.addPlanItem(id, { kind });
+  };
+
+  const startPlanDrag = (entry: PlanEntry, title: string, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    (document.activeElement as HTMLElement | null)?.blur();
+    const start = { x: e.clientX, y: e.clientY };
+    let dragging = false;
+    const move = (ev: PointerEvent) => {
+      if (!dragging && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
+      dragging = true;
+      setGhost({ title, x: ev.clientX, y: ev.clientY });
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
+      setGhost(null);
+    };
+    const up = (ev: PointerEvent) => {
+      stop();
+      // A click adds it too (to the selected or last plan).
+      if (!dragging) placePlan(entry, -1, -1);
+      else if (place.atPoint(ev.clientX, ev.clientY)) placePlan(entry, ev.clientX, ev.clientY);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+  };
+
+  const q = query.trim().toLowerCase();
+  const planEntries =
+    filter === "all" || filter === "plans"
+      ? PLAN_ENTRIES.filter((p) => !q || t(p.label).toLowerCase().includes(q))
+      : [];
   const panel = usePanelWidth("composer-palette", 256, 200, 480);
 
   return (
@@ -192,7 +257,40 @@ export function Palette() {
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-3">
-        {groups.length === 0 && (
+        {planEntries.length > 0 && (
+          <section>
+            <h3
+              className="mb-1.5 flex items-center gap-1.5 px-1 text-xs font-semibold"
+              style={{ color: kindColor("plan") }}
+            >
+              <Flag size={13} />
+              {t("composer.target.plans")}
+            </h3>
+            <ul className="space-y-1">
+              {planEntries.map((p) => (
+                <li key={p.entry}>
+                  <div
+                    onPointerDown={(e) => startPlanDrag(p.entry, t(p.label), e)}
+                    title={t("composer.plan.paletteHint")}
+                    className={`flex cursor-grab touch-none items-start gap-2 rounded-lg border border-transparent py-1.5 pr-2 hover:border-border hover:bg-surface-raised active:cursor-grabbing ${
+                      p.entry === "main" ? "pl-2" : p.entry === "sub" ? "pl-4" : "pl-6"
+                    }`}
+                  >
+                    <span
+                      className={`mt-1.5 shrink-0 ${p.entry === "step" ? "size-2 rotate-45" : "size-2 rounded-full"}`}
+                      style={{ background: kindColor("plan") }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-medium">{t(p.label)}</div>
+                      <div className="text-xs leading-snug text-text-muted">{t(p.hint)}</div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {groups.length === 0 && planEntries.length === 0 && (
           <p className="px-1 text-xs text-text-subtle">
             {catalog.length === 0 ? t("composer.palette.loading") : t("composer.palette.noMatch")}
           </p>
@@ -294,7 +392,7 @@ export function Palette() {
             className="pointer-events-none fixed z-50 w-56 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-accent bg-surface-raised px-3 py-2 text-sm font-medium shadow-card"
             style={{ left: ghost.x, top: ghost.y }}
           >
-            {ghost.block.title}
+            {ghost.title}
           </div>,
           document.body,
         )}

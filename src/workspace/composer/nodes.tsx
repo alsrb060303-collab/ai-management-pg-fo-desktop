@@ -1,8 +1,8 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { Handle, type NodeProps, Position, useReactFlow } from "@xyflow/react";
-import { GripVertical, PencilLine, Trash2, X } from "lucide-react";
-import { memo, useEffect, useRef, useState } from "react";
+import { GripVertical, PencilLine, X } from "lucide-react";
+import { memo, useRef, useState } from "react";
 import { Switch } from "../../components/ui";
 import { useT } from "../../i18n";
 import {
@@ -20,28 +20,8 @@ import {
   useComposerStore,
 } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS, targetTitle } from "./kinds";
-
-/**
- * Removes the node through React Flow, so undo, edge clean-up and the output
- * order go the same way as the Delete key.
- */
-function DeleteNodeButton({ id, label }: { id: string; label: string }) {
-  const { deleteElements } = useReactFlow();
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={`${label} (Delete)`}
-      onClick={(e) => {
-        e.stopPropagation();
-        void deleteElements({ nodes: [{ id }] });
-      }}
-      className="nodrag rounded-md p-1 text-text-subtle opacity-0 transition-opacity group-hover:opacity-100 hover:bg-hover hover:text-danger focus-visible:opacity-100"
-    >
-      <Trash2 size={13} />
-    </button>
-  );
-}
+import { DeleteNodeButton, useDraft } from "./nodeParts";
+import { PlanNodeView } from "./PlanNode";
 
 export const BlockNodeView = memo(function BlockNodeView({
   id,
@@ -116,17 +96,6 @@ export const BlockNodeView = memo(function BlockNodeView({
     </div>
   );
 });
-
-/** A text field that saves on blur or Enter, so typing isn't one undo step per key. */
-function useDraft(value: string, commit: (next: string) => void) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  return {
-    value: draft,
-    onChange: (e: { target: { value: string } }) => setDraft(e.target.value),
-    onBlur: () => draft !== value && commit(draft),
-  };
-}
 
 const fieldClass =
   "nodrag nowheel w-full rounded-md border border-border bg-surface px-1.5 py-1 text-[11px] outline-none focus:border-accent";
@@ -282,6 +251,12 @@ export const OutputNodeView = memo(function OutputNodeView({
 
   const titleOf = (nodeId: string) => {
     const node = doc?.nodes.find((n) => n.id === nodeId);
+    if (node?.type === "plan")
+      return {
+        title: node.data.title || t("composer.plan.main"),
+        kind: "plan" as const,
+        off: !!node.data.disabled,
+      };
     if (node?.type !== "block") return { title: nodeId, kind: undefined };
     const block = blocks.get(node.data.blockId);
     return {
@@ -314,7 +289,10 @@ export const OutputNodeView = memo(function OutputNodeView({
           </div>
           <div className="text-[11px] text-text-subtle">
             {t("composer.node.accepts", {
-              kinds: ACCEPTS[data.target].map((k) => t(KIND_LABEL[k])).join(" · "),
+              kinds:
+                data.target === "plans"
+                  ? t("composer.plan.main")
+                  : ACCEPTS[data.target].map((k) => t(KIND_LABEL[k])).join(" · "),
             })}
           </div>
         </div>
@@ -348,13 +326,17 @@ export const OutputNodeView = memo(function OutputNodeView({
 
       {inputs.length === 0 ? (
         <p className="px-3.5 py-4 text-center text-xs text-text-subtle">
-          {data.target === "custom" ? t("composer.custom.empty") : t("composer.node.empty")}
+          {data.target === "custom"
+            ? t("composer.custom.empty")
+            : data.target === "plans"
+              ? t("composer.plan.outputEmpty")
+              : t("composer.node.empty")}
         </p>
       ) : (
         <OrderedInputs
           ids={inputs}
           titleOf={titleOf}
-          reorderable={isClaudeMd}
+          reorderable={isClaudeMd || data.target === "plans"}
           onReorder={(from, to) => reorder(id, from, to)}
           onDisconnect={(source) => {
             const edges = (doc?.edges ?? [])
@@ -395,7 +377,11 @@ function OrderedInputs({
   onDisconnect,
 }: {
   ids: string[];
-  titleOf: (id: string) => { title: string; kind?: keyof typeof KIND_LABEL; off?: boolean };
+  titleOf: (id: string) => {
+    title: string;
+    kind?: keyof typeof KIND_LABEL | "plan";
+    off?: boolean;
+  };
   reorderable: boolean;
   onReorder: (from: number, to: number) => void;
   onDisconnect: (nodeId: string) => void;
@@ -472,4 +458,4 @@ function OrderedInputs({
   );
 }
 
-export const nodeTypes = { block: BlockNodeView, output: OutputNodeView };
+export const nodeTypes = { block: BlockNodeView, output: OutputNodeView, plan: PlanNodeView };
