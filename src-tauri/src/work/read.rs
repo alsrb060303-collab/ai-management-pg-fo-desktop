@@ -29,8 +29,10 @@ pub enum ManagedBy {
 
 /// The folder the Codex app puts its worktrees in: `[desktop]
 /// git-worktree-root` from `config.toml` (`config` is its text), else
-/// `<codex_home>/worktrees`.
-pub fn codex_worktree_root(codex_home: &Path, config: Option<&str>) -> PathBuf {
+/// `<codex_home>/worktrees`. A leading `~` means `home`. A relative value is
+/// resolved against `codex_home` (assumption: the config's own folder is the
+/// natural base; Codex's docs don't say).
+pub fn codex_worktree_root(codex_home: &Path, home: &Path, config: Option<&str>) -> PathBuf {
     config
         .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok())
         .and_then(|doc| {
@@ -39,15 +41,30 @@ pub fn codex_worktree_root(codex_home: &Path, config: Option<&str>) -> PathBuf {
                 .as_str()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .map(PathBuf::from)
+                .map(|s| expand_root(s, codex_home, home))
         })
         .unwrap_or_else(|| codex_home.join("worktrees"))
 }
 
+fn expand_root(value: &str, codex_home: &Path, home: &Path) -> PathBuf {
+    let rest = if value == "~" {
+        Some("")
+    } else {
+        value
+            .strip_prefix("~/")
+            .or_else(|| value.strip_prefix("~\\"))
+    };
+    match rest {
+        Some(rest) => home.join(rest),
+        // `join` keeps an absolute `value` as is.
+        None => codex_home.join(value),
+    }
+}
+
 /// Same, reading `<codex_home>/config.toml` (a missing file means the default).
-pub fn codex_worktree_root_in(codex_home: &Path) -> PathBuf {
+pub fn codex_worktree_root_in(codex_home: &Path, home: &Path) -> PathBuf {
     let text = std::fs::read_to_string(codex_home.join("config.toml")).ok();
-    codex_worktree_root(codex_home, text.as_deref())
+    codex_worktree_root(codex_home, home, text.as_deref())
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -810,6 +827,9 @@ worktree /r/.claude/worktreesx/z\0HEAD 5555555555\0detached\0\0";
     fn codex_worktree_root_follows_the_config() {
         let home = Path::new("/h/.codex");
         let default = home.join("worktrees");
+        let user = Path::new("/h");
+        let codex_worktree_root =
+            |c: &Path, t: Option<&str>| super::codex_worktree_root(c, user, t);
         assert_eq!(codex_worktree_root(home, None), default);
         assert_eq!(codex_worktree_root(home, Some("model = 'x'\n")), default);
         assert_eq!(codex_worktree_root(home, Some("[desktop]\n")), default);
@@ -821,6 +841,28 @@ worktree /r/.claude/worktreesx/z\0HEAD 5555555555\0detached\0\0";
         assert_eq!(
             codex_worktree_root(home, Some("[desktop]\ngit-worktree-root = \"\"\n")),
             default
+        );
+        let cfg = |v: &str| format!("[desktop]\ngit-worktree-root = '{v}'\n");
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~/codex-wt"))),
+            PathBuf::from("/h/codex-wt")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~\\wt"))),
+            PathBuf::from("/h/wt")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~"))),
+            PathBuf::from("/h")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("rel/wt"))),
+            PathBuf::from("/h/.codex/rel/wt")
+        );
+        // `~user` is not expanded; it stays relative to the Codex folder.
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~bob/wt"))),
+            PathBuf::from("/h/.codex/~bob/wt")
         );
     }
 

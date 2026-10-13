@@ -295,6 +295,7 @@ export const ko = {
   "work.draft.busy": "쓰는 중…",
   "work.draft.title":
     "내 컴퓨터의 {cli}가 커밋될 변경을 보고 메시지 초안을 써요 (claude는 haiku·도구·기록 없음, codex는 읽기 전용·기록 없음). 프로젝트 도구의 명령이 없으면 설치된 다른 쪽을 써요",
+  "work.draft.none": "claude나 codex 명령이 설치돼 있지 않아 초안을 쓸 수 없어요",
   "work.draft.replace": "지금 쓴 메시지를 초안으로 바꿀까요?",
   "work.draft.replaceTitle": "초안으로 바꾸기",
   "work.log.showChanges": "변경 보기",
@@ -640,6 +641,7 @@ export const en: Messages<typeof ko> = {
   "work.draft.busy": "Writing…",
   "work.draft.title":
     "Your own {cli} drafts a message from the changes to commit (claude: haiku, no tools, not saved; codex: read-only, not saved). Uses the other tool if this project's command isn't installed",
+  "work.draft.none": "Neither claude nor codex is installed, so a draft can't be written",
   "work.draft.replace": "Replace your message with a draft?",
   "work.draft.replaceTitle": "Replace with a draft",
   "work.log.showChanges": "Show changes",

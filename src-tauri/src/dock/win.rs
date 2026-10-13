@@ -32,12 +32,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
     EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EnumWindows, GA_ROOT, GWL_EXSTYLE,
     GetAncestor, GetClassNameW, GetForegroundWindow, GetMessageW, GetWindowLongPtrW, GetWindowRect,
-    GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic, IsWindow, IsWindowVisible,
-    KillTimer, MSG, OBJID_WINDOW, PM_NOREMOVE, PeekMessageW, PostThreadMessageW, STYLESTRUCT,
-    SW_HIDE, SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SWP_NOZORDER, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, ShowWindowAsync,
-    TranslateMessage, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_APP, WM_STYLECHANGING,
-    WM_TIMER, WM_USER, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST,
+    IsIconic, IsWindow, IsWindowVisible, KillTimer, MSG, OBJID_WINDOW, PM_NOREMOVE, PeekMessageW,
+    PostThreadMessageW, STYLESTRUCT, SW_HIDE, SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetTimer, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, ShowWindowAsync, TranslateMessage, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS, WM_APP, WM_STYLECHANGING, WM_TIMER, WM_USER, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 use windows::core::{BOOL, PWSTR};
 
@@ -566,9 +567,15 @@ fn classify(hwnd: HWND) -> Option<TargetApp> {
         }
         "claude.exe" if class.starts_with("Chrome_WidgetWin_") => Some(TargetApp::ClaudeDesktop),
         // Codex: `codex.exe`, or the Windows "ChatGPT desktop app" that hosts it.
-        // Both process names still need a check on Windows. The window class is
-        // not required because it is unknown whether the app is Electron.
-        "codex.exe" | "chatgpt.exe" => Some(TargetApp::CodexDesktop),
+        // NEEDS A CHECK ON WINDOWS: both process names, and that the ChatGPT
+        // app's Codex window has "Codex" in its title. `chatgpt.exe` also owns
+        // plain chat and settings windows, so it only counts by title; the
+        // window class is not required because it is unknown whether the app
+        // is Electron.
+        "codex.exe" => Some(TargetApp::CodexDesktop),
+        "chatgpt.exe" if window_title(hwnd).to_lowercase().contains("codex") => {
+            Some(TargetApp::CodexDesktop)
+        }
         _ => None,
     }
 }
@@ -655,6 +662,17 @@ fn class_name(hwnd: HWND) -> String {
     let mut buf = [0u16; 256];
     let len = unsafe { GetClassNameW(hwnd, &mut buf) };
     String::from_utf16_lossy(&buf[..len.max(0) as usize])
+}
+
+/// The window's title bar text (empty when it has none).
+fn window_title(hwnd: HWND) -> String {
+    let len = unsafe { GetWindowTextLengthW(hwnd) };
+    if len <= 0 {
+        return String::new();
+    }
+    let mut buf = vec![0u16; len as usize + 1];
+    let copied = unsafe { GetWindowTextW(hwnd, &mut buf) };
+    String::from_utf16_lossy(&buf[..copied.max(0) as usize])
 }
 
 /// Lower-cased executable file name of the process that owns `hwnd`.
