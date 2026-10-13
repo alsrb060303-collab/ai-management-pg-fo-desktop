@@ -2,7 +2,8 @@ import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../components/ui";
 import { useT } from "../../i18n";
-import type { Block } from "../../store/composer";
+import { type Block, useComposerTool } from "../../store/composer";
+import { TOOLS } from "../../tools";
 
 /**
  * A block gets a warning before it's added when its own text (read whenever
@@ -46,6 +47,7 @@ export function LargeBlockDialog({
   onCancel: () => void;
 }) {
   const t = useT();
+  const tool = useComposerTool();
   const [off, setOff] = useState(false);
   const files = block.companions.length;
   const body = new TextEncoder().encode(block.body).length;
@@ -65,7 +67,7 @@ export function LargeBlockDialog({
           {t("composer.large.title")}
         </h2>
         <p className="mt-3 text-sm leading-relaxed">
-          {t("composer.large.body", { title: block.title, kb: kb(body) })}
+          {t("composer.large.body", { title: block.title, kb: kb(body), tool: TOOLS[tool].name })}
         </p>
         {files > 0 && (
           <p className="mt-2 text-sm leading-relaxed text-text-muted">

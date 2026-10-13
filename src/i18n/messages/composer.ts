@@ -7,7 +7,6 @@ export const ko = {
   "composer.kind.skill": "SKILL",
   "composer.kind.agent": "SUBAGENT",
   "composer.kind.hook": "HOOK",
-  "composer.target.claudeMd": "CLAUDE",
   "composer.target.rules": "RULES",
   "composer.target.skills": "SKILLS",
   "composer.target.agents": "SUBAGENTS",
@@ -42,20 +41,25 @@ export const ko = {
   "composer.palette.dragHint": "누르면 자세히 보기 · 캔버스로 끌어다 놓아 추가",
   "composer.palette.myLibrary": "내 라이브러리",
   "composer.palette.add": "{title} 추가",
-  "composer.detail.where.instruction": "CLAUDE.md에 들어가서 매 대화마다 항상 적용돼요.",
-  "composer.detail.where.rule": ".claude/rules에 파일로 들어가서 항상 적용돼요.",
-  "composer.detail.where.ruleFor": ".claude/rules에 들어가고, {paths} 파일을 다룰 때만 적용돼요.",
+  "composer.palette.forTool": "{tool}용",
+  "composer.palette.toolHint":
+    "지금 프로젝트의 도구({tool})에 맞는 파일로 만들어요. 문서는 도구와 상관없이 그대로예요.",
+  "composer.detail.where.instruction": "{file}에 들어가서 매 대화마다 항상 적용돼요.",
+  "composer.detail.where.rule": "{dir}에 파일로 들어가서 항상 적용돼요.",
+  "composer.detail.where.ruleFor": "{dir}에 들어가고, {paths} 파일을 다룰 때만 적용돼요.",
+  "composer.detail.where.ruleNoRules":
+    "{tool}에는 규칙 파일이 없어서 {file}에 연결하면 거기 들어가고 항상 적용돼요.",
   "composer.detail.where.skill":
-    ".claude/skills에 들어가요. 평소엔 이름·설명만 읽히고, 관련된 일을 할 때 Claude가 꺼내 써요.",
+    "{dir}에 들어가요. 평소엔 이름·설명만 읽히고, 관련된 일을 할 때 {tool}가 꺼내 써요.",
   "composer.detail.where.hook":
-    ".claude/settings.json의 hooks에 들어가요. 정한 이벤트마다 Claude Code가 명령을 직접 실행해요.",
+    "{dir}의 hooks에 들어가요. 정한 이벤트마다 {tool}가 명령을 직접 실행해요.",
   "composer.detail.where.agent":
-    ".claude/agents에 들어가요. Claude가 일을 맡기는 별도 도우미로, 따로 대화하며 결과만 돌려줘요.",
+    "{dir}에 들어가요. {tool}가 일을 맡기는 별도 도우미로, 따로 대화하며 결과만 돌려줘요.",
   "composer.detail.extraFiles": "이 skill 폴더의 다른 파일 {n}개는 복사되지 않아요.",
   "composer.detail.companions": "함께 쓰이는 참고 파일 {n}개 (필요할 때만 읽혀요)",
   "composer.large.title": "큰 블록이에요",
   "composer.large.body":
-    "'{title}'은(는) 본문이 약 {kb}KB예요. Claude가 이 내용을 불러올 때마다 그만큼 컨텍스트(토큰)를 써요. 그래도 넣을까요?",
+    "'{title}'은(는) 본문이 약 {kb}KB예요. {tool}가 이 내용을 불러올 때마다 그만큼 컨텍스트(토큰)를 써요. 그래도 넣을까요?",
   "composer.large.files":
     "참고 파일 {n}개(약 {kb}KB)도 함께 써져요. 이 파일들은 필요할 때만 읽혀요.",
   "composer.large.dontShow": "다시 보지 않기",
@@ -94,6 +98,7 @@ export const ko = {
   "composer.hook.pickEvent": "이벤트 고르기",
   "composer.hook.matcher": "matcher",
   "composer.hook.matcherHint": "도구 이름 (예: Edit|Write), 비우면 전부",
+  "composer.hook.matcherHintAny": "도구 이름 정규식, 비우면 전부",
   "composer.hook.noCommand": "명령이 없어요. 더블클릭 → 편집에서 적어 주세요",
   "composer.custom.path": "파일 경로 (프로젝트 기준)",
   "composer.custom.text": "직접 쓰는 내용",
@@ -105,6 +110,7 @@ export const ko = {
   "composer.node.off": "꺼짐 · 파일에 들어가지 않아요",
   "composer.node.empty": "왼쪽 블록의 점을 끌어서 여기에 연결하세요",
   "composer.node.lineBudget": "{n} / {max}줄",
+  "composer.node.byteBudget": "{n} / {max} KiB",
   "composer.node.fileCount": "파일 {n}개",
   "composer.node.reorder": "{title} 순서 바꾸기",
   "composer.node.disconnect": "연결 끊기",
@@ -221,7 +227,6 @@ export const en: Messages<typeof ko> = {
   "composer.kind.skill": "SKILL",
   "composer.kind.agent": "SUBAGENT",
   "composer.kind.hook": "HOOK",
-  "composer.target.claudeMd": "CLAUDE",
   "composer.target.rules": "RULES",
   "composer.target.skills": "SKILLS",
   "composer.target.agents": "SUBAGENTS",
@@ -255,21 +260,25 @@ export const en: Messages<typeof ko> = {
   "composer.palette.dragHint": "Click for details · drag onto the canvas to add",
   "composer.palette.myLibrary": "My library",
   "composer.palette.add": "Add {title}",
-  "composer.detail.where.instruction": "Goes into CLAUDE.md and applies in every conversation.",
-  "composer.detail.where.rule": "Goes into .claude/rules as a file and always applies.",
-  "composer.detail.where.ruleFor":
-    "Goes into .claude/rules and applies only when working on {paths}.",
+  "composer.palette.forTool": "For {tool}",
+  "composer.palette.toolHint":
+    "Files are made for the current project's tool ({tool}). The document itself stays the same for any tool.",
+  "composer.detail.where.instruction": "Goes into {file} and applies in every conversation.",
+  "composer.detail.where.rule": "Goes into {dir} as a file and always applies.",
+  "composer.detail.where.ruleFor": "Goes into {dir} and applies only when working on {paths}.",
+  "composer.detail.where.ruleNoRules":
+    "{tool} has no rule files: connected to {file}, it goes in there and always applies.",
   "composer.detail.where.skill":
-    "Goes into .claude/skills. Only its name and description are read up front; Claude pulls it in for related work.",
+    "Goes into {dir}. Only its name and description are read up front; {tool} pulls it in for related work.",
   "composer.detail.where.hook":
-    "Goes into the hooks of .claude/settings.json. Claude Code runs the command by itself on each chosen event.",
+    "Goes into the hooks of {dir}. {tool} runs the command by itself on each chosen event.",
   "composer.detail.where.agent":
-    "Goes into .claude/agents. A separate helper Claude hands work to; it works in its own context and returns the result.",
+    "Goes into {dir}. A separate helper {tool} hands work to; it works in its own context and returns the result.",
   "composer.detail.extraFiles": "{n} other files in this skill's folder aren't copied.",
   "composer.detail.companions": "{n} reference files come with it (read only when needed)",
   "composer.large.title": "This is a large block",
   "composer.large.body":
-    "'{title}' has about {kb} KB of text. Claude uses that much context (tokens) each time it loads it. Add it anyway?",
+    "'{title}' has about {kb} KB of text. {tool} uses that much context (tokens) each time it loads it. Add it anyway?",
   "composer.large.files":
     "{n} reference files (about {kb} KB) are written too. They're read only when needed.",
   "composer.large.dontShow": "Don't show this again",
@@ -306,6 +315,7 @@ export const en: Messages<typeof ko> = {
   "composer.hook.pickEvent": "Pick an event",
   "composer.hook.matcher": "Matcher",
   "composer.hook.matcherHint": "Tool name (e.g. Edit|Write), empty for all",
+  "composer.hook.matcherHintAny": "Tool name pattern, empty for all",
   "composer.hook.noCommand": "No command yet. Double-click → Edit to write one",
   "composer.custom.path": "File path (in the project)",
   "composer.custom.text": "Your own text",
@@ -317,6 +327,7 @@ export const en: Messages<typeof ko> = {
   "composer.node.off": "Off · left out of the files",
   "composer.node.empty": "Drag a block's dot from the left to connect it here",
   "composer.node.lineBudget": "{n} / {max} lines",
+  "composer.node.byteBudget": "{n} / {max} KiB",
   "composer.node.fileCount": "Files: {n}",
   "composer.node.reorder": "Reorder {title}",
   "composer.node.disconnect": "Disconnect",

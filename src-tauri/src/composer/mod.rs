@@ -1,5 +1,6 @@
-//! Document composer: wire catalog blocks into output nodes (CLAUDE.md, rules,
-//! skills, subagents) and write the resulting files into a project.
+//! Document composer: wire catalog blocks into output nodes (instructions,
+//! rules, skills, subagents, hooks, plans) and write the resulting files into
+//! a project, in the layout of the project's tool (Claude Code, Codex).
 //!
 //! Graphs are saved as JSON in `<app data>/compositions/<id>.json`. What the
 //! composer wrote is recorded in `<app data>/composed.json` so later writes
@@ -21,6 +22,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::library::{Library, ops};
+use crate::tools::ToolId;
 use catalog::Block;
 use compile::{Compiled, Doc};
 use write::{PlanItem, Written};
@@ -237,10 +239,14 @@ pub async fn composer_doc_delete(app: AppHandle, id: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub async fn composer_compile(app: AppHandle, doc: Value) -> Result<Compiled, String> {
+pub async fn composer_compile(
+    app: AppHandle,
+    doc: Value,
+    tool: ToolId,
+) -> Result<Compiled, String> {
     blocking(app, move |app| {
         let doc = parse_doc(doc)?;
-        Ok(compile::compile(&doc, &catalog_for(app)))
+        Ok(compile::compile(&doc, &catalog_for(app), tool))
     })
     .await
 }
@@ -250,16 +256,17 @@ pub async fn composer_plan(
     app: AppHandle,
     project: String,
     doc: Value,
+    tool: ToolId,
 ) -> Result<Vec<PlanItem>, String> {
     blocking(app, move |app| {
         let (root, key) = project_root(&project)?;
-        let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app));
+        let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app), tool);
         let composer = app.state::<Composer>();
         let records = composer.written.lock().unwrap_or_else(|e| e.into_inner());
         Ok(compiled
             .files
             .iter()
-            .map(|f| write::plan_file(&root, &key, f, &records))
+            .map(|f| write::plan_file(&root, &key, f, &records, tool))
             .collect())
     })
     .await
@@ -291,17 +298,18 @@ pub async fn composer_write(
     app: AppHandle,
     project: String,
     doc: Value,
+    tool: ToolId,
     confirmed: Vec<Confirmation>,
 ) -> Result<WriteResult, String> {
     blocking(app, move |app| {
         let (root, key) = project_root(&project)?;
-        let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app));
+        let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app), tool);
         let composer = app.state::<Composer>();
         let mut records = composer.written.lock().unwrap_or_else(|e| e.into_inner());
         let mut result = WriteResult::default();
 
         for file in &compiled.files {
-            let item = write::plan_file(&root, &key, file, &records);
+            let item = write::plan_file(&root, &key, file, &records, tool);
             let approved = confirmed
                 .iter()
                 .any(|c| c.path == file.path && c.old_hash == item.old_hash);

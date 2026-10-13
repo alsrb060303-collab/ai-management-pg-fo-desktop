@@ -10,6 +10,7 @@ use super::write::{self, PlanItem, Project, Status};
 use super::{Composer, Confirmation, blocking, catalog_for, compile, parse_doc};
 use crate::github::{self, Snapshot};
 use crate::library::ops;
+use crate::tools::ToolId;
 
 /// Records of files written to GitHub are kept per repository, so a change
 /// merged from a pull request still counts as ours on the base branch.
@@ -64,8 +65,9 @@ fn plan_items(
     slug: &str,
     branch: &str,
     doc: Value,
+    tool: ToolId,
 ) -> ops::Result<(Snapshot, Vec<(compile::OutFile, PlanItem)>)> {
-    let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app));
+    let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app), tool);
     let wanted: Vec<String> = compiled.files.iter().map(|f| f.path.clone()).collect();
     let snapshot = github::snapshot(app, slug, branch, &wanted)?;
     let composer = app.state::<Composer>();
@@ -74,7 +76,7 @@ fn plan_items(
         .files
         .into_iter()
         .map(|f| {
-            let item = write::plan(&Remote(&snapshot), &key(slug), &f, &records);
+            let item = write::plan(&Remote(&snapshot), &key(slug), &f, &records, tool);
             (f, item)
         })
         .collect();
@@ -87,9 +89,10 @@ pub async fn composer_plan_remote(
     slug: String,
     branch: String,
     doc: Value,
+    tool: ToolId,
 ) -> Result<RemotePlan, String> {
     blocking(app, move |app| {
-        let (snapshot, items) = plan_items(app, &slug, &branch, doc)?;
+        let (snapshot, items) = plan_items(app, &slug, &branch, doc, tool)?;
         Ok(RemotePlan {
             head: snapshot.head,
             items: items.into_iter().map(|(_, item)| item).collect(),
@@ -108,12 +111,13 @@ pub async fn composer_write_remote(
     branch: String,
     head: String,
     doc: Value,
+    tool: ToolId,
     confirmed: Vec<Confirmation>,
     message: String,
     new_branch: Option<String>,
 ) -> Result<RemoteWriteResult, String> {
     blocking(app, move |app| {
-        let (snapshot, items) = plan_items(app, &slug, &branch, doc)?;
+        let (snapshot, items) = plan_items(app, &slug, &branch, doc, tool)?;
         if snapshot.head != head {
             return Err(crate::tr!(
                 "그사이 '{branch}' 브랜치에 새 커밋이 생겼어요. 미리보기를 다시 불러온 뒤 써 주세요",
@@ -208,7 +212,7 @@ mod tests {
             section,
             personal,
             target: if section {
-                Target::ClaudeMd
+                Target::Instructions
             } else {
                 Target::Rules
             },
@@ -227,6 +231,7 @@ mod tests {
             "github:o/r",
             &out("CLAUDE.md", "Rules", true, false),
             &[],
+            ToolId::Claude,
         );
         assert_eq!(section.status, Status::Update);
         assert!(section.new.starts_with("# Mine\n"), "{}", section.new);
@@ -237,6 +242,7 @@ mod tests {
             "github:o/r",
             &out(".claude/rules/a.md", "A", false, true),
             &[],
+            ToolId::Claude,
         );
         assert!(matches!(personal.status, Status::Blocked(_)));
 
@@ -245,6 +251,7 @@ mod tests {
             "github:o/r",
             &out(".claude/rules/b.md", "B", false, false),
             &[],
+            ToolId::Claude,
         );
         assert_eq!(new.status, Status::New);
     }
@@ -260,6 +267,7 @@ mod tests {
             "github:o/r",
             &out("CLAUDE.md", "R", true, false),
             &[],
+            ToolId::Claude,
         );
         assert_eq!(item.status, Status::Blocked("not text".into()));
     }
