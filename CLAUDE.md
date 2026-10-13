@@ -27,6 +27,8 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings &
 
 Run `pnpm lint`, `pnpm build`, and the cargo checks before committing.
 
+Every change to the app (a PR that touches `src/` or `src-tauri/`) raises the patch version once: `pnpm bump` (0.1.n → 0.1.n+1, in package.json, Cargo.toml, Cargo.lock and tauri.conf.json). Docs-only changes don't. Minor/major bumps only when the user asks. The Claude Code mod in `claude-mod/` keeps its own version.
+
 ## Rules
 
 - Windows-only code goes behind `#[cfg(windows)]` with a fallback for other OSes. The Linux container cannot compile it, so CI's Windows job is the check.

@@ -42,6 +42,7 @@
   --c-kind-agent: #8357c2;
   --c-merged: #8250df;
   --c-kind-hook: #9a7a12;
+  --c-kind-plan: #1f7f86;
 }
 
 [data-theme="dark"] {
@@ -76,6 +77,7 @@
   --c-kind-agent: #b08ce6;
   --c-merged: #b08cf5;
   --c-kind-hook: #d6b74e;
+  --c-kind-plan: #5cc0c7;
 }
 
 @theme inline {
@@ -120,6 +122,7 @@
   --color-kind-skill: var(--c-kind-skill);
   --color-kind-agent: var(--c-kind-agent);
   --color-kind-hook: var(--c-kind-hook);
+  --color-kind-plan: var(--c-kind-plan);
 }
 
 html,

@@ -5,6 +5,7 @@ import { useT } from "../../i18n";
 import { type Provider, useAccountStore } from "../../store/account";
 import { useGitHubStore } from "../../store/github";
 import { open } from "../work/GitHubSection";
+import { GitHubMark, GoogleMark } from "./BrandIcons";
 
 const PROVIDERS: Provider[] = ["password", "google.com", "github.com"];
 const METHOD = {
@@ -177,9 +178,11 @@ function ProviderButtons({ link }: { link: boolean }) {
   return (
     <div className="space-y-2">
       <Button className="w-full" disabled={!!busy} onClick={() => void google(false)}>
+        <GoogleMark />
         {t("account.google")}
       </Button>
       <Button className="w-full" disabled={!!busy} onClick={() => void github(false)}>
+        <GitHubMark />
         {busy === "github" ? t("account.working") : t("account.github")}
       </Button>
       <p className="text-[11px] text-text-subtle">{t("account.githubHint")}</p>
@@ -333,7 +336,16 @@ function MethodRow({
   };
   return (
     <li className="flex items-center gap-2 px-3 py-2 text-sm">
-      <span className="flex-1">{t(METHOD[provider])}</span>
+      <span className="flex flex-1 items-center gap-2">
+        {provider === "google.com" ? (
+          <GoogleMark size={14} />
+        ) : provider === "github.com" ? (
+          <GitHubMark size={14} />
+        ) : (
+          <Mail size={14} className="shrink-0" />
+        )}
+        {t(METHOD[provider])}
+      </span>
       {linked ? (
         <>
           <span className="flex items-center gap-1 text-xs text-success">

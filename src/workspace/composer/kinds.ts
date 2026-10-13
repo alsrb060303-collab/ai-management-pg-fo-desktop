@@ -3,6 +3,7 @@ import {
   Bot,
   FilePen,
   FileText,
+  Flag,
   type LucideIcon,
   Ruler,
   Sparkles,
@@ -28,7 +29,7 @@ export const KIND_ICON: Record<BlockKind, LucideIcon> = {
   hook: Webhook,
 };
 
-export const kindColor = (kind: BlockKind) => `var(--c-kind-${kind})`;
+export const kindColor = (kind: BlockKind | "plan") => `var(--c-kind-${kind})`;
 
 /** `label` is a message key. */
 export const TARGETS: { target: Target; label: MessageKey; icon: LucideIcon }[] = [
@@ -37,6 +38,7 @@ export const TARGETS: { target: Target; label: MessageKey; icon: LucideIcon }[] 
   { target: "skills", label: "composer.target.skills", icon: Sparkles },
   { target: "agents", label: "composer.target.agents", icon: Bot },
   { target: "hooks", label: "composer.target.hooks", icon: Webhook },
+  { target: "plans", label: "composer.target.plans", icon: Flag },
   { target: "custom", label: "composer.target.custom", icon: FilePen },
 ];
 
@@ -53,6 +55,8 @@ export function targetTitle(target: Target, personal: boolean, path?: string): s
       return ".claude/agents";
     case "hooks":
       return personal ? ".claude/settings.local.json" : ".claude/settings.json";
+    case "plans":
+      return personal ? "PLANS.local.md" : "PLANS.md";
     case "custom":
       return path?.trim() || "…";
   }

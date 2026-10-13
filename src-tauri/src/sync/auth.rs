@@ -207,6 +207,11 @@ impl Client<'_> {
             json!({
                 "providerId": provider,
                 "continueUri": continue_uri,
+                // The default for Google is the implicit flow, whose token
+                // comes back in the URL fragment, which a browser never sends
+                // to the local server; the code comes back in the query.
+                "authFlowType": "CODE_FLOW",
+                "oauthScope": json!({ provider: "profile" }).to_string(),
                 "customParameter": { "prompt": "select_account" },
             }),
         )?;
@@ -399,6 +404,24 @@ mod tests {
         assert!(seen[0].contains("access_token=gho_x&providerId=github.com"));
         assert!(!seen[0].contains("idToken"));
         assert!(seen[1].contains(r#""idToken": "id1""#));
+    }
+
+    #[test]
+    fn google_sign_in_asks_for_the_code_flow() {
+        let (base, seen) = serve(vec![(
+            200,
+            r#"{"authUri":"https://accounts.google.com/o/oauth2/auth?response_type=code","sessionId":"s1"}"#,
+        )]);
+        with_client(&base, |c| {
+            let uri = c.auth_uri("google.com", "http://localhost:1/auth").unwrap();
+            assert_eq!(uri.session_id, "s1");
+        });
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen[0].contains(r#""authFlowType": "CODE_FLOW""#),
+            "{}",
+            seen[0]
+        );
     }
 
     #[test]
