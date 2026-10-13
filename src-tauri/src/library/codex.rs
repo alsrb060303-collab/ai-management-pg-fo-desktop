@@ -7,7 +7,9 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
+use toml_edit::{
+    Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value, value,
+};
 
 use super::ops::{self, Result};
 use crate::tools::frontmatter;
@@ -164,21 +166,35 @@ fn not_a_table(file: &Path) -> String {
     )
 }
 
-/// The `[[skills.config]]` entries, or `None` when there are none.
-fn entries<'a>(doc: &'a DocumentMut, file: &Path) -> Result<Option<&'a ArrayOfTables>> {
+/// The `skills.config` entries, in either form Codex accepts: `[[skills.config]]`
+/// tables or an inline `config = [{ ... }]` array. Empty when there are none;
+/// an error for any other form (including an array with non-table elements),
+/// so the file is never rewritten into something the user didn't write.
+fn entries<'a>(doc: &'a DocumentMut, file: &Path) -> Result<Vec<&'a dyn TableLike>> {
     let Some(skills) = doc.get("skills") else {
-        return Ok(None);
+        return Ok(Vec::new());
+    };
+    let Some(skills) = skills.as_table_like() else {
+        return Err(not_a_table(file));
     };
     let Some(config) = skills.get("config") else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
-    config
-        .as_array_of_tables()
-        .map(Some)
-        .ok_or_else(|| not_a_table(file))
+    if let Some(tables) = config.as_array_of_tables() {
+        return Ok(tables.iter().map(|t| t as &dyn TableLike).collect());
+    }
+    let array = config.as_array().ok_or_else(|| not_a_table(file))?;
+    array
+        .iter()
+        .map(|v| {
+            v.as_inline_table()
+                .map(|t| t as &dyn TableLike)
+                .ok_or_else(|| not_a_table(file))
+        })
+        .collect()
 }
 
-fn is_entry(table: &Table, path: &str, enabled: bool) -> bool {
+fn is_entry(table: &dyn TableLike, path: &str, enabled: bool) -> bool {
     table.get("path").and_then(Item::as_str) == Some(path)
         && table.get("enabled").and_then(Item::as_bool) == Some(enabled)
 }
@@ -187,18 +203,34 @@ fn is_entry(table: &Table, path: &str, enabled: bool) -> bool {
 /// entries override earlier ones) has `enabled = false`.
 pub fn skill_disabled(file: &Path, path: &str) -> Result<bool> {
     let doc = read_config(file)?;
-    Ok(entries(&doc, file)?.is_some_and(|list| {
-        list.iter()
-            .filter(|t| t.get("path").and_then(Item::as_str) == Some(path))
-            .last()
-            .is_some_and(|t| t.get("enabled").and_then(Item::as_bool) == Some(false))
-    }))
+    Ok(entries(&doc, file)?
+        .into_iter()
+        .rfind(|t| t.get("path").and_then(Item::as_str) == Some(path))
+        .is_some_and(|t| t.get("enabled").and_then(Item::as_bool) == Some(false)))
 }
 
-/// Appends `[[skills.config]] path = "<path>"`, `enabled = false`, keeping the
-/// rest of the file (comments, order, formatting) as it is.
+fn new_entry(path: &str) -> Table {
+    let mut entry = Table::new();
+    entry["path"] = value(path);
+    entry["enabled"] = value(false);
+    entry
+}
+
+fn new_inline_entry(path: &str) -> InlineTable {
+    let mut entry = InlineTable::new();
+    entry.insert("path", path.into());
+    entry.insert("enabled", false.into());
+    entry
+}
+
+/// Appends an entry `path = "<path>"`, `enabled = false` in the form the file
+/// already uses (`[[skills.config]]`, or an element of an inline
+/// `config = [...]`), keeping the rest of the file (comments, order,
+/// formatting) as it is.
 pub fn skill_off(file: &Path, path: &str) -> Result<()> {
     let mut doc = read_config(file)?;
+    // Refuse an unexpected form before touching anything.
+    entries(&doc, file)?;
     let root = doc.as_table_mut();
     if !root.contains_key("skills") {
         let mut skills = Table::new();
@@ -206,57 +238,84 @@ pub fn skill_off(file: &Path, path: &str) -> Result<()> {
         skills.set_implicit(true);
         root.insert("skills", Item::Table(skills));
     }
-    let skills = root
-        .get_mut("skills")
-        .and_then(Item::as_table_mut)
-        .ok_or_else(|| not_a_table(file))?;
-    let list = skills
-        .entry("config")
-        .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()))
-        .as_array_of_tables_mut()
-        .ok_or_else(|| not_a_table(file))?;
-    let mut entry = Table::new();
-    entry["path"] = value(path);
-    entry["enabled"] = value(false);
-    list.push(entry);
+    match root.get_mut("skills") {
+        Some(Item::Table(skills)) => match skills.get_mut("config") {
+            None => {
+                let mut list = ArrayOfTables::new();
+                list.push(new_entry(path));
+                skills.insert("config", Item::ArrayOfTables(list));
+            }
+            Some(Item::ArrayOfTables(list)) => list.push(new_entry(path)),
+            Some(Item::Value(Value::Array(array))) => array.push(new_inline_entry(path)),
+            Some(_) => return Err(not_a_table(file)),
+        },
+        // `skills = { ... }`: only inline values can live in it.
+        Some(Item::Value(Value::InlineTable(skills))) => match skills.get_mut("config") {
+            None => {
+                let mut array = Array::new();
+                array.push(new_inline_entry(path));
+                skills.insert("config", Value::Array(array));
+            }
+            Some(Value::Array(array)) => array.push(new_inline_entry(path)),
+            Some(_) => return Err(not_a_table(file)),
+        },
+        _ => return Err(not_a_table(file)),
+    }
     ops::write_atomic(file, doc.to_string())
 }
 
-/// Removes the entry `skill_off` added for `path`. If the user changed it
-/// (e.g. to `enabled = true`), nothing is removed. Returns whether the file
-/// was written.
+/// Removes the entry `skill_off` added for `path`, in whichever form it is.
+/// If the user changed it (e.g. to `enabled = true`), nothing is removed.
+/// Returns whether the file was written.
 pub fn skill_on(file: &Path, path: &str) -> Result<bool> {
     if !file.exists() {
         return Ok(false);
     }
     let mut doc = read_config(file)?;
-    let Some(index) = entries(&doc, file)?.and_then(|list| {
-        list.iter()
-            .enumerate()
-            .filter(|(_, t)| is_entry(t, path, false))
-            .map(|(i, _)| i)
-            .last()
-    }) else {
+    let Some(index) = entries(&doc, file)?
+        .into_iter()
+        .enumerate()
+        .filter(|(_, t)| is_entry(*t, path, false))
+        .map(|(i, _)| i)
+        .last()
+    else {
         return Ok(false);
     };
     let root = doc.as_table_mut();
-    let Some(skills) = root.get_mut("skills").and_then(Item::as_table_mut) else {
-        return Ok(false);
-    };
-    let emptied = match skills
-        .get_mut("config")
-        .and_then(Item::as_array_of_tables_mut)
-    {
-        Some(list) => {
-            list.remove(index);
-            list.is_empty()
+    let drop_skills = match root.get_mut("skills") {
+        Some(Item::Table(skills)) => {
+            let emptied = match skills.get_mut("config") {
+                Some(Item::ArrayOfTables(list)) => {
+                    list.remove(index);
+                    list.is_empty()
+                }
+                Some(Item::Value(Value::Array(array))) => {
+                    array.remove(index);
+                    array.is_empty()
+                }
+                _ => return Ok(false),
+            };
+            if emptied {
+                skills.remove("config");
+            }
+            skills.is_empty() && skills.is_implicit()
         }
-        None => return Ok(false),
+        Some(Item::Value(Value::InlineTable(skills))) => {
+            let emptied = match skills.get_mut("config") {
+                Some(Value::Array(array)) => {
+                    array.remove(index);
+                    array.is_empty()
+                }
+                _ => return Ok(false),
+            };
+            if emptied {
+                skills.remove("config");
+            }
+            false
+        }
+        _ => return Ok(false),
     };
-    if emptied {
-        skills.remove("config");
-    }
-    if skills.is_empty() && skills.is_implicit() {
+    if drop_skills {
         root.remove("skills");
     }
     ops::write_atomic(file, doc.to_string())?;
@@ -388,6 +447,42 @@ mod tests {
     }
 
     #[test]
+    fn inline_skills_config_forms_are_read_and_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("config.toml");
+        let skill = "/repo/.agents/skills/deploy/SKILL.md";
+        for original in [
+            "[skills]\nconfig = [{ path = \"/x/SKILL.md\", enabled = false }]\n",
+            "skills.config = [{ path = \"/x/SKILL.md\", enabled = false }]\n",
+            "skills = { config = [{ path = \"/x/SKILL.md\", enabled = false }] }\n",
+            "skills = { other = 1 }\n",
+            "[skills]\nconfig = []\n",
+        ] {
+            fs::write(&file, original).unwrap();
+            assert!(!skill_disabled(&file, skill).unwrap(), "{original}");
+            if original.contains("/x/") {
+                assert!(skill_disabled(&file, "/x/SKILL.md").unwrap(), "{original}");
+            }
+            skill_off(&file, skill).unwrap();
+            let text = fs::read_to_string(&file).unwrap();
+            // The user's form stays inline: no `[[skills.config]]` header.
+            assert!(!text.contains("[[skills.config]]"), "{text}");
+            assert!(skill_disabled(&file, skill).unwrap(), "{text}");
+            assert!(skill_on(&file, skill).unwrap(), "{text}");
+            assert!(!skill_disabled(&file, skill).unwrap());
+            let back = parse(&fs::read_to_string(&file).unwrap());
+            if original.contains("/x/") {
+                assert!(skill_disabled(&file, "/x/SKILL.md").unwrap(), "{original}");
+                assert_eq!(
+                    back["skills"]["config"].as_array().unwrap().len(),
+                    1,
+                    "{original}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn broken_or_unexpected_config_is_not_rewritten() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("config.toml");
@@ -398,5 +493,12 @@ mod tests {
         fs::write(&file, "skills = \"x\"\n").unwrap();
         assert!(skill_off(&file, "/a/SKILL.md").is_err());
         assert_eq!(fs::read_to_string(&file).unwrap(), "skills = \"x\"\n");
+
+        for odd in ["[skills]\nconfig = \"x\"\n", "[skills]\nconfig = [1, 2]\n"] {
+            fs::write(&file, odd).unwrap();
+            assert!(skill_disabled(&file, "/a/SKILL.md").is_err());
+            assert!(skill_off(&file, "/a/SKILL.md").is_err());
+            assert_eq!(fs::read_to_string(&file).unwrap(), odd);
+        }
     }
 }
