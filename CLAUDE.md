@@ -1,9 +1,9 @@
 # CLAUDE.md
 
-Tauri 2 desktop app (a main window plus a sidebar that docks next to the user's terminal; one is shown at a time) that manages Claude Code docs, git work, and per-branch memos. Windows first, Linux later.
+Tauri 2 desktop app (a main window plus a sidebar that docks next to the user's terminal; one is shown at a time) that manages AI coding tool docs (Claude Code, Codex), git work, and per-branch memos. Windows first, Linux later.
 
 - Plan, decisions, roadmap: `docs/PLAN.md` (read before starting a phase)
-- Researched facts with sources (Claude Code config, Win32 docking, sync, GitHub): `docs/research.md`
+- Researched facts with sources (Claude Code and Codex config, Win32 docking, sync, GitHub): `docs/research.md`
 
 ## Layout
 
@@ -12,6 +12,7 @@ Tauri 2 desktop app (a main window plus a sidebar that docks next to the user's 
   - `components/ui.tsx`: shared controls, `store/`: Zustand stores
   - `index.css`: design tokens (light/dark). Use the semantic color names, not raw Tailwind colors.
 - `src-tauri/`: Rust backend (Tauri 2.12, Rust >= 1.90). `shell.rs` switches main/sidebar windows.
+  - `tools/`: one adapter per AI tool (`claude/`, `codex/`) plus `ToolId` file layout and project detection. `src/tools.ts` mirrors it; add a tool in both.
   - `capabilities/default.json`: every frontend-callable window/plugin API must be allowed here
 - `claude-mod/branch-notes/`: the Claude Code mod (talks to the app through `<app data>/bridge`, see `src-tauri/src/bridge.rs`). Check with `claude plugin validate` and `claude plugin test` in that folder.
 - `.github/workflows/ci.yml`: lint/build on Linux, clippy + NSIS installer on Windows

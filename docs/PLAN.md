@@ -25,7 +25,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | 창 구성 | **메인 창 + 사이드바, 한 번에 하나만 표시** | 실행하면 메인 창. "사이드바로 전환"하면 메인 창을 닫고 사이드바가 터미널 옆에 붙음. 트레이·단축키로 다시 메인 창 |
 | 디자인 | Claude 데스크탑 앱 같은 스타일(따뜻한 무채색, 왼쪽 사이드바, 강조색 하나). 테마는 시스템 따라감 + 설정에서 라이트/다크 | 로고·이름·전용 폰트는 쓰지 않고 무료 폰트(OFL)로 대체 |
 | 도킹 방식 | **지금 쓰는 창 따라가기** | Windows Terminal / VS Code / Claude 데스크탑 중 활성 창 옆에 자동으로 붙음 |
-| 대상 AI 도구 | Claude Code만 (다른 도구는 나중에) | |
+| 대상 AI 도구 | **Claude Code + Codex** (Phase 13, 2026-10-13). 이후 Copilot·Antigravity 추가 예정 | 도구 어댑터 구조로 도구를 추가할 수 있게 함 (3.9) |
 | 문서 생성 | 템플릿 + 로컬 `claude` CLI headless 호출 | 사용자 구독 그대로 사용, 비용 0 |
 | 메모 저장 | 로컬 SQLite가 원본 + 교체 가능한 동기화 어댑터 | 오프라인에서도 동작 |
 | 동기화 | **무료: 로컬만 / 유료 고객: Firebase 동기화** | 중앙 프로젝트의 공유 한도·악용 문제를 유료 고객으로 한정해서 해결 (research.md 4장) |
@@ -190,6 +190,18 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - 상태는 앱에서 정하고, Claude가 PLANS.md에서 바꾼 상태는 다음 '프로젝트에 쓰기' 때 관리 구역 수정으로 확인을 받는다. 파일에서 상태를 읽어 오는 기능은 아직 없다.
 - 세부 목표는 항상 보조 목표 아래: 맨 위로 옮겨진 세부 목표는 보조 목표가 된다. 보조 목표를 옮기면 그 아래 세부 목표·단계 지침이 같이 옮겨진다.
 
+### 3.9 여러 AI 도구 지원 (Phase 13, 2026-10-13 결정)
+- 구조: Rust `tools/` 모듈이 도구별 어댑터를 가진다(`tools/claude`, `tools/codex`). 공통 타입(설정 지도 항목·범위·상태)과 도구별 파일 배치(`ToolId` 메서드: skill 폴더, agent 파일, 지침 파일, 규칙·worktree 폴더)를 한 곳에 둔다. 프론트는 `src/tools.ts`가 같은 내용을 미러링한다. 도구를 추가할 때 둘을 같이 고친다.
+- **프로젝트마다 도구 하나**를 쓴다. 설정 지도·라이브러리·작성기·프로젝트 문서·MCP·worktree·커밋 초안이 그 도구 기준으로 동작한다. 설정 지도의 도구 선택에서 "자동" 또는 도구를 직접 고르고, 고른 값은 프로젝트별로 기억한다(localStorage `toolPrefs`, 두 창 공유).
+- 자동 감지: ① 프로젝트(와 저장소 루트)의 파일 — 도구 전용 폴더·지침 파일은 2점(`.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.codex/`, `AGENTS.override.md`), 여러 도구가 같이 쓰는 파일은 1점(`AGENTS.md`, `.agents/skills`, `.mcp.json`) ② 동점이면 설치된 CLI가 하나뿐일 때 그 도구 ③ 그래도 못 정하면 설정의 **기본 도구**(처음 값 Claude Code).
+- Codex 파일 배치: 지침 `AGENTS.md`(나만이면 같은 파일을 git에서 제외), skill `.agents/skills/<이름>/`, subagent `.codex/agents/<이름>.toml`(라이브러리의 Markdown을 TOML로 변환), 규칙 파일 없음(규칙 블록은 AGENTS.md로), hooks `.codex/hooks.json`, PLANS 안내는 AGENTS.md에.
+- Codex 끄기: skill만, **나만**만 지원한다. Codex는 `[[skills.config]]`를 사용자 설정(`~/.codex/config.toml`)에서만 인정하므로, 프로젝트 복사본의 SKILL.md 절대 경로로 끈다. 팀 끄기·subagent 끄기는 Codex에 방법이 없어 버튼을 숨긴다.
+- worktree: Codex 프로젝트는 `<레포>/.codex/worktrees/<이름>`에 브랜치 `worktree-<이름>`으로 만든다(git에서 제외). Codex 앱이 만든 worktree(`~/.codex/worktrees/…`)는 표시만 한다.
+- MCP: Codex는 `config.toml`의 `[mcp_servers]`를 앱이 직접 읽고 고친다(read-merge-write, 사용자·프로젝트 범위). 연결 확인은 Codex에 없어서 표시하지 않는다.
+- 커밋 메시지 초안: 프로젝트 도구의 CLI(`claude -p` 또는 `codex exec` 읽기 전용·세션 저장 안 함), 없으면 설치된 다른 CLI.
+- Claude 전용으로 남기는 것: Claude Code mod(설정에서 "Claude Code 전용" 표시), 명령(commands) 화면(Codex 프로젝트에서는 skill로 대체됐다는 안내). Codex hook은 사용자가 Codex `/hooks`에서 신뢰해야 실행된다(앱이 대신 신뢰하지 않음).
+- 도킹 대상에 Codex 데스크탑 앱(Windows는 ChatGPT 데스크탑 앱)을 추가한다. 프로세스 이름은 실기 확인 필요.
+
 ## 4. 로드맵
 
 - [x] **Phase 0. 초기 세팅**: Tauri + React 스캐폴드, 린트, CI(Windows 설치 파일 빌드), 문서
@@ -212,6 +224,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [x] **Phase 9f. 작업 화면 보강** (2026-10-13): ① 파일별 커밋에 담기/빼기(체크박스) ② 기록에서 커밋 눌러 변경 보기 ③ `claude -p`로 커밋 메시지 초안(haiku, 도구 끔, 세션 저장 안 함) ④ clone 없는 저장소 화면에도 흐름 카드·탭·타임라인 ⑤ 브랜치 PR 병합·닫힘, CI 끝남 데스크톱 알림(설정에서 끄기) ⑥ 충돌 해결 도우미(블록마다 현재/들어오는/둘 다, 계속하기·중단하기)
 - [x] **Phase 9g. 앱 계정** (2026-10-13, Firebase 콘솔 설정 후 Windows 테스트: `docs/sync-setup.md` 2-1): 이메일·비밀번호(가입·로그인·재설정·인증 메일), Google(브라우저 + localhost 리디렉션, 비밀 값 없음), GitHub(작업 탭 Device Flow 그대로, 로그인하면 브랜치·PR도 바로 불러옴). 모두 한 Firebase 계정에 연결해 어느 방법으로든 같은 데이터. 갱신 토큰은 OS 자격 증명 저장소. 예전 GitHub 동기화 기기는 같은 계정으로 자동 전환, 허용 목록 유지
 - [x] **Phase 12. PLANS.md** (2026-10-13): 문서 작성기에 계획 블록. 주요 목표(큰 블록) 안에 보조 목표·세부 목표를 끌어 놓고, 그 사이에 단계 지침(지침 글 / subagent에게 맡기기 / skill 쓰기 / 확인 질문)을 넣는다. 상태 `[y]` 완료 · `[p]` 진행 중 · `[n]` 예정. PLANS 출력이 `PLANS.md`(관리 구역)로 쓰고 CLAUDE.md에 "계획은 PLANS.md" 안내 한 줄. 출력·블록 이름은 대문자(RULES, SKILLS, SUBAGENTS, HOOKS, PLANS)
+- [~] **Phase 13. 여러 AI 도구 지원 (Codex)** (진행 중): 도구 어댑터, 자동 감지·선택, Codex 설정 지도·라이브러리·작성기·프로젝트 문서·MCP·worktree·도킹·커밋 초안
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크
