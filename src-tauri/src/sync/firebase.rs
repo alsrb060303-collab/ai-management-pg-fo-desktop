@@ -1,6 +1,6 @@
-//! Firebase over REST: sign-in with the GitHub token (Identity Toolkit) and
-//! the memo items in Firestore (`users/{uid}/items/{id}`). REST from Rust,
-//! not the JS SDK, which does not support desktop webviews.
+//! Firebase over REST: the memo items in Firestore (`users/{uid}/items/{id}`)
+//! and other synced documents. Sign-in is in `auth`. REST from Rust, not the
+//! JS SDK, which does not support desktop webviews.
 
 use std::time::{Duration, Instant};
 
@@ -18,7 +18,7 @@ pub enum Error {
     Offline(String),
     /// The rules refused: the account is not on the allow list.
     Forbidden,
-    /// The GitHub token was rejected (expired, revoked).
+    /// The saved sign-in was rejected (expired, revoked, account removed).
     BadToken,
     Other(String),
 }
@@ -35,8 +35,8 @@ impl From<Error> for String {
                 "This account can't use sync yet"
             ),
             Error::BadToken => crate::tr!(
-                "GitHub 로그인이 만료됐어요. 작업 탭에서 다시 로그인해 주세요",
-                "Your GitHub sign-in expired. Sign in again from the Work tab"
+                "로그인이 만료됐어요. 다시 로그인해 주세요",
+                "Your sign-in expired. Please sign in again"
             ),
             Error::Other(e) => e,
         }
@@ -47,6 +47,8 @@ impl From<Error> for String {
 #[derive(Clone, Debug)]
 pub struct Endpoints {
     pub auth: String,
+    /// Exchanges refresh tokens (`securetoken`).
+    pub token: String,
     pub firestore: String,
 }
 
@@ -54,6 +56,7 @@ impl Default for Endpoints {
     fn default() -> Self {
         Endpoints {
             auth: "https://identitytoolkit.googleapis.com".into(),
+            token: "https://securetoken.googleapis.com".into(),
             firestore: "https://firestore.googleapis.com".into(),
         }
     }
@@ -79,7 +82,7 @@ pub fn agent() -> Agent {
         .into()
 }
 
-fn send(
+pub(super) fn send(
     response: std::result::Result<ureq::http::Response<ureq::Body>, ureq::Error>,
 ) -> Result<(u16, Value)> {
     let mut response = response.map_err(|e| Error::Offline(e.to_string()))?;
@@ -111,8 +114,8 @@ fn api_error(status: u16, body: &Value) -> Error {
 #[derive(Clone, Debug)]
 pub struct Session {
     pub uid: String,
-    id_token: String,
-    expires: Instant,
+    pub(super) id_token: String,
+    pub(super) expires: Instant,
 }
 
 impl Session {
@@ -128,38 +131,6 @@ pub struct Client<'a> {
 }
 
 impl Client<'_> {
-    /// Signs in with a GitHub OAuth token (the GitHub provider must be on in
-    /// the Firebase project).
-    pub fn sign_in(&self, github_token: &str) -> Result<Session> {
-        let url = format!(
-            "{}/v1/accounts:signInWithIdp?key={}",
-            self.ends.auth, self.config.api_key
-        );
-        let (status, body) = send(self.agent.post(&url).send_json(json!({
-            "postBody": format!("access_token={github_token}&providerId=github.com"),
-            "requestUri": "http://localhost",
-            "returnSecureToken": true,
-            "returnIdpCredential": true,
-        })))?;
-        if status >= 400 {
-            let message = body["error"]["message"].as_str().unwrap_or("");
-            if message.contains("INVALID_IDP_RESPONSE") || message.contains("INVALID_CREDENTIAL") {
-                return Err(Error::BadToken);
-            }
-            return Err(Error::Other(crate::tr!(
-                "동기화 로그인에 실패했어요 ({message})",
-                "Sync sign-in failed ({message})"
-            )));
-        }
-        let text = |k: &str| body[k].as_str().unwrap_or_default().to_string();
-        let seconds: u64 = text("expiresIn").parse().unwrap_or(3600);
-        Ok(Session {
-            uid: text("localId"),
-            id_token: text("idToken"),
-            expires: Instant::now() + Duration::from_secs(seconds),
-        })
-    }
-
     fn documents(&self) -> String {
         format!(
             "{}/v1/projects/{}/databases/(default)/documents",
@@ -493,7 +464,7 @@ mod tests {
         let (base, seen) = serve(vec![
             (
                 200,
-                r#"{"localId":"uid1","idToken":"tok","expiresIn":"3600"}"#,
+                r#"{"localId":"uid1","idToken":"tok","refreshToken":"r","expiresIn":"3600"}"#,
             ),
             (200, r#"{"name":"x"}"#),
             (200, r#"{"writeResults":[{},{}],"status":[{},{"code":9}]}"#),
@@ -508,6 +479,7 @@ mod tests {
             .into();
         let ends = Endpoints {
             auth: base.clone(),
+            token: base.clone(),
             firestore: base,
         };
         let config = Config {
@@ -519,7 +491,7 @@ mod tests {
             ends: &ends,
             config: &config,
         };
-        let session = c.sign_in("gho_x").unwrap();
+        let session = c.sign_in_github("gho_x", None).unwrap().session;
         assert_eq!(session.uid, "uid1");
         assert!(c.allowed(&session).unwrap());
         let accepted = c.push(&session, &[row("a", 1), row("b", 2)]).unwrap();

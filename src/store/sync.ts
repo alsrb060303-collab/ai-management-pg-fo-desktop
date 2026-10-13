@@ -7,7 +7,7 @@ import { useLibraryStore } from "./library";
 export type SyncState =
   | "notConfigured"
   | "off"
-  | "needsGitHub"
+  | "needsSignIn"
   | "notAllowed"
   | "syncing"
   | "idle"

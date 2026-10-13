@@ -1,6 +1,7 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   Blocks,
+  CircleUserRound,
   FileText,
   GitBranch,
   House,
@@ -20,6 +21,7 @@ import { Logo } from "../components/Logo";
 import { ResizeHandle, usePanelWidth } from "../components/Resizable";
 import { IconButton } from "../components/ui";
 import { type MessageKey, useT } from "../i18n";
+import { useAccountStore } from "../store/account";
 import { useComposerStore } from "../store/composer";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { switchToSidebar } from "./leave";
@@ -43,6 +45,11 @@ export function NavSidebar() {
   const { newDoc, openDoc, deleteDoc } = useComposerStore.getState();
   const t = useT();
   const panel = usePanelWidth("nav", 256, 200, 420);
+  const account = useAccountStore((s) => s.info);
+  const openAccount = useAccountStore((s) => s.openDialog);
+  const accountLabel = account?.uid
+    ? (account.profile?.email ?? account.profile?.name ?? t("account.title"))
+    : t("account.nav.signIn");
 
   return (
     <aside
@@ -152,6 +159,14 @@ export function NavSidebar() {
       </div>
 
       <div className="space-y-0.5 border-t border-border p-2">
+        {account?.configured && (
+          <NavButton
+            icon={CircleUserRound}
+            label={accountLabel}
+            collapsed={collapsed}
+            onClick={openAccount}
+          />
+        )}
         <NavButton
           icon={PanelRightOpen}
           label={t("shell.switchToSidebar")}

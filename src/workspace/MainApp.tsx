@@ -1,8 +1,10 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense, useEffect } from "react";
+import { AccountDialog } from "../features/account/AccountDialog";
 import { SyncNotice } from "../features/sync/SyncNotice";
 import { useGitHubSync } from "../features/work/GitHubSection";
+import { useAccountStore } from "../store/account";
 import { useComposerStore } from "../store/composer";
 import { subscribeDockStatus } from "../store/dock";
 import { restoreProject } from "../store/project";
@@ -50,6 +52,7 @@ export default function MainApp() {
     void useComposerStore.getState().loadDocs();
     restoreProject();
     void useSyncStore.getState().init();
+    void useAccountStore.getState().init();
   }, []);
 
   // The window is destroyed on close (also when switching to the sidebar from
@@ -79,6 +82,7 @@ export default function MainApp() {
         {PAGES[page]()}
       </main>
       <SyncNotice />
+      <AccountDialog />
     </div>
   );
 }

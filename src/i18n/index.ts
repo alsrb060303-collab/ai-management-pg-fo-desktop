@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import * as account from "./messages/account";
 import * as commands from "./messages/commands";
 import * as common from "./messages/common";
 import * as composer from "./messages/composer";
@@ -28,6 +29,7 @@ const KO = {
   ...mcp.ko,
   ...work.ko,
   ...memo.ko,
+  ...account.ko,
 };
 export type MessageKey = keyof typeof KO;
 const EN: Record<MessageKey, string> = {
@@ -40,6 +42,7 @@ const EN: Record<MessageKey, string> = {
   ...mcp.en,
   ...work.en,
   ...memo.en,
+  ...account.en,
 };
 const MESSAGES: Record<Locale, Record<MessageKey, string>> = { ko: KO, en: EN };
 
