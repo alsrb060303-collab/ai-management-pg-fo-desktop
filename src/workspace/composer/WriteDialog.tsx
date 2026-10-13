@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, FolderOpen, GitBranch, X } from "lucide-reac
 import { useCallback, useEffect, useState } from "react";
 import { Button, IconButton, Segmented } from "../../components/ui";
 import { type MessageKey, useT } from "../../i18n";
-import { type ComposerDoc, useComposerTool } from "../../store/composer";
+import { type ComposerDoc, useComposerTool, useComposerToolReady } from "../../store/composer";
 import { type Pull, useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, useRemoteStore } from "../../store/remote";
@@ -153,6 +153,7 @@ function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void })
   const { current, choose, refresh } = useProjectStore();
   // The files are laid out for the project's tool; a change re-plans.
   const tool = useComposerTool();
+  const toolReady = useComposerToolReady();
   const [plan, setPlan] = useState<PlanItem[] | null>(null);
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
@@ -162,7 +163,7 @@ function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void })
   const t = useT();
 
   const load = useCallback(async () => {
-    if (!current) return;
+    if (!current || !toolReady) return;
     setPlan(null);
     setError(null);
     // Confirmations belong to the files shown for one project.
@@ -173,7 +174,7 @@ function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void })
     } catch (e) {
       setError(String(e));
     }
-  }, [current, doc, tool]);
+  }, [current, doc, tool, toolReady]);
 
   useEffect(() => {
     void load();
@@ -182,7 +183,7 @@ function LocalWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void })
   const writable = writableOf(plan, confirmed);
 
   const write = async () => {
-    if (!current) return;
+    if (!current || !toolReady) return;
     setBusy(true);
     setError(null);
     try {
@@ -356,6 +357,7 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
   const t = useT();
   // No local project here: the files follow the composer's tool.
   const tool = useComposerTool();
+  const toolReady = useComposerToolReady();
   const account = useGitHubStore((s) => s.status?.account ?? null);
   const initGitHub = useGitHubStore((s) => s.init);
   const repos = useRemoteStore((s) => s.repos);
@@ -409,7 +411,7 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
   }, [slug, account]);
 
   const load = useCallback(async () => {
-    if (!slug || !branch) return;
+    if (!slug || !branch || !toolReady) return;
     setPlan(null);
     setError(null);
     setConfirmed(new Set());
@@ -419,7 +421,7 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
     } catch (e) {
       setError(String(e));
     }
-  }, [slug, branch, doc, tool]);
+  }, [slug, branch, doc, tool, toolReady]);
 
   useEffect(() => {
     void load();

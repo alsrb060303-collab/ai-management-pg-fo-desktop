@@ -43,6 +43,8 @@ export interface Detection {
   reason: "files" | "installed" | "fallback";
   signals: { tool: ToolId; path: string }[];
   installed: ToolId[];
+  /** The main worktree, when the project is a linked worktree. */
+  mainRoot: string | null;
 }
 
 // Both windows share localStorage; it is the source of truth for the recent
@@ -63,8 +65,15 @@ interface ProjectState {
   /** The current project's choice and what detection found. */
   toolPref: ToolPref;
   detection: Detection | null;
-  /** The tool the app works with for the current project. */
+  /** The main repository's choice, followed by a worktree without its own. */
+  mainPref: ToolId | null;
+  /**
+   * The tool the app works with for the current project. Only settled once
+   * `toolReady`: until then (a newly selected project on "auto" whose
+   * detection hasn't returned) it may still be the previous project's.
+   */
   tool: ToolId;
+  toolReady: boolean;
   /** Used when detection finds nothing to go on. */
   defaultTool: ToolId;
   loading: boolean;
@@ -82,7 +91,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   map: null,
   toolPref: "auto",
   detection: null,
+  mainPref: null,
   tool: loadDefaultTool(),
+  toolReady: false,
   defaultTool: loadDefaultTool(),
   loading: false,
   error: null,
@@ -95,7 +106,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   select: async (path) => {
     if (get().current !== path) {
-      set({ current: path, map: null, detection: null, error: null, toolPref: loadToolPref(path) });
+      const toolPref = loadToolPref(path);
+      set({
+        current: path,
+        map: null,
+        detection: null,
+        mainPref: null,
+        error: null,
+        toolPref,
+        // A saved choice applies right away; "auto" waits for detection.
+        ...(toolPref === "auto" ? { toolReady: false } : { tool: toolPref, toolReady: true }),
+      });
     }
     saveCurrent(path);
     await get().refresh();
@@ -103,17 +124,33 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   refresh: async () => {
     const path = get().current;
-    if (!path || !isTauri()) return;
+    if (!path) return;
     // A newer request (or a project switch) supersedes this one.
     const id = ++requestId;
     const toolPref = loadToolPref(path);
     const defaultTool = loadDefaultTool();
-    set({ loading: true, error: null, toolPref, defaultTool });
+    // `detection` is the current project's (a switch clears it).
+    const known = resolveTool(toolPref, get().detection);
+    set({
+      loading: true,
+      error: null,
+      toolPref,
+      defaultTool,
+      ...(known ? { tool: known.tool, mainPref: known.mainPref, toolReady: true } : {}),
+    });
+    if (!isTauri()) {
+      if (!known) set({ tool: defaultTool, toolReady: true });
+      set({ loading: false });
+      return;
+    }
     try {
       const detection = await invoke<Detection>("tool_detect", { path, fallback: defaultTool });
       if (id !== requestId) return;
-      const tool = toolPref === "auto" ? detection.tool : toolPref;
-      set({ detection, tool });
+      const { tool, mainPref } = resolveTool(toolPref, detection) ?? {
+        tool: detection.tool,
+        mainPref: null,
+      };
+      set({ detection, tool, mainPref, toolReady: true });
       const map = await invoke<ConfigMap>("config_scan", { path, tool });
       if (id !== requestId) return;
       const recent = [path, ...loadRecent().filter((p) => p !== path)].slice(0, MAX_RECENT);
@@ -129,6 +166,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           : loadRecent();
       saveRecent(recent);
       set({ map: null, loading: false, error, recent });
+      // Detection failed: a saved choice is already in place, else the default.
+      if (!get().toolReady) set({ tool: defaultTool, toolReady: true });
     }
   },
 
@@ -150,6 +189,42 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+/**
+ * The tool for a project: its saved choice, else (in a linked worktree) the
+ * main repository's saved choice, else what detection found. `null` while
+ * that depends on a detection not made yet.
+ */
+function resolveTool(
+  pref: ToolPref,
+  detection: Detection | null,
+): { tool: ToolId; mainPref: ToolId | null } | null {
+  if (pref !== "auto") return { tool: pref, mainPref: null };
+  if (!detection) return null;
+  const mainPref = detection.mainRoot ? loadToolPref(detection.mainRoot) : "auto";
+  return mainPref === "auto"
+    ? { tool: detection.tool, mainPref: null }
+    : { tool: mainPref, mainPref };
+}
+
+/**
+ * The current project's tool once it is settled (right away unless detection
+ * for a newly selected project is still running). Anything that writes or
+ * loads per-tool files awaits this, so it never acts with the previous
+ * project's tool.
+ */
+export function whenToolReady(): Promise<ToolId> {
+  const settled = (s: ProjectState) => s.toolReady || !s.current;
+  const state = useProjectStore.getState();
+  if (settled(state)) return Promise.resolve(state.tool);
+  return new Promise((resolve) => {
+    const stop = useProjectStore.subscribe((s) => {
+      if (!settled(s)) return;
+      stop();
+      resolve(s.tool);
+    });
+  });
+}
 
 /**
  * The backend's "folder not found" error from `config_scan` / `tool_detect`. It is

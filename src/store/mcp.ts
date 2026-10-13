@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import type { ToolId } from "../tools";
-import { useProjectStore } from "./project";
+import { useProjectStore, whenToolReady } from "./project";
 
 // Mirrors src-tauri/src/mcp.rs.
 export type McpScope = "project" | "local" | "user" | "other";
@@ -135,7 +135,8 @@ export const useMcpStore = create<McpState>((set, get) => ({
   error: null,
   recommended: [],
 
-  load: async (project, tool = useProjectStore.getState().tool) => {
+  load: async (project, toolArg) => {
+    const tool = toolArg ?? (await whenToolReady());
     if (!isTauri()) return;
     if (!get().recommended.length) {
       void invoke<Recommended[]>("mcp_recommended").then((recommended) => set({ recommended }));

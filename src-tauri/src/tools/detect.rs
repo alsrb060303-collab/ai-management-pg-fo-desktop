@@ -1,16 +1,17 @@
 //! Guesses which AI coding tool a project is set up for.
 //!
-//! 1. Files in the project folder (and its repository root): a tool's own
-//!    folder or instructions file counts 2, a file other tools share counts 1.
-//!    The higher score wins.
+//! 1. Files in the project folder (and its repository root, and for a linked
+//!    worktree the main worktree): a tool's own folder or instructions file
+//!    counts 2, a file other tools share counts 1. The higher score wins.
 //! 2. On a tie (including no files at all): the one tool whose CLI is installed.
 //! 3. Otherwise the user's default tool.
 
-use std::path::{Path, PathBuf};
+use std::ffi::OsStr;
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 
-use super::ToolId;
+use super::{ToolId, cli};
 
 /// File markers, relative to the project: (tool, path, is a directory, weight).
 const MARKERS: &[(ToolId, &str, bool, u32)] = &[
@@ -25,6 +26,9 @@ const MARKERS: &[(ToolId, &str, bool, u32)] = &[
     (ToolId::Codex, "AGENTS.md", false, 1),
     (ToolId::Codex, ".agents/skills", true, 1),
 ];
+
+/// Markers that, found in the home folder, are the user's own config.
+const USER_FOLDERS: &[&str] = &[".claude", ".codex", ".agents/skills"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -53,34 +57,43 @@ pub struct Detection {
     pub signals: Vec<Signal>,
     /// Tools whose CLI was found.
     pub installed: Vec<ToolId>,
+    /// The main worktree, when the project is in a linked worktree.
+    pub main_root: Option<String>,
 }
 
 pub fn detect(project: &Path, home: &Path, fallback: ToolId) -> Detection {
+    let path = cli::path_dirs();
     let installed: Vec<ToolId> = ToolId::ALL
         .into_iter()
-        .filter(|tool| is_installed(*tool, home, &path_dirs()))
+        .filter(|tool| cli::find_with(*tool, &path, Some(home)).is_some())
         .collect();
     decide(project, home, installed, fallback)
 }
 
 fn decide(project: &Path, home: &Path, installed: Vec<ToolId>, fallback: ToolId) -> Detection {
     let mut dirs = vec![project.to_path_buf()];
-    if let Some(root) = repo_root(project).filter(|r| r != project) {
-        dirs.push(root);
+    let root = repo_root(project);
+    let main = root.as_deref().and_then(main_worktree);
+    for dir in [root, main.clone()].into_iter().flatten() {
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
     }
     let mut signals: Vec<Signal> = Vec::new();
     let mut scores = [0u32; ToolId::ALL.len()];
     for (tool, marker, is_dir, weight) in MARKERS {
         let found = dirs.iter().any(|dir| {
             let path = dir.join(marker);
-            if *is_dir {
+            let exists = if *is_dir {
                 path.is_dir()
             } else {
                 path.is_file()
-            }
+            };
+            // A user's own config folder (`~/.claude`) is not a project marker,
+            // whether the project or its repository is at home.
+            exists && !(USER_FOLDERS.contains(marker) && same_dir(dir, home))
         });
-        // A user's own config folder is not a project marker (project at `~`).
-        if found && !is_user_folder(project, home, marker) {
+        if found {
             scores[index(*tool)] += weight;
             signals.push(Signal {
                 tool: *tool,
@@ -114,16 +127,12 @@ fn decide(project: &Path, home: &Path, installed: Vec<ToolId>, fallback: ToolId)
         reason,
         signals,
         installed,
+        main_root: main.map(|m| m.display().to_string()),
     }
 }
 
 fn index(tool: ToolId) -> usize {
     ToolId::ALL.iter().position(|t| *t == tool).unwrap_or(0)
-}
-
-/// `~/.claude` and `~/.codex` are user folders, not project markers.
-fn is_user_folder(project: &Path, home: &Path, marker: &str) -> bool {
-    matches!(marker, ".claude" | ".codex") && same_dir(project, home)
 }
 
 fn same_dir(a: &Path, b: &Path) -> bool {
@@ -133,39 +142,48 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn repo_root(start: &Path) -> Option<PathBuf> {
+/// Nearest ancestor of `start` (itself included) with a `.git`.
+pub(crate) fn repo_root(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
         .find(|dir| dir.join(".git").exists())
         .map(Path::to_path_buf)
 }
 
-fn path_dirs() -> Vec<PathBuf> {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default()
+/// For a linked worktree at `root` (its `.git` is a file pointing into
+/// `<main>/.git/worktrees/<name>`), the main worktree `<main>`. `None` for a
+/// main worktree, a submodule or a worktree of a bare repository.
+pub(crate) fn main_worktree(root: &Path) -> Option<PathBuf> {
+    let dot_git = root.join(".git");
+    if !dot_git.is_file() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&dot_git).ok()?;
+    let target = text.lines().next()?.trim().strip_prefix("gitdir:")?.trim();
+    let git_dir = clean(&root.join(target));
+    // Only worktrees have a `commondir` (submodules don't).
+    let common = std::fs::read_to_string(git_dir.join("commondir")).ok()?;
+    let common = clean(&git_dir.join(common.trim()));
+    if common.file_name() != Some(OsStr::new(".git")) {
+        return None;
+    }
+    let main = common.parent()?.to_path_buf();
+    main.is_dir().then_some(main)
 }
 
-/// Executable names a tool's CLI is installed under (npm adds `.cmd` shims on
-/// Windows), plus install folders that may be missing from a GUI app's PATH.
-fn is_installed(tool: ToolId, home: &Path, path: &[PathBuf]) -> bool {
-    let stem = match tool {
-        ToolId::Claude => "claude",
-        ToolId::Codex => "codex",
-    };
-    let names: Vec<String> = if cfg!(windows) {
-        ["exe", "cmd"]
-            .iter()
-            .map(|ext| format!("{stem}.{ext}"))
-            .collect()
-    } else {
-        vec![stem.to_string()]
-    };
-    let mut dirs = path.to_vec();
-    // Claude Code's native installer.
-    dirs.push(home.join(".local").join("bin"));
-    dirs.iter()
-        .any(|dir| names.iter().any(|name| dir.join(name).is_file()))
+/// `path` with `.` and `..` resolved without touching the disk.
+fn clean(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -175,6 +193,15 @@ mod tests {
 
     fn project() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
+    }
+
+    /// `<main>/.git` plus a linked worktree at `<wt>` the way git lays it out.
+    fn link_worktree(main: &Path, wt: &Path) {
+        let wt_git = main.join(".git").join("worktrees").join("wt");
+        fs::create_dir_all(&wt_git).unwrap();
+        fs::write(wt_git.join("commondir"), "../..\n").unwrap();
+        fs::create_dir_all(wt).unwrap();
+        fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_git.display())).unwrap();
     }
 
     #[test]
@@ -189,6 +216,7 @@ mod tests {
         );
         assert_eq!((d.tool, d.reason), (ToolId::Codex, Reason::Files));
         assert_eq!(d.signals[0].path, ".codex");
+        assert_eq!(d.main_root, None);
     }
 
     #[test]
@@ -256,20 +284,48 @@ mod tests {
     }
 
     #[test]
-    fn finds_cli_on_path() {
-        let dir = project();
-        let name = if cfg!(windows) { "codex.cmd" } else { "codex" };
-        fs::write(dir.path().join(name), "").unwrap();
+    fn user_folders_at_home_are_not_markers() {
         let home = project();
-        assert!(is_installed(
-            ToolId::Codex,
-            home.path(),
-            &[dir.path().to_path_buf()]
-        ));
-        assert!(!is_installed(
-            ToolId::Claude,
-            home.path(),
-            &[dir.path().to_path_buf()]
-        ));
+        fs::create_dir(home.path().join(".claude")).unwrap();
+        fs::create_dir(home.path().join(".codex")).unwrap();
+        fs::create_dir_all(home.path().join(".agents").join("skills")).unwrap();
+
+        // The project is home.
+        let d = decide(home.path(), home.path(), vec![], ToolId::Claude);
+        assert!(d.signals.is_empty(), "{:?}", d.signals);
+
+        // A dotfiles repository rooted at home.
+        fs::create_dir(home.path().join(".git")).unwrap();
+        let sub = home.path().join("code");
+        fs::create_dir(&sub).unwrap();
+        let d = decide(&sub, home.path(), vec![], ToolId::Claude);
+        assert!(d.signals.is_empty(), "{:?}", d.signals);
+        assert_eq!(d.reason, Reason::Fallback);
+    }
+
+    #[test]
+    fn linked_worktree_uses_main_worktree_markers() {
+        let dir = project();
+        let main = dir.path().join("repo");
+        fs::create_dir_all(main.join(".codex")).unwrap();
+        let wt = main.join(".codex").join("worktrees").join("feature");
+        link_worktree(&main, &wt);
+        assert_eq!(main_worktree(&wt), Some(main.clone()));
+        assert_eq!(main_worktree(&main), None);
+
+        let d = decide(&wt, Path::new("/nonexistent-home"), vec![], ToolId::Claude);
+        assert_eq!((d.tool, d.reason), (ToolId::Codex, Reason::Files));
+        assert_eq!(d.main_root, Some(main.display().to_string()));
+    }
+
+    #[test]
+    fn submodule_has_no_main_worktree() {
+        let dir = project();
+        let modules = dir.path().join(".git").join("modules").join("sub");
+        fs::create_dir_all(&modules).unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        assert_eq!(main_worktree(&sub), None);
     }
 }

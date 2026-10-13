@@ -1,7 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { onLocaleApplied } from "../i18n";
-import { useProjectStore } from "./project";
+import { useProjectStore, whenToolReady } from "./project";
 
 // Mirrors src-tauri/src/work.
 export interface Head {
@@ -209,7 +209,7 @@ export const useWorkStore = create<WorkState>((set, get) => {
         return await invoke<string>("work_draft_message", {
           project,
           all,
-          tool: useProjectStore.getState().tool,
+          tool: await whenToolReady(),
         });
       } catch (e) {
         set({ error: String(e) });

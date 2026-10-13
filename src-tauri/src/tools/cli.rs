@@ -35,11 +35,17 @@ fn file_names(tool: ToolId) -> Vec<String> {
     }
 }
 
-/// PATH plus install folders that may be missing from a GUI app's PATH.
-fn search_dirs(tool: ToolId, home: Option<PathBuf>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+/// The folders on PATH.
+pub fn path_dirs() -> Vec<PathBuf> {
+    std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+/// `path` plus install folders under `home` that may be missing from a GUI
+/// app's PATH. The one list of install locations.
+fn search_dirs(tool: ToolId, path: &[PathBuf], home: Option<&Path>) -> Vec<PathBuf> {
+    let mut dirs = path.to_vec();
     if let Some(home) = home {
         dirs.push(home.join(".local").join("bin"));
         if tool == ToolId::Claude {
@@ -56,11 +62,16 @@ fn find_in(tool: ToolId, dirs: &[PathBuf]) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// `tool`'s CLI in `path` (the PATH folders) or the install folders under `home`.
+pub fn find_with(tool: ToolId, path: &[PathBuf], home: Option<&Path>) -> Option<PathBuf> {
+    find_in(tool, &search_dirs(tool, path, home))
+}
+
 /// The user's CLI for `tool`: on PATH, or where its installers put it.
 pub fn find(tool: ToolId) -> Option<PathBuf> {
     let home =
         std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from);
-    find_in(tool, &search_dirs(tool, home))
+    find_with(tool, &path_dirs(), home.as_deref())
 }
 
 /// Error for a CLI that isn't installed.
@@ -140,7 +151,7 @@ pub fn run_with_input(
             Ok(Some(status)) => break status,
             Ok(None) if start.elapsed() < timeout => std::thread::sleep(Duration::from_millis(50)),
             _ => {
-                let _ = child.kill();
+                kill_tree(&mut child);
                 let _ = child.wait();
                 return Err(crate::tr!(
                     "{cmd_name}가 {}초 안에 끝나지 않았어요",
@@ -153,6 +164,26 @@ pub fn run_with_input(
     let stdout = out.join().unwrap_or_default();
     let stderr = err.join().unwrap_or_default();
     Ok((status.success(), stdout, stderr))
+}
+
+/// Stops `child` and, on Windows, everything it started: an npm `.cmd` shim
+/// runs cmd.exe, which starts node and the real CLI, and killing only cmd.exe
+/// would leave those running (and holding the working folder).
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            // CREATE_NO_WINDOW
+            .creation_flags(0x0800_0000)
+            .status();
+    }
+    // Elsewhere, and in case taskkill couldn't run.
+    let _ = child.kill();
 }
 
 /// Which tool's CLI drafts text for a project of `preferred`: its own if
@@ -193,5 +224,33 @@ mod tests {
         let dirs = vec![dir.path().to_path_buf()];
         assert!(find_in(ToolId::Codex, &dirs).is_some());
         assert!(find_in(ToolId::Claude, &dirs).is_none());
+    }
+
+    #[test]
+    fn finds_in_install_folders_under_home() {
+        let home = tempfile::tempdir().unwrap();
+        let local = home.path().join(".claude").join("local");
+        std::fs::create_dir_all(&local).unwrap();
+        let name = if cfg!(windows) {
+            "claude.exe"
+        } else {
+            "claude"
+        };
+        std::fs::write(local.join(name), "").unwrap();
+        assert!(find_with(ToolId::Claude, &[], Some(home.path())).is_some());
+        assert!(find_with(ToolId::Claude, &[], None).is_none());
+        assert!(find_with(ToolId::Codex, &[], Some(home.path())).is_none());
+    }
+
+    #[test]
+    fn timed_out_child_is_stopped() {
+        // Not the CLI itself: a stand-in long-running process.
+        if cfg!(windows) {
+            return;
+        }
+        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        kill_tree(&mut child);
+        let status = child.wait().unwrap();
+        assert!(!status.success());
     }
 }

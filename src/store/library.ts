@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 import { onLocaleApplied, t } from "../i18n";
-import { useProjectStore } from "./project";
+import { useProjectStore, whenToolReady } from "./project";
 
 // Mirrors src-tauri/src/library/mod.rs.
 export type ItemKind = "skill" | "agent";
@@ -60,10 +60,10 @@ interface LibraryState {
   ) => Promise<void>;
 }
 
-/** The project and tool every library command works on. */
-function target() {
-  const { current, tool } = useProjectStore.getState();
-  return { project: current, tool };
+/** The project and tool every library command works on, once the tool is settled. */
+async function target() {
+  const tool = await whenToolReady();
+  return { project: useProjectStore.getState().current, tool };
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => {
@@ -87,7 +87,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
 
   /** Asks before discarding edits made in the project copy. */
   const withForce = async (command: string, item: LibraryItem, question: string) => {
-    const args = { ...target(), kind: item.kind, id: item.id };
+    const args = { ...(await target()), kind: item.kind, id: item.id };
     try {
       await invoke(command, { ...args, force: false });
     } catch (e) {
@@ -106,7 +106,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     load: async (keepError = false) => {
       if (!isTauri()) return;
       const id = ++loadId;
-      const { project, tool } = target();
+      const { project, tool } = await target();
+      if (id !== loadId) return;
       // Drop the old project's toggles right away; they don't apply to the new one.
       if (get().overview && !keepError) set({ overview: null, error: null });
       try {
@@ -126,20 +127,26 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     useDefaultDir: () => run(() => invoke("library_set_dir", { dir: null })),
 
     apply: (item, mode) =>
-      run(() => invoke("library_apply", { ...target(), kind: item.kind, id: item.id, mode })),
+      run(async () =>
+        invoke("library_apply", { ...(await target()), kind: item.kind, id: item.id, mode }),
+      ),
 
     remove: (item) => run(() => withForce("library_remove", item, t("docs.library.confirmRemove"))),
 
     update: (item) => run(() => withForce("library_update", item, t("docs.library.confirmUpdate"))),
 
     forget: (item) =>
-      run(() => invoke("library_forget", { ...target(), kind: item.kind, id: item.id })),
+      run(async () =>
+        invoke("library_forget", { ...(await target()), kind: item.kind, id: item.id }),
+      ),
 
     importItem: (path, kind) =>
-      run(() => invoke("library_import", { path, tool: target().tool, kind })),
+      run(async () => invoke("library_import", { path, tool: (await target()).tool, kind })),
 
     setEnabled: (kind, name, enabled, mode, path = null) =>
-      run(() => invoke("config_set_enabled", { ...target(), kind, name, enabled, mode, path })),
+      run(async () =>
+        invoke("config_set_enabled", { ...(await target()), kind, name, enabled, mode, path }),
+      ),
   };
 });
 

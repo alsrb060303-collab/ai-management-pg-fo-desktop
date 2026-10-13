@@ -82,6 +82,8 @@ export function McpPage() {
   const project = useProjectStore((s) => s.current);
   const choose = useProjectStore((s) => s.choose);
   const tool = useProjectStore((s) => s.tool);
+  // Per-tool data waits until a newly selected project's tool is known.
+  const toolReady = useProjectStore((s) => s.toolReady || !s.current);
   const { servers, cliError, projectError, userError, trust, loading, error, load, dismissError } =
     useMcpStore();
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -89,8 +91,8 @@ export function McpPage() {
   const info = TOOL_MCP[tool];
 
   useEffect(() => {
-    void load(project, tool);
-  }, [project, tool, load]);
+    if (toolReady) void load(project, tool);
+  }, [project, tool, toolReady, load]);
 
   const newDraft = (): Draft => ({
     original: null,

@@ -32,9 +32,16 @@ pub fn skills(ctx: &Ctx, items: &mut Vec<Item>, notes: &mut Vec<String>) {
     for dir in ctx.project_dirs().into_iter().rev() {
         roots.push((Scope::Project, dir.join(".agents").join("skills"), None));
     }
+    // Skills in project `.codex` layers load only once the project is trusted.
+    let layer_roots: HashSet<PathBuf> = ctx
+        .layers
+        .iter()
+        .map(|layer| norm(&layer.dir.join("skills")))
+        .collect();
     for layer in &ctx.layers {
         roots.push((Scope::Project, layer.dir.join("skills"), None));
     }
+    let gate = ctx.gate();
     roots.push((Scope::User, env.home.join(".agents").join("skills"), None));
     roots.push((
         Scope::User,
@@ -63,6 +70,9 @@ pub fn skills(ctx: &Ctx, items: &mut Vec<Item>, notes: &mut Vec<String>) {
     let source = format!("skills.config: enabled = false ({})", ctx.user_label());
     let start = items.len();
     for (scope, root, extra) in roots {
+        let root_gate = gate
+            .as_ref()
+            .filter(|_| scope == Scope::Project && layer_roots.contains(&norm(&root)));
         for skill_md in skill_files(&root) {
             let text = read_text(&skill_md).unwrap_or_default();
             let fm = frontmatter::parse(&text);
@@ -103,6 +113,8 @@ pub fn skills(ctx: &Ctx, items: &mut Vec<Item>, notes: &mut Vec<String>) {
                         "Not recognized: the name is longer than {MAX_SKILL_NAME} characters"
                     )),
                 )
+            } else if let Some((state, why)) = root_gate {
+                (*state, Some(why.clone()))
             } else if skill_enabled(&toggles, &skill_md, &name) == Some(false) {
                 (State::Off, Some(source.clone()))
             } else {
@@ -371,9 +383,27 @@ pub fn mcp(ctx: &Ctx, items: &mut Vec<Item>) {
         sources.push((Scope::User, &ctx.user_path, user));
     }
 
+    fn servers_of(config: &TomlItem) -> Option<&dyn TableLike> {
+        get(config, &["mcp_servers"]).and_then(TomlItem::as_table_like)
+    }
+    let gated = |scope: Scope| scope == Scope::Project && gate.is_some();
+    // Codex merges same-named servers field by field across the loaded layers,
+    // so the nearest explicit `enabled` decides for all of them.
+    let mut enabled_by: BTreeMap<String, (bool, Scope)> = BTreeMap::new();
+    for (scope, _, config) in &sources {
+        let Some(servers) = servers_of(config).filter(|_| !gated(*scope)) else {
+            continue;
+        };
+        for (name, server) in servers.iter() {
+            if let Some(on) = server.get("enabled").and_then(TomlItem::as_bool) {
+                enabled_by.entry(name.to_string()).or_insert((on, *scope));
+            }
+        }
+    }
+
     let mut taken: BTreeMap<String, Scope> = BTreeMap::new();
     for (scope, path, config) in sources {
-        let Some(servers) = get(config, &["mcp_servers"]).and_then(TomlItem::as_table_like) else {
+        let Some(servers) = servers_of(config) else {
             continue;
         };
         for (name, server) in servers.iter() {
@@ -395,16 +425,33 @@ pub fn mcp(ctx: &Ctx, items: &mut Vec<Item>) {
             } else {
                 field(server, "url").map(str::to_string)
             };
+            let own_enabled = server.get("enabled").and_then(TomlItem::as_bool);
+            let off_by = enabled_by
+                .get(name)
+                .filter(|(on, _)| !on)
+                .map(|(_, by)| *by);
             let (state, why) = if let (Scope::Project, Some((state, why))) = (scope, &gate) {
                 (*state, Some(why.clone()))
-            } else if server.get("enabled").and_then(TomlItem::as_bool) == Some(false) {
-                (State::Off, Some("enabled = false".to_string()))
+            } else if let Some(by) = off_by {
+                taken.entry(name.to_string()).or_insert(scope);
+                if own_enabled == Some(false) {
+                    (State::Off, Some("enabled = false".to_string()))
+                } else {
+                    (
+                        State::Off,
+                        Some(crate::tr!(
+                            "{} 설정의 enabled = false로 꺼짐",
+                            "Turned off by enabled = false in the {} settings",
+                            scope_label(by)
+                        )),
+                    )
+                }
             } else if let Some(winner) = taken.get(name) {
                 (
                     State::Shadowed,
                     Some(crate::tr!(
-                        "같은 이름의 {} 서버가 우선",
-                        "Overridden by the {} server with the same name",
+                        "같은 이름의 {} 서버 설정과 합쳐짐 · 둘 다 정한 값은 그쪽이 우선",
+                        "Merged with the {} server of the same name · its values win where both set one",
                         scope_label(*winner)
                     )),
                 )
@@ -482,8 +529,77 @@ pub fn policies(ctx: &Ctx, items: &mut Vec<Item>) {
     }
 }
 
+/// Hook events Codex runs. Other keys under `[hooks]` (such as the trust
+/// bookkeeping table `state`) are not hooks.
+const HOOK_EVENTS: &[&str] = &[
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "Interrupt",
+];
+
+/// Event names of a `hooks.json`, or why Codex rejects the whole file: its
+/// top level holds only `description` and a `hooks` object.
+fn hooks_json_events(text: &str) -> Result<Vec<String>, String> {
+    let root = match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(root)) => root,
+        Ok(_) => return Err(crate::tr!("JSON 객체가 아닙니다", "Not a JSON object")),
+        Err(e) => return Err(crate::tr!("JSON 오류: {e}", "JSON error: {e}")),
+    };
+    let unknown: Vec<&str> = root
+        .keys()
+        .map(String::as_str)
+        .filter(|k| !matches!(*k, "description" | "hooks"))
+        .collect();
+    if !unknown.is_empty() {
+        let keys = unknown.join(", ");
+        return Err(crate::tr!(
+            "Codex가 파일 전체를 거부함: 알 수 없는 최상위 키 ({keys}) · 이벤트는 \"hooks\" 객체 안에 적어야 함",
+            "Codex rejects the whole file: unknown top-level keys ({keys}) · events go inside a \"hooks\" object"
+        ));
+    }
+    match root.get("hooks") {
+        Some(Value::Object(hooks)) => Ok(hooks.keys().cloned().collect()),
+        _ => Err(crate::tr!(
+            "Codex가 파일 전체를 거부함: \"hooks\" 객체가 없음",
+            "Codex rejects the whole file: no \"hooks\" object"
+        )),
+    }
+}
+
+/// `[features] hooks = false` (`codex_hooks` before) turns every hook off; the
+/// nearest loaded layer that sets it decides.
+fn hooks_turned_off(ctx: &Ctx) -> Option<String> {
+    let mut sources: Vec<(&TomlItem, String)> = Vec::new();
+    if ctx.gate().is_none() {
+        for layer in ctx.layers.iter().rev() {
+            if let Some(config) = &layer.config {
+                sources.push((config.as_item(), file_name(&layer.config_path)));
+            }
+        }
+    }
+    if let Some(user) = ctx.user_item() {
+        sources.push((user, ctx.user_label()));
+    }
+    sources.iter().find_map(|(config, label)| {
+        ["hooks", "codex_hooks"].iter().find_map(|key| {
+            get_bool(config, &["features", key])
+                .map(|on| (!on).then(|| format!("[features] {key} = false ({label})")))
+        })
+    })?
+}
+
 pub fn hooks(ctx: &Ctx, items: &mut Vec<Item>) {
     let gate = ctx.gate();
+    let hooks_off = hooks_turned_off(ctx);
     let mut sources: Vec<(Scope, PathBuf, PathBuf, Option<&TomlItem>)> = vec![(
         Scope::User,
         ctx.env.codex_home.join("hooks.json"),
@@ -502,29 +618,25 @@ pub fn hooks(ctx: &Ctx, items: &mut Vec<Item>) {
     for (scope, json_path, config_path, config) in sources {
         let mut found: Vec<(String, PathBuf, Result<Vec<String>, String>)> = Vec::new();
         if let Some(text) = read_text(&json_path) {
-            let events = match serde_json::from_str::<Value>(&text) {
-                Ok(Value::Object(root)) => {
-                    let table = match root.get("hooks") {
-                        Some(Value::Object(hooks)) => hooks,
-                        _ => &root,
-                    };
-                    Ok(table.keys().cloned().collect())
-                }
-                Ok(_) => Err(crate::tr!("JSON 객체가 아닙니다", "Not a JSON object")),
-                Err(e) => Err(crate::tr!("JSON 오류: {e}", "JSON error: {e}")),
-            };
+            let events = hooks_json_events(&text);
             found.push((file_name(&json_path), json_path, events));
         }
         if let Some(table) = config
             .and_then(|c| get(c, &["hooks"]))
             .and_then(TomlItem::as_table_like)
         {
-            let events = table.iter().map(|(k, _)| k.to_string()).collect();
-            found.push((
-                format!("{} [hooks]", file_name(&config_path)),
-                config_path,
-                Ok(events),
-            ));
+            let events: Vec<String> = table
+                .iter()
+                .map(|(k, _)| k.to_string())
+                .filter(|k| HOOK_EVENTS.contains(&k.as_str()))
+                .collect();
+            if !events.is_empty() {
+                found.push((
+                    format!("{} [hooks]", file_name(&config_path)),
+                    config_path,
+                    Ok(events),
+                ));
+            }
         }
 
         for (name, path, events) in found {
@@ -536,11 +648,22 @@ pub fn hooks(ctx: &Ctx, items: &mut Vec<Item>) {
                     } else {
                         events.join(", ")
                     };
-                    match (scope, &gate) {
-                        (Scope::Project, Some((state, why))) => {
+                    match (scope, &gate, &hooks_off) {
+                        (Scope::Project, Some((state, why)), _) => {
                             (*state, format!("{events} · {why}"))
                         }
-                        _ => (State::Active, events),
+                        (_, _, Some(off)) => (State::Off, format!("{events} · {off}")),
+                        // Only managed hooks run without the user's trust.
+                        _ => (
+                            State::Limited,
+                            format!(
+                                "{events} · {}",
+                                crate::tr!(
+                                    "Codex /hooks에서 신뢰해야 실행 (내용이 바뀌면 다시 신뢰)",
+                                    "Runs once trusted in Codex /hooks (again after each change)"
+                                )
+                            ),
+                        ),
                     }
                 }
             };

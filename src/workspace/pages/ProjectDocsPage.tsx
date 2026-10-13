@@ -133,6 +133,8 @@ export function ProjectDocsPage() {
   const t = useT();
   const project = useProjectStore((s) => s.current);
   const tool = useProjectStore((s) => s.tool);
+  // Per-tool data waits until a newly selected project's tool is known.
+  const toolReady = useProjectStore((s) => s.toolReady || !s.current);
   const toolName = TOOLS[tool].name;
   const choose = useProjectStore((s) => s.choose);
   const { entries, loading, error, rel, load, refresh, dismissError } = useProjectDocsStore();
@@ -140,8 +142,8 @@ export function ProjectDocsPage() {
   const docsPanel = usePanelWidth("project-docs", 256, 180, 520);
 
   useEffect(() => {
-    void load(project, tool);
-  }, [project, tool, load]);
+    if (toolReady) void load(project, tool);
+  }, [project, tool, toolReady, load]);
 
   // Pick up files the AI tool or another editor adds or changes.
   useEffect(() => {

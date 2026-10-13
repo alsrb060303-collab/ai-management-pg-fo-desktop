@@ -257,9 +257,35 @@ fn trust_gates_project_layers() {
     let agent = find(&map, Kind::Agent, "reviewer", Scope::Project);
     assert_eq!(agent.state, State::Active);
     assert_eq!(agent.detail.as_deref(), Some("model: gpt-5"));
+    // Trusted project: its hooks still wait for trust in Codex's /hooks.
     let hook = find(&map, Kind::Hook, "hooks.json", Scope::Project);
-    assert_eq!(hook.state, State::Active);
-    assert_eq!(hook.detail.as_deref(), Some("Stop"));
+    assert_eq!(hook.state, State::Limited);
+    assert!(detail(hook).starts_with("Stop · "));
+    assert!(detail(hook).contains("/hooks"));
+}
+
+#[test]
+fn trust_follows_a_linked_worktree_to_its_main_repo() {
+    let f = fixture();
+    // `<repo>/.codex/worktrees/<name>`, the way the app creates them.
+    let wt = f.codex().join("worktrees").join("feature");
+    let wt_git = f.project.join(".git").join("worktrees").join("feature");
+    write(&wt_git.join("commondir"), "../..\n");
+    write(&wt.join(".git"), &format!("gitdir: {}\n", wt_git.display()));
+    write(&wt.join(".codex").join("config.toml"), "");
+    f.user_config(Some("trusted"), "");
+    let map = scan(&wt, &f.env);
+    assert_eq!(
+        find(&map, Kind::Settings, "config.toml", Scope::Project).state,
+        State::Active
+    );
+
+    f.user_config(Some("untrusted"), "");
+    let map = scan(&wt, &f.env);
+    assert_eq!(
+        find(&map, Kind::Settings, "config.toml", Scope::Project).state,
+        State::NotLoaded
+    );
 }
 
 #[test]
@@ -365,11 +391,10 @@ fn skills_roots_validation_and_toggles() {
         find(&map, Kind::Skill, "folder-name", Scope::Project).state,
         State::Active
     );
-    // Only the user config turns skills off.
-    assert_eq!(
-        find(&map, Kind::Skill, "layer", Scope::Project).state,
-        State::Active
-    );
+    // Skills in a project `.codex` layer wait for trust.
+    let layer = find(&map, Kind::Skill, "layer", Scope::Project);
+    assert_eq!(layer.state, State::Limited);
+    assert!(detail(layer).contains("신뢰 여부를 물어봄"));
     assert!(map.notes.iter().any(|n| n.contains("[[skills.config]]")));
     let legacy = find(&map, Kind::Skill, "legacy", Scope::User);
     assert!(detail(legacy).contains("예전 위치"));
@@ -378,6 +403,26 @@ fn skills_roots_validation_and_toggles() {
         State::Active
     );
     assert!(!map.items.iter().any(|i| i.name == "hidden"));
+
+    // Trusted: the layer's skills load, and only the user config turns skills
+    // off (the project's [[skills.config]] is ignored).
+    f.user_config(Some("trusted"), "");
+    let map = scan(&f.project, &f.env);
+    assert_eq!(
+        find(&map, Kind::Skill, "layer", Scope::Project).state,
+        State::Active
+    );
+    f.user_config(Some("untrusted"), "");
+    let map = scan(&f.project, &f.env);
+    assert_eq!(
+        find(&map, Kind::Skill, "layer", Scope::Project).state,
+        State::NotLoaded
+    );
+    // Repository `.agents/skills` aren't part of a `.codex` layer.
+    assert_eq!(
+        find(&map, Kind::Skill, "lint", Scope::Project).state,
+        State::Active
+    );
 }
 
 #[test]
@@ -538,17 +583,95 @@ fn settings_prompts_rules_hooks() {
     assert!(!map.items.iter().any(|i| i.path.ends_with("auth.json")));
     assert!(map.notes.iter().any(|n| n.contains("auth.json")));
 
-    f.user_config(Some("trusted"), "[hooks]\nPreToolUse = []\n");
+    // `[hooks.state]` is Codex's trust bookkeeping, not an event.
+    f.user_config(
+        Some("trusted"),
+        "[[hooks.PreToolUse]]\nmatcher = \"Bash\"\n\n\
+         [hooks.state.\"user:PreToolUse:0\"]\ntrusted_hash = \"abc\"\n",
+    );
     write(&f.codex().join("config.toml"), "[hooks]\nStop = []\n");
     let map = scan(&f.project, &f.env);
-    assert_eq!(
-        find(&map, Kind::Hook, "config.toml [hooks]", Scope::User)
-            .detail
-            .as_deref(),
-        Some("PreToolUse")
-    );
+    let user = find(&map, Kind::Hook, "config.toml [hooks]", Scope::User);
+    assert_eq!(user.state, State::Limited);
+    assert!(detail(user).starts_with("PreToolUse · "));
+    assert!(!detail(user).contains("state"));
     assert_eq!(
         find(&map, Kind::Hook, "config.toml [hooks]", Scope::Project).state,
-        State::Active
+        State::Limited
+    );
+
+    // Only trust bookkeeping: no hook item at all.
+    f.user_config(
+        Some("trusted"),
+        "[hooks.state.\"user:Stop:0\"]\ntrusted_hash = \"abc\"\n",
+    );
+    let map = scan(&f.project, &f.env);
+    assert!(!map.items.iter().any(|i| i.kind == Kind::Hook
+        && i.path.ends_with("config.toml")
+        && i.scope == Scope::User));
+
+    // `[features] hooks = false` turns every hook off.
+    f.user_config(Some("trusted"), "[features]\nhooks = false\n");
+    let map = scan(&f.project, &f.env);
+    let project = find(&map, Kind::Hook, "config.toml [hooks]", Scope::Project);
+    assert_eq!(project.state, State::Off);
+    assert!(detail(project).contains("[features] hooks = false"));
+}
+
+#[test]
+fn hooks_json_shape_is_checked() {
+    let f = fixture();
+    let path = f.env.codex_home.join("hooks.json");
+    let state = |text: &str| {
+        write(&path, text);
+        let map = scan(&f.project, &f.env);
+        let item = find(&map, Kind::Hook, "hooks.json", Scope::User);
+        (item.state, detail(item).to_string())
+    };
+    let (s, d) = state(r#"{"description": "x", "hooks": {"Stop": []}}"#);
+    assert_eq!(s, State::Limited);
+    assert!(d.starts_with("Stop · "));
+    // No `hooks` wrapper: Codex rejects the file.
+    let (s, d) = state(r#"{"PreToolUse": []}"#);
+    assert_eq!(s, State::Off);
+    assert!(d.contains("PreToolUse"), "{d}");
+    let (s, _) = state(r#"{"hooks": {"Stop": []}, "extra": 1}"#);
+    assert_eq!(s, State::Off);
+    let (s, _) = state(r#"{"description": "x"}"#);
+    assert_eq!(s, State::Off);
+}
+
+#[test]
+fn mcp_layers_merge_and_disable_lower_ones() {
+    let f = fixture();
+    f.user_config(
+        Some("trusted"),
+        "[mcp_servers.db]\ncommand = \"npx\"\n\n[mcp_servers.web]\nurl = \"https://x\"\n",
+    );
+    write(
+        &f.codex().join("config.toml"),
+        "[mcp_servers.db]\nenabled = false\n\n[mcp_servers.web]\nargs = []\n",
+    );
+    let map = scan(&f.project, &f.env);
+    assert_eq!(
+        find(&map, Kind::Mcp, "db", Scope::Project).state,
+        State::Off
+    );
+    let user_db = find(&map, Kind::Mcp, "db", Scope::User);
+    assert_eq!(user_db.state, State::Off);
+    assert!(detail(user_db).contains("프로젝트"), "{}", detail(user_db));
+    let user_web = find(&map, Kind::Mcp, "web", Scope::User);
+    assert_eq!(user_web.state, State::Shadowed);
+    assert!(detail(user_web).contains("합쳐짐"));
+
+    // A lower layer's `enabled = false` still applies when nothing above sets it.
+    f.user_config(
+        Some("trusted"),
+        "[mcp_servers.web]\nurl = \"https://x\"\nenabled = false\n",
+    );
+    let map = scan(&f.project, &f.env);
+    assert_eq!(
+        find(&map, Kind::Mcp, "web", Scope::Project).state,
+        State::Off
     );
 }
