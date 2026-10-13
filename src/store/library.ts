@@ -23,6 +23,8 @@ export interface ToggledOff {
   kind: ItemKind;
   name: string;
   mode: Mode;
+  /** Codex: the SKILL.md path that was turned off (Codex matches skills by path). */
+  path: string | null;
 }
 
 export interface Overview {
@@ -48,7 +50,20 @@ interface LibraryState {
   update: (item: LibraryItem) => Promise<void>;
   forget: (item: LibraryItem) => Promise<void>;
   importItem: (path: string, kind: ItemKind) => Promise<void>;
-  setEnabled: (kind: ItemKind, name: string, enabled: boolean, mode: Mode) => Promise<void>;
+  /** `path` is the item's file; Codex needs it (it turns skills off by SKILL.md path). */
+  setEnabled: (
+    kind: ItemKind,
+    name: string,
+    enabled: boolean,
+    mode: Mode,
+    path?: string | null,
+  ) => Promise<void>;
+}
+
+/** The project and tool every library command works on. */
+function target() {
+  const { current, tool } = useProjectStore.getState();
+  return { project: current, tool };
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => {
@@ -72,8 +87,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
 
   /** Asks before discarding edits made in the project copy. */
   const withForce = async (command: string, item: LibraryItem, question: string) => {
-    const project = useProjectStore.getState().current;
-    const args = { project, kind: item.kind, id: item.id };
+    const args = { ...target(), kind: item.kind, id: item.id };
     try {
       await invoke(command, { ...args, force: false });
     } catch (e) {
@@ -92,11 +106,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     load: async (keepError = false) => {
       if (!isTauri()) return;
       const id = ++loadId;
-      const project = useProjectStore.getState().current;
+      const { project, tool } = target();
       // Drop the old project's toggles right away; they don't apply to the new one.
       if (get().overview && !keepError) set({ overview: null, error: null });
       try {
-        const overview = await invoke<Overview>("library_overview", { project });
+        const overview = await invoke<Overview>("library_overview", { project, tool });
         if (id === loadId) set({ overview });
       } catch (e) {
         if (id === loadId) set({ error: String(e) });
@@ -112,42 +126,27 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     useDefaultDir: () => run(() => invoke("library_set_dir", { dir: null })),
 
     apply: (item, mode) =>
-      run(() =>
-        invoke("library_apply", {
-          project: useProjectStore.getState().current,
-          kind: item.kind,
-          id: item.id,
-          mode,
-        }),
-      ),
+      run(() => invoke("library_apply", { ...target(), kind: item.kind, id: item.id, mode })),
 
     remove: (item) => run(() => withForce("library_remove", item, t("docs.library.confirmRemove"))),
 
     update: (item) => run(() => withForce("library_update", item, t("docs.library.confirmUpdate"))),
 
     forget: (item) =>
-      run(() =>
-        invoke("library_forget", {
-          project: useProjectStore.getState().current,
-          kind: item.kind,
-          id: item.id,
-        }),
-      ),
+      run(() => invoke("library_forget", { ...target(), kind: item.kind, id: item.id })),
 
-    importItem: (path, kind) => run(() => invoke("library_import", { path, kind })),
+    importItem: (path, kind) =>
+      run(() => invoke("library_import", { path, tool: target().tool, kind })),
 
-    setEnabled: (kind, name, enabled, mode) =>
-      run(() =>
-        invoke("config_set_enabled", {
-          project: useProjectStore.getState().current,
-          kind,
-          name,
-          enabled,
-          mode,
-        }),
-      ),
+    setEnabled: (kind, name, enabled, mode, path = null) =>
+      run(() => invoke("config_set_enabled", { ...target(), kind, name, enabled, mode, path })),
   };
 });
 
 // Library errors come from the backend: reload in the new language.
 onLocaleApplied(() => void useLibraryStore.getState().load());
+
+// Statuses and toggles are per tool: reload when the project's tool changes.
+useProjectStore.subscribe((state, prev) => {
+  if (state.tool !== prev.tool) void useLibraryStore.getState().load();
+});

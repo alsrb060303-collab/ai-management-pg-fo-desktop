@@ -289,6 +289,7 @@ function ConfigRow({
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
   const { busy, setEnabled, importItem, overview } = useLibraryStore();
+  const tool = useProjectStore((s) => s.tool);
 
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
@@ -307,11 +308,25 @@ function ConfigRow({
     item.scope !== "managed" &&
     !item.name.startsWith("anthropic-skills:") &&
     item.state !== "notLoaded";
+  const info = TOOLS[tool];
+  // Codex matches turned-off skills by SKILL.md path, Claude Code by name.
+  const toggled = overview?.toggledOff.find(
+    (o) => o.kind === kind && (o.path ? o.path === item.path : o.name === item.name),
+  );
+  // Codex: one subagent can't be turned off, and a user skill (shared by every
+  // project) isn't offered; only skills inside the project.
+  const offReason: MessageKey | null =
+    kind === "agent" && !info.agentToggle
+      ? "docs.item.agentToggleUnsupported"
+      : kind === "skill" && info.skillToggle === "personalOnly" && item.scope !== "project"
+        ? "docs.item.userSkillToggleUnsupported"
+        : null;
   // Only offs this app made can be undone; rules the user wrote are left alone.
-  const toggled = overview?.toggledOff.find((o) => o.kind === kind && o.name === item.name);
   const canTurnOff =
     switchable && !toggled && (item.state === "active" || item.state === "limited");
-  const canImport = kind !== null && (item.scope === "user" || item.scope === "project");
+  // A Codex subagent defined inside config.toml has no file of its own to import.
+  const ownFile = !(tool === "codex" && kind === "agent" && baseName(item.path) === "config.toml");
+  const canImport = kind !== null && ownFile && (item.scope === "user" || item.scope === "project");
 
   return (
     <li className="rounded-md border border-border bg-surface-raised hover:border-border-strong">
@@ -375,12 +390,33 @@ function ConfigRow({
               type="button"
               className={smallButton}
               disabled={busy}
-              onClick={() => setEnabled(kind, item.name, true, toggled.mode)}
+              onClick={() => setEnabled(kind, item.name, true, toggled.mode, toggled.path)}
             >
               {t(toggled.mode === "personal" ? "docs.item.turnOnPersonal" : "docs.item.turnOnTeam")}
             </button>
           )}
-          {canTurnOff && kind && (
+          {canTurnOff && kind && offReason && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled
+              title={t(offReason, { tool: info.name })}
+            >
+              {t("docs.item.turnOff")}
+            </button>
+          )}
+          {canTurnOff && kind && !offReason && info.skillToggle === "personalOnly" && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled={busy}
+              title={`${t("docs.mode.personalHint")}. ${t("docs.item.teamToggleUnsupported", { tool: info.name })}`}
+              onClick={() => setEnabled(kind, item.name, false, "personal", item.path)}
+            >
+              {t("docs.item.turnOff")} · {t("docs.mode.personal")}
+            </button>
+          )}
+          {canTurnOff && kind && !offReason && info.skillToggle !== "personalOnly" && (
             <ModeButtons
               label={t("docs.item.turnOff")}
               disabled={busy}
