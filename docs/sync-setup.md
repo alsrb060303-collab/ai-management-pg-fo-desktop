@@ -1,6 +1,6 @@
-# 메모 동기화 설정 (Phase 8b)
+# 동기화 · 앱 계정 설정 (Phase 8b, 9g)
 
-메모 동기화는 Firebase(Firestore + Authentication)를 쓴다. 프로젝트는 앱 개발자가 한 번 만들고, 앱에는 공개 설정값(API 키, 프로젝트 ID)만 들어간다. 비밀 값은 앱에 넣지 않는다.
+동기화는 Firebase(Firestore + Authentication)를 쓴다. 사용자는 앱 계정(이메일·Google·GitHub, 모두 같은 Firebase 계정)으로 로그인하고, 데이터는 그 계정(`users/{uid}`)에 저장된다. 프로젝트는 앱 개발자가 한 번 만들고, 앱에는 공개 설정값(API 키, 프로젝트 ID)만 들어간다. 비밀 값은 앱에 넣지 않는다.
 
 ## 1. Firebase 프로젝트 만들기
 1. https://console.firebase.google.com → **프로젝트 추가**. 이름은 자유(예: `ai-management-sync`). Google 애널리틱스는 꺼도 된다.
@@ -13,6 +13,18 @@
    - Client secret: https://github.com/settings/developers 의 그 OAuth App에서 **Generate a new client secret**으로 만든 값. **Firebase에만** 넣고 앱이나 저장소에는 넣지 않는다.
 3. 저장.
 
+## 2-1. 이메일 · Google 로그인 켜기 (앱 계정, 2026-10-13)
+1. **Authentication › 로그인 방법 › 새 제공업체 추가 › 이메일/비밀번호** → 첫 번째 스위치(이메일/비밀번호)만 켜고 저장. 이메일 링크(비밀번호 없는 로그인)는 끈다.
+2. **새 제공업체 추가 › Google** → 사용 설정, 프로젝트 지원 이메일 고르고 저장. Firebase가 Google OAuth 클라이언트("Web client (auto created by Google Service)")를 알아서 만든다. **클라이언트 ID·보안 비밀은 앱에 넣지 않는다**(Firebase 서버가 교환한다).
+3. Google이 앱으로 돌아올 주소를 등록한다: https://console.cloud.google.com/apis/credentials (같은 프로젝트 선택) › **OAuth 2.0 클라이언트 ID › Web client (auto created by Google Service)** › **승인된 리디렉션 URI**에 `http://localhost:47823/auth` 추가 › 저장. (반영까지 몇 분 걸릴 수 있다.)
+   - 로그인 때 Google이 `redirect_uri_mismatch`를 보여주면 오류 화면의 "요청 세부정보"에 나온 주소를 그대로 추가한다.
+4. **Authentication › 설정 › 승인된 도메인**에 `localhost`가 있는지 확인(기본으로 있다).
+5. **Authentication › 설정 › 사용자 계정 연결**은 기본값 **"동일한 이메일 주소에 계정 연결"**(이메일당 계정 하나)을 그대로 둔다. 같은 이메일로 다른 방법을 쓰면 앱이 "원래 방법으로 로그인한 뒤 계정 설정에서 연결"하라고 안내한다.
+
+### 기존 GitHub 동기화 사용자
+- 예전 버전은 작업 탭의 GitHub 로그인으로 동기화했다. 그 기기를 업데이트하면 앱이 같은 GitHub 계정으로 앱 계정에 자동 로그인한다(계정 ID 그대로라 데이터·허용 목록 유지).
+- 다른 컴퓨터에서 이메일이나 Google로 쓰고 싶으면, 먼저 GitHub로 로그인한 상태에서 **계정 › 로그인 방법**에서 비밀번호 설정 또는 Google 연결을 한다. 이후엔 어느 방법으로 로그인해도 같은 계정이다.
+
 ## 3. Firestore 만들기
 1. **빌드 › Firestore Database › 데이터베이스 만들기**.
 2. 위치는 `asia-northeast3 (서울)` 추천(나중에 못 바꾼다). **프로덕션 모드**로 시작.
@@ -24,9 +36,9 @@
    - 개발 중에는 환경 변수 `AIM_FIREBASE_API_KEY`, `AIM_FIREBASE_PROJECT`로도 넣을 수 있다.
 
 ## 5. 허용 목록에 계정 넣기 (요금제 전까지)
-1. 앱에서 작업 탭으로 GitHub 로그인 → **설정 › 동기화**에 "아직 허용되지 않은 계정"과 **계정 ID**가 보인다. 복사.
+1. 앱 왼쪽 아래 **로그인**(또는 **설정 › 동기화 › 로그인**)으로 앱 계정에 로그인 → **설정 › 동기화**에 "아직 허용되지 않은 계정"과 **계정 ID**가 보인다. 복사.
 2. Firestore **데이터** 탭 › **컬렉션 시작** › 컬렉션 ID `allowed` › 문서 ID에 그 계정 ID를 붙여 넣고 필드 없이(또는 아무 필드나) 저장.
-3. 앱에서 **지금 동기화**를 누르면 동기화가 시작된다. 다른 기기에서도 같은 GitHub 계정으로 로그인하면 같은 계정 ID라 따로 추가할 필요 없다.
+3. 앱에서 **지금 동기화**를 누르면 동기화가 시작된다. 다른 기기에서도 같은 앱 계정(연결된 어느 방법이든)으로 로그인하면 같은 계정 ID라 따로 추가할 필요 없다.
 
 ## 6. 규칙 다시 게시 (문서·라이브러리 동기화 추가, 2026-10-12)
 문서 작성기 문서와 라이브러리가 새 컬렉션 `users/{uid}/files`로 동기화된다. 앱을 업데이트한 뒤 Firestore **규칙** 탭에 `firebase/firestore.rules`를 다시 붙여 넣고 **게시**해야 한다. 게시 전에는 메모만 동기화되고, 문서·라이브러리는 "동기화 오류 (403)"가 난다.

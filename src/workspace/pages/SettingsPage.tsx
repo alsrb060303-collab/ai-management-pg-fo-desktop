@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, Card, PageHeader, Row, Segmented, Switch } from "../../components/ui";
 import { ModsCard } from "../../features/mods/ModsCard";
 import { type LocalePref, timeAgo, useLocaleStore, useT } from "../../i18n";
+import { useAccountStore } from "../../store/account";
 import { useDockStore } from "../../store/dock";
 import { useLibraryStore } from "../../store/library";
 import { useNotifyStore } from "../../store/notify";
@@ -130,6 +131,8 @@ function NotifyCard() {
 function SyncCard() {
   const t = useT();
   const { status, init, syncNow, setEnabled } = useSyncStore();
+  const account = useAccountStore((s) => s.info);
+  const openAccount = useAccountStore((s) => s.openDialog);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -154,6 +157,20 @@ function SyncCard() {
 
   return (
     <Card title={t("settings.sync")}>
+      {configured && (
+        <Row
+          title={t("account.title")}
+          description={
+            account?.uid
+              ? (account.profile?.email ?? account.profile?.name ?? account.uid)
+              : t("account.intro")
+          }
+        >
+          <Button size="sm" variant={account?.uid ? "secondary" : "primary"} onClick={openAccount}>
+            {account?.uid ? t("settings.account.manage") : t("account.signIn")}
+          </Button>
+        </Row>
+      )}
       <Row title={t("settings.sync.title")} description={t("settings.sync.hint")}>
         <Switch
           label={t("settings.sync.title")}
@@ -173,7 +190,7 @@ function SyncCard() {
                 : undefined
           }
         >
-          {on && state !== "needsGitHub" && state !== "notAllowed" && (
+          {on && state !== "needsSignIn" && state !== "notAllowed" && (
             <Button size="sm" disabled={state === "syncing"} onClick={syncNow}>
               {t("settings.sync.now")}
             </Button>

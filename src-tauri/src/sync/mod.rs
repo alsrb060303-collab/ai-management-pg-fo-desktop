@@ -1,18 +1,22 @@
-//! Memo sync across devices through Firebase (Phase 8b). The local SQLite
+//! Memo sync across devices through Firebase (Phase 8b), as the app account
+//! (`account`: email, Google or GitHub, all one Firebase user). The local SQLite
 //! store stays the source of truth; a background thread uploads rows changed
 //! here and applies rows other devices uploaded, newest `updatedAt` winning.
 //! Only accounts the owner put on the allow list (`allowed/{uid}`) can sync
 //! until paid plans exist (Phase 8c). Composer documents and the library
 //! sync in the same round (`files`).
 
+pub mod account;
+mod auth;
 mod files;
 mod firebase;
 
+use std::sync::atomic::AtomicU64;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Listener, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::memo::{MEMO_EVENT, Memo, Store};
 use firebase::{Client, Config, Cursor, Endpoints, Error, Session};
@@ -60,8 +64,8 @@ pub enum State {
     NotConfigured,
     /// Turned off in settings.
     Off,
-    /// Sync signs in with the GitHub account; not signed in there.
-    NeedsGitHub,
+    /// Nobody is signed in to the app account.
+    NeedsSignIn,
     /// Signed in, but not on the allow list yet (`uid` to add).
     NotAllowed,
     Syncing,
@@ -82,6 +86,11 @@ pub struct Status {
 pub struct Sync {
     status: Mutex<Status>,
     session: Mutex<Option<Session>>,
+    /// The saved account; `None` until read from `secrets`.
+    account: Mutex<Option<Option<account::Saved>>>,
+    secrets: Box<dyn account::Secrets>,
+    /// Bumped by every Google sign-in start and cancel.
+    google: AtomicU64,
     /// When the worker should run next.
     next: Mutex<Instant>,
     wake: Condvar,
@@ -89,7 +98,7 @@ pub struct Sync {
 }
 
 const ENABLED_KEY: &str = "sync_enabled";
-const UID_KEY: &str = "sync_uid";
+pub(crate) const UID_KEY: &str = "sync_uid";
 const CURSOR_KEY: &str = "sync_cursor";
 
 impl Sync {
@@ -97,22 +106,15 @@ impl Sync {
         app.manage(Sync {
             status: Mutex::new(Status::default()),
             session: Mutex::new(None),
+            account: Mutex::new(None),
+            secrets: Box::new(account::Keyring),
+            google: AtomicU64::new(0),
             next: Mutex::new(Instant::now() + Duration::from_secs(5)),
             wake: Condvar::new(),
             agent: firebase::agent(),
         });
         let handle = app.clone();
         std::thread::spawn(move || worker(handle));
-        // Signing in or out of GitHub changes what sync can do.
-        let handle = app.clone();
-        app.listen(crate::github::AUTH_EVENT, move |_| {
-            *handle
-                .state::<Sync>()
-                .session
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
-            kick(&handle, Duration::ZERO);
-        });
     }
 
     fn set_status(&self, app: &AppHandle, status: Status) {
@@ -200,32 +202,17 @@ fn cycle(app: &AppHandle, sync: &Sync, last_sync: Option<i64>) -> firebase::Resu
             ..Status::default()
         });
     }
-    let Some(token) = crate::github::current_token(app) else {
-        return Ok(Status {
-            state: State::NeedsGitHub,
-            ..Status::default()
-        });
-    };
     let ends = Endpoints::default();
     let client = Client {
         agent: &sync.agent,
         ends: &ends,
         config: &config,
     };
-    let session = {
-        let cached = sync
-            .session
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
-        match cached.filter(Session::fresh) {
-            Some(s) => s,
-            None => {
-                let s = client.sign_in(&token)?;
-                *sync.session.lock().unwrap_or_else(|e| e.into_inner()) = Some(s.clone());
-                s
-            }
-        }
+    let Some(session) = account::session(app, &client)? else {
+        return Ok(Status {
+            state: State::NeedsSignIn,
+            ..Status::default()
+        });
     };
     let uid = Some(session.uid.clone());
     if !client.allowed(&session)? {
@@ -402,7 +389,10 @@ mod tests {
 
         let remote = r#"[{"document":{"name":"projects/p/databases/(default)/documents/users/u1/items/theirs","fields":{"repoKey":{"stringValue":"github.com/o/r"},"branch":{"stringValue":"dev"},"kind":{"stringValue":"todo"},"text":{"stringValue":"from laptop"},"done":{"booleanValue":false},"position":{"doubleValue":1},"createdAt":{"integerValue":"5"},"updatedAt":{"integerValue":"9"},"deleted":{"booleanValue":false},"deviceId":{"stringValue":"laptop"},"syncedAt":{"timestampValue":"2026-10-11T00:00:00Z"}}}}]"#;
         let (base, seen) = serve(vec![
-            (200, r#"{"localId":"u1","idToken":"t","expiresIn":"3600"}"#),
+            (
+                200,
+                r#"{"localId":"u1","idToken":"t","refreshToken":"r","expiresIn":"3600"}"#,
+            ),
             (200, r#"{"writeResults":[{}],"status":[{}]}"#),
             (200, remote),
         ]);
@@ -412,6 +402,7 @@ mod tests {
             .into();
         let ends = Endpoints {
             auth: base.clone(),
+            token: base.clone(),
             firestore: base,
         };
         let config = Config {
@@ -423,7 +414,7 @@ mod tests {
             ends: &ends,
             config: &config,
         };
-        let session = client.sign_in("gho").unwrap();
+        let session = client.sign_in_github("gho", None).unwrap().session;
         let changed = exchange(&store, &client, &session).unwrap();
 
         assert_eq!(changed, [("github.com/o/r".to_string(), "dev".to_string())]);

@@ -44,11 +44,12 @@ export const ko = {
   "settings.shortcut": "보이기 / 숨기기 단축키",
   "settings.sync": "동기화",
   "settings.sync.title": "기기 간 동기화",
+  "settings.account.manage": "계정 관리",
   "settings.sync.hint":
-    "브랜치 메모·할 일, 문서 작성기 문서, 내 라이브러리(skill·subagent)를 다른 기기와 맞춰요. 작업 탭의 GitHub 계정으로 로그인해요.",
+    "브랜치 메모·할 일, 문서 작성기 문서, 내 라이브러리(skill·subagent)를 앱 계정에 저장해 다른 기기와 맞춰요.",
   "settings.sync.notConfigured": "이 빌드에는 동기화 서버가 아직 설정되지 않았어요.",
   "settings.sync.off": "꺼져 있어요. 메모는 이 기기에만 저장돼요.",
-  "settings.sync.needsGitHub": "작업 탭에서 GitHub에 로그인하면 동기화를 쓸 수 있어요.",
+  "settings.sync.needsSignIn": "로그인하면 동기화를 쓸 수 있어요.",
   "settings.sync.notAllowed":
     "아직 동기화가 허용되지 않은 계정이에요. 아래 ID를 관리자에게 보내 주세요.",
   "settings.sync.syncing": "동기화하는 중…",
@@ -131,11 +132,12 @@ export const en: Messages<typeof ko> = {
   "settings.shortcut": "Show / hide shortcut",
   "settings.sync": "Sync",
   "settings.sync.title": "Sync across devices",
+  "settings.account.manage": "Manage account",
   "settings.sync.hint":
-    "Keeps branch notes and to-dos, composer documents and your library (skills, subagents) in step across devices. Signs in with the GitHub account from the Work tab.",
+    "Keeps branch notes and to-dos, composer documents and your library (skills, subagents) in your app account, in step across devices.",
   "settings.sync.notConfigured": "This build has no sync server set up yet.",
   "settings.sync.off": "Off. Notes stay on this device.",
-  "settings.sync.needsGitHub": "Sign in to GitHub in the Work tab to use sync.",
+  "settings.sync.needsSignIn": "Sign in to use sync.",
   "settings.sync.notAllowed":
     "This account isn't allowed to sync yet. Send the ID below to the administrator.",
   "settings.sync.syncing": "Syncing…",

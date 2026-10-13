@@ -1292,7 +1292,10 @@ mod tests {
         ])
         .to_string();
         let (base, seen) = crate::github::test_serve(vec![
-            (200, r#"{"localId":"u1","idToken":"t","expiresIn":"3600"}"#),
+            (
+                200,
+                r#"{"localId":"u1","idToken":"t","refreshToken":"r","expiresIn":"3600"}"#,
+            ),
             (200, Box::leak(page.into_boxed_str())),
             (200, r#"{"writeResults":[{}],"status":[{}]}"#),
         ]);
@@ -1302,6 +1305,7 @@ mod tests {
             .into();
         let ends = Endpoints {
             auth: base.clone(),
+            token: base.clone(),
             firestore: base,
         };
         let config = Config {
@@ -1313,7 +1317,7 @@ mod tests {
             ends: &ends,
             config: &config,
         };
-        let session = client.sign_in("gho").unwrap();
+        let session = client.sign_in_github("gho", None).unwrap().session;
 
         let outcome = exchange(&client, &session, &roots, &state_path, "me").unwrap();
 
