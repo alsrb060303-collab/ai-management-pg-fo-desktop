@@ -5,6 +5,7 @@ import { CommandsPanel } from "../features/commands/CommandsPanel";
 import { DocsTab } from "../features/docs/DocsTab";
 import { MemoPanel } from "../features/memo/MemoPanel";
 import { SyncNotice } from "../features/sync/SyncNotice";
+import { UpdateNotice } from "../features/update/UpdateNotice";
 import { useGitHubSync } from "../features/work/GitHubSection";
 import { WorkPanel } from "../features/work/WorkPanel";
 import { subscribeDockStatus } from "../store/dock";
@@ -12,6 +13,7 @@ import { useLibraryStore } from "../store/library";
 import { restoreProject, useProjectStore } from "../store/project";
 import { useSyncStore } from "../store/sync";
 import { useUiStore } from "../store/ui";
+import { startUpdateChecks } from "../store/updater";
 import type { ViewMode } from "../store/view";
 import { StatusBar } from "./StatusBar";
 import { TabNav } from "./TabNav";
@@ -34,6 +36,7 @@ export default function SidebarApp() {
   useEffect(() => {
     restoreProject();
     void useSyncStore.getState().init();
+    startUpdateChecks();
     if (!isTauri()) return;
     const unlisten = listen<ViewMode>("view-mode", (event) => {
       if (event.payload !== "sidebar") return;
@@ -64,6 +67,7 @@ export default function SidebarApp() {
       </main>
       <StatusBar />
       <SyncNotice />
+      <UpdateNotice compact />
     </div>
   );
 }

@@ -28,6 +28,18 @@ const isOperation = (op: string): op is Operation => (OPERATIONS as readonly str
 
 export type Tone = "done" | "wait" | "warn" | "bad" | "idle" | "open" | "merged" | "draft";
 
+/** Each tone's color, for the lines that blend from one step into the next. */
+const TONE_COLOR: Record<Tone, string> = {
+  done: "var(--c-success)",
+  wait: "var(--c-accent)",
+  warn: "var(--c-warning)",
+  bad: "var(--c-danger)",
+  idle: "var(--c-border-strong)",
+  open: "var(--c-success)",
+  merged: "var(--c-merged)",
+  draft: "var(--c-border-strong)",
+};
+
 const TONE: Record<Tone, { dot: string; text: string }> = {
   done: { dot: "border-success bg-success text-surface", text: "text-success" },
   wait: { dot: "border-accent bg-accent-soft text-accent", text: "text-accent" },
@@ -502,25 +514,32 @@ function BaseLine({ base }: { base: { name: string; ahead: number; behind: numbe
 
 function StepNode({ step, first, prev }: { step: Step; first: boolean; prev?: Step }) {
   const tone = TONE[step.tone];
-  const lineDone = prev && (prev.tone === "done" || prev.tone === "merged");
   const inner = (
     <>
       <span className="relative flex w-full items-center justify-center">
-        {!first && (
+        {!first && prev && (
+          // Blends from the previous step's color into this one's; the colors
+          // are registered properties (index.css), so a change fades in.
           <span
-            className={`absolute top-1/2 right-1/2 left-[-50%] h-0.5 -translate-y-1/2 ${
-              lineDone ? "bg-success/60" : "bg-border-strong"
-            }`}
+            className="flow-line absolute top-1/2 right-1/2 left-[-50%] h-[3px] -translate-y-1/2 rounded-full opacity-70"
+            style={
+              {
+                "--line-from": TONE_COLOR[prev.tone],
+                "--line-to": TONE_COLOR[step.tone],
+              } as React.CSSProperties
+            }
           />
         )}
         <span
-          className={`relative z-10 flex size-7 items-center justify-center rounded-full border-2 ${tone.dot}`}
+          className={`relative z-10 flex size-7 items-center justify-center rounded-full border-2 transition-colors duration-700 motion-reduce:transition-none ${tone.dot}`}
         >
           <step.Icon size={13} strokeWidth={2.5} />
         </span>
       </span>
       <span className="mt-1 text-fs-11 font-medium text-text">{step.label}</span>
-      <span className={`max-w-full truncate px-0.5 text-fs-10.5 leading-tight ${tone.text}`}>
+      <span
+        className={`max-w-full truncate px-0.5 text-fs-10.5 leading-tight transition-colors duration-700 motion-reduce:transition-none ${tone.text}`}
+      >
         {step.detail}
       </span>
     </>

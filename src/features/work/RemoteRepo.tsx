@@ -54,6 +54,8 @@ const seconds = (iso: string | null | undefined) => (iso ? Date.parse(iso) / 100
 export function RepoPicker({ compact }: { compact: boolean }) {
   const t = useT();
   const account = useGitHubStore((s) => s.status?.account);
+  /** The open local project's GitHub repository, if it has one. */
+  const localSlug = useGitHubStore((s) => s.view?.slug);
   const current = useProjectStore((s) => s.current);
   const recent = useProjectStore((s) => s.recent);
   const select = useProjectStore((s) => s.select);
@@ -99,13 +101,13 @@ export function RepoPicker({ compact }: { compact: boolean }) {
   };
 
   /** A cloned repository, opened in the GitHub view anyway after a warning. */
-  const viewOnGitHub = async (repo: RepoSummary) => {
-    const ok = await ask(t("work.repos.githubViewWarn", { slug: repo.slug }), {
+  const viewOnGitHub = async (repoSlug: string) => {
+    const ok = await ask(t("work.repos.githubViewWarn", { slug: repoSlug }), {
       title: t("work.repos.githubView"),
       kind: "warning",
     }).catch(() => false);
     if (!ok) return;
-    openRemote(repo.slug);
+    openRemote(repoSlug);
     setShown(false);
     setQuery("");
   };
@@ -121,6 +123,17 @@ export function RepoPicker({ compact }: { compact: boolean }) {
           <GitBranch size={13} className="shrink-0 text-text-subtle" />
           <span className="truncate">{slug ?? t("work.repos.title")}</span>
         </button>
+        {!slug && localSlug && (
+          <button
+            type="button"
+            onClick={() => void viewOnGitHub(localSlug)}
+            title={t("work.repos.githubViewHint")}
+            className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-surface-raised px-2 py-1 text-xs text-text-muted hover:border-border-strong hover:text-text"
+          >
+            <Globe size={12} />
+            {t("work.repos.githubView")}
+          </button>
+        )}
         {shown && (
           <button
             type="button"
@@ -178,7 +191,7 @@ export function RepoPicker({ compact }: { compact: boolean }) {
                     {local && (
                       <button
                         type="button"
-                        onClick={() => void viewOnGitHub(r)}
+                        onClick={() => void viewOnGitHub(r.slug)}
                         title={t("work.repos.githubView")}
                         aria-label={t("work.repos.githubView")}
                         className={`shrink-0 rounded-md p-1 text-text-subtle hover:bg-hover hover:text-text ${

@@ -1,0 +1,77 @@
+name: Release
+
+# Every new app version merged to main becomes a GitHub Release with a signed
+# Windows installer and latest.json, which the app's updater reads
+# (plugins.updater in src-tauri/tauri.conf.json). A version that already has
+# a release (docs-only merges keep the version) is skipped.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version and existing release
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "v$version is already released; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Updater key is set up
+        if: steps.version.outputs.skip != 'true'
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")" ]; then
+            echo "::error::plugins.updater.pubkey in src-tauri/tauri.conf.json is empty (see docs/release-setup.md)"
+            exit 1
+          fi
+          if [ -z "$KEY" ]; then
+            echo "::error::The TAURI_SIGNING_PRIVATE_KEY secret is missing (see docs/release-setup.md)"
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v4
+        if: steps.version.outputs.skip != 'true'
+      - uses: actions/setup-node@v5
+        if: steps.version.outputs.skip != 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.version.outputs.skip != 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.version.outputs.skip != 'true'
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+        if: steps.version.outputs.skip != 'true'
+      - uses: tauri-apps/tauri-action@v0
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: AI Management v__VERSION__
+          releaseBody: Windows installer. Installed apps update themselves from this release.
+          releaseDraft: false
+          prerelease: false
+          # Signed updater bundles (and latest.json) only for releases.
+          args: --bundles nsis --config src-tauri/tauri.release.conf.json
