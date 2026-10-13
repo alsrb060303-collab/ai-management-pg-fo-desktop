@@ -150,6 +150,14 @@
   --color-drop: var(--c-drop);
 }
 
+/* A native select's list takes its colors from the select; a transparent
+   select would get a white list with the theme's (light, in dark mode) text. */
+select option,
+select optgroup {
+  background-color: var(--c-raised);
+  color: var(--c-text);
+}
+
 /* Work tab flow: a line blending two step colors. Registered as colors so
    the browser can fade them when a step changes (CI running → passed). */
 @property --line-from {
