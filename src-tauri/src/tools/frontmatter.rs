@@ -120,12 +120,18 @@ fn strip_comment(s: &str) -> &str {
     let s = s.trim();
     if let Some(q) = s.chars().next().filter(|c| *c == '"' || *c == '\'') {
         let mut escaped = false;
-        for (i, c) in s.char_indices().skip(1) {
+        let mut chars = s.char_indices().skip(1).peekable();
+        while let Some((i, c)) = chars.next() {
             if q == '"' && c == '\\' && !escaped {
                 escaped = true;
                 continue;
             }
             if c == q && !escaped {
+                // `''` inside single quotes is an escaped quote.
+                if q == '\'' && chars.peek().is_some_and(|(_, n)| *n == '\'') {
+                    chars.next();
+                    continue;
+                }
                 return &s[..=i];
             }
             escaped = false;
@@ -141,14 +147,44 @@ fn strip_comment(s: &str) -> &str {
     s
 }
 
+/// Removes YAML quotes: `''` in single quotes is one `'`, and double quotes
+/// take the common backslash escapes.
 fn unquote(s: &str) -> String {
     let s = s.trim();
-    for q in ['"', '\''] {
-        if s.len() >= 2 && s.starts_with(q) && s.ends_with(q) {
-            return s[1..s.len() - 1].to_string();
+    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
+        return s[1..s.len() - 1].replace("''", "'");
+    }
+    if !(s.len() >= 2 && s.starts_with('"') && s.ends_with('"')) {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s[1..s.len() - 1].chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('0') => out.push('\0'),
+            Some('u') => {
+                let hex: String = chars.by_ref().take(4).collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(c) => out.push(c),
+                    None => {
+                        out.push_str("\\u");
+                        out.push_str(&hex);
+                    }
+                }
+            }
+            // `\"`, `\\`, `\/` and anything unknown: the character itself.
+            Some(other) => out.push(other),
+            None => out.push('\\'),
         }
     }
-    s.to_string()
+    out
 }
 
 #[cfg(test)]
@@ -194,6 +230,13 @@ mod tests {
         assert_eq!(f["description"], "a # b");
         assert_eq!(f["tools"], "Read, Grep");
         assert_eq!(f["paths"], "src/**");
+    }
+
+    #[test]
+    fn unescapes_quoted_values() {
+        let f = parse("---\na: \"say \\\"hi\\\"\\n\\\\ \\u00e9\"\nb: 'it''s'\n---\n").unwrap();
+        assert_eq!(f["a"], "say \"hi\"\n\\ é");
+        assert_eq!(f["b"], "it's");
     }
 
     #[test]

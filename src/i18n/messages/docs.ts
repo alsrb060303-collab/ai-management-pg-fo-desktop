@@ -99,6 +99,11 @@ export const ko = {
   "docs.item.turnOnTeam": "켜기 (팀으로 끔)",
   "docs.item.turnOff": "끄기",
   "docs.item.import": "라이브러리에 추가",
+  "docs.item.agentToggleUnsupported": "{tool}는 subagent를 하나만 끌 수 없어요.",
+  "docs.item.userSkillToggleUnsupported":
+    "{tool}에서 개인 skill을 끄면 모든 프로젝트에서 꺼져서, 이 프로젝트 안의 skill만 끌 수 있어요.",
+  "docs.item.teamToggleUnsupported":
+    "{tool}는 내 설정(config.toml)에서만 skill 끄기를 읽어서 '팀'으로는 끌 수 없어요.",
 
   // Personal / team buttons
   "docs.mode.personal": "나만",
@@ -123,6 +128,10 @@ export const ko = {
     "설정 지도에서 프로젝트를 고르면 항목을 그 프로젝트에 적용하거나 뺄 수 있습니다.",
   "docs.library.empty":
     '라이브러리가 비어 있습니다. 설정 지도에서 skill·agent의 "라이브러리에 추가"를 누르거나 폴더에 직접 넣어 주세요.',
+  "docs.library.destinationHint":
+    "{tool} 프로젝트에 적용하면 skill은 {skills}, subagent는 {agents}에 들어가요.",
+  "docs.library.codexAgentsHint":
+    "Codex용 subagent는 TOML로 바뀌어요(name·description·본문만, tools·model 등은 빠져요).",
   "docs.library.apply": "적용",
   "docs.library.update": "업데이트",
   "docs.library.overwrite": "라이브러리 버전으로 덮어쓰기",
@@ -228,6 +237,11 @@ export const en: Messages<typeof ko> = {
   "docs.item.turnOnTeam": "Turn on (off for team)",
   "docs.item.turnOff": "Turn off",
   "docs.item.import": "Add to library",
+  "docs.item.agentToggleUnsupported": "{tool} can't turn off a single subagent.",
+  "docs.item.userSkillToggleUnsupported":
+    "In {tool}, turning off a personal skill turns it off in every project, so only skills inside this project can be turned off.",
+  "docs.item.teamToggleUnsupported":
+    "{tool} reads turned-off skills only from your own config (config.toml), so they can't be turned off for 'Team'.",
 
   "docs.mode.personal": "Just me",
   "docs.mode.personalHint": "Only for you, not pushed to git",
@@ -249,6 +263,10 @@ export const en: Messages<typeof ko> = {
     "Choose a project in the settings map to apply items to it or remove them.",
   "docs.library.empty":
     'The library is empty. Click "Add to library" on a skill or agent in the settings map, or put files in the folder yourself.',
+  "docs.library.destinationHint":
+    "In a {tool} project, skills go to {skills} and subagents to {agents}.",
+  "docs.library.codexAgentsHint":
+    "Subagents are converted to TOML for Codex (name, description and body only; tools, model and the like are dropped).",
   "docs.library.apply": "Apply",
   "docs.library.update": "Update",
   "docs.library.overwrite": "Overwrite with library version",

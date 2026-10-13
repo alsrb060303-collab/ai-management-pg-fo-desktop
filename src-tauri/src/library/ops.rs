@@ -217,6 +217,13 @@ pub fn copy_over(src: &Path, dest: &Path) -> Result<()> {
     remove_path(&old)
 }
 
+/// Reads a text file (invalid UTF-8 is replaced, never an error).
+pub fn read_text(path: &Path) -> Result<String> {
+    fs::read(path)
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .map_err(|e| io_err(Op::Read, path, e))
+}
+
 pub fn remove_path(path: &Path) -> Result<()> {
     // symlink_metadata: a link is removed itself, never what it points to.
     let result = match fs::symlink_metadata(path) {

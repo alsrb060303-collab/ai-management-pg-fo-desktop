@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { type MessageKey, useT } from "../../i18n";
 import { type ApplyStatus, type LibraryItem, useLibraryStore } from "../../store/library";
 import { useProjectStore } from "../../store/project";
+import { TOOLS } from "../../tools";
 import { ModeButtons, smallButton } from "./ModeButtons";
 
 const STATUS_TEXT: Record<ApplyStatus, { label: MessageKey; className: string }> = {
@@ -15,6 +16,7 @@ const STATUS_TEXT: Record<ApplyStatus, { label: MessageKey; className: string }>
 export function LibraryPanel() {
   const t = useT();
   const current = useProjectStore((s) => s.current);
+  const info = TOOLS[useProjectStore((s) => s.tool)];
   const { overview, busy, error, load, chooseDir, useDefaultDir } = useLibraryStore();
 
   // Reload whenever the selected project changes (statuses are per project).
@@ -43,6 +45,16 @@ export function LibraryPanel() {
           )}
         </div>
         <p className="mt-1 text-fs-10 text-text-muted">{t("docs.library.structureHint")}</p>
+        {current && (
+          <p className="mt-1 text-fs-10 text-text-muted">
+            {t("docs.library.destinationHint", {
+              tool: info.name,
+              skills: `${info.skillsDir}/<id>/`,
+              agents: `${info.agentsDir}/<id>.${info.id === "codex" ? "toml" : "md"}`,
+            })}
+            {info.id === "codex" && ` ${t("docs.library.codexAgentsHint")}`}
+          </p>
+        )}
       </div>
 
       {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
