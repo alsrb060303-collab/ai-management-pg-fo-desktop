@@ -73,8 +73,8 @@ impl ToolId {
             (ToolId::Claude, false) => "CLAUDE.md",
             (ToolId::Claude, true) => "CLAUDE.local.md",
             // Codex has no personal instructions file next to AGENTS.md
-            // (AGENTS.override.md replaces it), so a personal section goes into
-            // AGENTS.md kept out of git.
+            // (AGENTS.override.md replaces it). AGENTS.md is the team's, so
+            // the composer writes Codex instructions for the team only.
             (ToolId::Codex, _) => "AGENTS.md",
         }
     }

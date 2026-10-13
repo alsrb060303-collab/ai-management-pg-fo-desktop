@@ -5,8 +5,9 @@
 //! Output nodes decide where blocks go:
 //! - instructions: a managed section holding the connected blocks in the
 //!   node's order, in CLAUDE.md (team) / CLAUDE.local.md (personal), or for
-//!   Codex in AGENTS.md (personal = kept out of git). Codex has no rule files,
-//!   so there instructions also take rule blocks.
+//!   Codex in AGENTS.md (team only: Codex has no personal instructions file,
+//!   and the team shares AGENTS.md). Codex has no rule files, so there
+//!   instructions also take rule blocks.
 //! - rules: one `.claude/rules/<name>.md` per block (Claude Code only)
 //! - skills: `<skills dir>/<name>/SKILL.md` (`.claude/skills`, `.agents/skills`)
 //! - agents: `.claude/agents/<name>.md`, or Codex `.codex/agents/<name>.toml`
@@ -16,7 +17,7 @@
 //!   or Codex `.codex/hooks.json` (team only), merged into the file by `write`
 //! - plans: a managed section in `PLANS.md` (`PLANS.local.md`) holding the
 //!   connected plan nodes (`plans`), and a line in the instructions file
-//!   pointing to it
+//!   pointing to it (for Codex always the team AGENTS.md)
 
 use std::collections::{HashMap, HashSet};
 
@@ -468,6 +469,18 @@ pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
 
         let mut files = Vec::new();
         match target {
+            Target::Instructions if tool == ToolId::Codex && personal => {
+                // Codex reads only AGENTS.md, which the team shares; keeping it
+                // out of git would hide the team's file too.
+                warn(
+                    &mut out,
+                    &output.id,
+                    crate::tr!(
+                        "Codex에는 개인용 지침 파일이 없어서 '나만' AGENTS.md는 쓰지 않아요(AGENTS.md는 팀과 같이 쓰는 파일이에요). '팀'으로 바꾸거나 ~/.codex/AGENTS.md에 직접 넣어 주세요",
+                        "Codex has no personal instructions file, so a 'Just me' AGENTS.md output writes nothing (AGENTS.md is shared with the team). Switch it to 'Team', or add the text to ~/.codex/AGENTS.md yourself"
+                    ),
+                );
+            }
             Target::Instructions => {
                 let content = section_text(&resolved, tool == ToolId::Codex);
                 let lines = content.lines().count();
@@ -587,6 +600,9 @@ pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
                         );
                         continue;
                     }
+                    if tool == ToolId::Codex {
+                        codex_hook_contract(&mut out, node_id, block, event);
+                    }
                     let matcher = data
                         .and_then(|d| d.matcher.as_deref())
                         .or(block.matcher.as_deref())
@@ -636,19 +652,27 @@ pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
                             format!(".claude/rules/{}.md", block.name),
                             rule_file(block, body),
                         ),
-                        Target::Skills => (
-                            format!("{}/{}/SKILL.md", tool.skills_dir(), block.name),
-                            skill_file(block, body),
-                        ),
-                        _ if tool.agents_are_toml() => {
-                            let (content, mut dropped) = agent_toml(block, body);
-                            let chosen = nodes
-                                .get(node_id)
-                                .and_then(|n| n.data.model.as_deref())
-                                .is_some_and(|m| !m.is_empty());
-                            if chosen && !dropped.iter().any(|d| d == "model") {
-                                dropped.push("model".into());
+                        Target::Skills => {
+                            if tool == ToolId::Codex && skill_is_manual(block) {
+                                warn(
+                                    &mut out,
+                                    node_id,
+                                    crate::tr!(
+                                        "'{}'은(는) 직접 불러야 쓰는 skill이지만 Codex에는 그 설정이 없어서, Codex가 알아서 쓸 수도 있어요",
+                                        "'{}' is a skill you call yourself, but Codex has no such setting, so Codex may use it on its own",
+                                        block.display_title()
+                                    ),
+                                );
                             }
+                            (
+                                format!("{}/{}/SKILL.md", tool.skills_dir(), block.name),
+                                skill_file(block, body, tool),
+                            )
+                        }
+                        _ if tool.agents_are_toml() => {
+                            // A model picked on the canvas is Claude Code's (the
+                            // picker is hidden for Codex), so it's left out silently.
+                            let (content, dropped) = agent_toml(block, body);
                             if !dropped.is_empty() {
                                 warn(
                                     &mut out,
@@ -848,19 +872,20 @@ fn compile_plans(
         });
 
         // Neither tool reads PLANS.md by itself: the instructions file points
-        // to it. (Codex's team and personal instructions share AGENTS.md, so
-        // the scope is matched too.)
+        // to it. Codex has only the team's AGENTS.md, which takes the pointer
+        // whatever the plan's scope.
         let pointer = plans::pointer(path);
-        let claude_md = tool.instructions_file(personal);
+        let in_personal = personal && tool != ToolId::Codex;
+        let claude_md = tool.instructions_file(in_personal);
         if let Some(file) = out.files.iter_mut().find(|f| {
-            f.target == Target::Instructions && f.path == claude_md && f.personal == personal
+            f.target == Target::Instructions && f.path == claude_md && f.personal == in_personal
         }) {
             file.content = format!("{}\n\n{pointer}", file.content);
             file.lines = file.content.lines().count();
         } else if let Some(node) = doc.nodes.iter().find(|n| {
             n.kind == "output"
                 && n.data.target == Some(Target::Instructions)
-                && (n.data.scope == Some(Mode::Personal)) == personal
+                && (n.data.scope == Some(Mode::Personal)) == in_personal
         }) && !out.files.iter().any(|f| f.path == claude_md)
         {
             out.files.push(OutFile {
@@ -868,7 +893,7 @@ fn compile_plans(
                 lines: pointer.lines().count(),
                 content: pointer,
                 section: true,
-                personal,
+                personal: in_personal,
                 target: Target::Instructions,
                 node: node.id.clone(),
                 blocks: Vec::new(),
@@ -880,7 +905,7 @@ fn compile_plans(
                     "{}는 {path}를 스스로 읽지 않아요. {claude_md} 출력({})을 추가하면 계획을 읽으라는 안내가 들어가요",
                     "{} doesn't read {path} by itself. Add a {claude_md} output ({}) and it gets a line pointing to the plan",
                     tool_name(tool),
-                    if personal { crate::tr!("나만", "Just me") } else { crate::tr!("팀", "Team") }
+                    if in_personal { crate::tr!("나만", "Just me") } else { crate::tr!("팀", "Team") }
                 ),
             });
         }
@@ -911,9 +936,66 @@ fn rule_file(block: &Block, body: &str) -> String {
     format!("{fm}---\n\n{body}\n")
 }
 
-fn skill_file(block: &Block, body: &str) -> String {
+/// Whether a top-level `key:` line is in raw frontmatter (without `---`).
+fn has_key(raw: &str, key: &str) -> bool {
+    raw.lines().any(|l| {
+        l.strip_prefix(key)
+            .is_some_and(|rest| rest.starts_with(':'))
+    })
+}
+
+/// Whether a skill is meant to be called only by the user
+/// (`disable-model-invocation`), which Codex has no setting for.
+fn skill_is_manual(block: &Block) -> bool {
+    match &block.frontmatter {
+        Some(raw) => frontmatter::parse(&format!("---\n{raw}\n---\n"))
+            .and_then(|f| f.get("disable-model-invocation").cloned())
+            .is_some_and(|v| v.trim() == "true"),
+        None => block.manual,
+    }
+}
+
+/// Warnings for a hook written to Codex, whose hooks follow a stricter
+/// output contract than Claude Code's (docs/research.md §13).
+fn codex_hook_contract(out: &mut Compiled, node_id: &str, block: &Block, event: &str) {
+    let message = match event {
+        "Stop" => crate::tr!(
+            "'{}': Codex의 Stop hook은 stdout에 JSON 객체를 출력해야 해요. 일반 텍스트를 출력하는 명령이면 Codex에서 hook 오류가 나요",
+            "'{}': Codex Stop hooks must print a JSON object on stdout. A command that prints plain text makes the hook fail in Codex",
+            block.display_title()
+        ),
+        "PreToolUse" => crate::tr!(
+            "'{}': Codex의 PreToolUse hook은 막기(permissionDecision \"deny\", 이유 필수)만 지원하고 \"ask\" 같은 다른 결정은 거부해요",
+            "'{}': Codex PreToolUse hooks only support blocking (permissionDecision \"deny\" with a reason) and reject other decisions such as \"ask\"",
+            block.display_title()
+        ),
+        _ => return,
+    };
+    out.warnings.push(Warning {
+        node: Some(node_id.to_string()),
+        message,
+    });
+}
+
+fn skill_file(block: &Block, body: &str, tool: ToolId) -> String {
     if let Some(raw) = &block.frontmatter {
-        return format!("---\n{raw}\n---\n\n{body}\n");
+        // Claude Code falls back to the body without a description; Codex
+        // skips such a skill, so `name` and `description` are added for it.
+        let mut fm = String::new();
+        if tool == ToolId::Codex {
+            if !has_key(raw, "name") {
+                fm.push_str(&format!("name: {}\n", block.name));
+            }
+            if !has_key(raw, "description") {
+                let description = block
+                    .description
+                    .as_deref()
+                    .filter(|d| !d.trim().is_empty())
+                    .unwrap_or(&block.summary);
+                fm.push_str(&format!("description: {}\n", quoted(description)));
+            }
+        }
+        return format!("---\n{fm}{raw}\n---\n\n{body}\n");
     }
     let description = block.description.as_deref().unwrap_or(&block.summary);
     let mut fm = format!(
@@ -1377,7 +1459,7 @@ mod tests {
             "a".repeat(40)
         );
         assert_eq!(
-            skill_file(&skill, "Steps"),
+            skill_file(&skill, "Steps", ToolId::Claude),
             format!(
                 "---\nname: x\ndescription: \"Does: things\"\nlicense: MIT\nmetadata:\n  source: \"{url}\"\n  copyright: \"Copyright (c) 2025 X\"\n---\n\nSteps\n"
             )
@@ -1605,9 +1687,44 @@ mod tests {
 
         let personal = compile(&all_outputs_doc("personal"), &catalog(), ToolId::Claude);
         assert_eq!(personal.files[0].path, "CLAUDE.local.md");
+        // Codex has no personal instructions file: a warning, nothing written.
         let personal = compile(&all_outputs_doc("personal"), &catalog(), ToolId::Codex);
-        assert_eq!(personal.files[0].path, "AGENTS.md");
-        assert!(personal.files[0].personal && personal.files[0].section);
+        assert_eq!(
+            paths(&personal),
+            [
+                ".agents/skills/review/SKILL.md",
+                ".codex/agents/reviewer.toml"
+            ]
+        );
+        // (and the subagent's `tools`, which Codex has no field for)
+        assert_eq!(personal.warnings.len(), 2, "{:?}", personal.warnings);
+        assert_eq!(personal.warnings[0].node.as_deref(), Some("I"));
+        assert!(personal.warnings[0].message.contains("개인용 지침 파일"));
+    }
+
+    #[test]
+    fn codex_keeps_team_instructions_when_a_personal_output_comes_first() {
+        // A document made for Claude Code: CLAUDE.local.md before CLAUDE.md.
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "x", "type": "block", "data": {"blockId": "builtin:a"}},
+                {"id": "y", "type": "block", "data": {"blockId": "builtin:b"}},
+                {"id": "P", "type": "output", "data": {"target": "instructions", "scope": "personal"}},
+                {"id": "T", "type": "output", "data": {"target": "instructions", "scope": "team"}}
+            ],
+            "edges": [{"source": "x", "target": "P"}, {"source": "y", "target": "T"}]
+        }"#);
+        let out = compile(&d, &catalog(), ToolId::Codex);
+        assert_eq!(paths(&out), ["AGENTS.md"]);
+        assert_eq!(out.files[0].content, "## B");
+        assert!(!out.files[0].personal);
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("P"));
+        assert!(!out.warnings[0].message.contains("두 출력이"));
+
+        let claude = compile(&d, &catalog(), ToolId::Claude);
+        assert_eq!(paths(&claude), ["CLAUDE.local.md", "CLAUDE.md"]);
+        assert!(claude.warnings.is_empty());
     }
 
     #[test]
@@ -1918,20 +2035,125 @@ mod tests {
         assert!(out.files[0].content.contains("`PLANS.md`"));
         assert!(out.warnings.is_empty(), "{:?}", out.warnings);
 
-        // A personal plan needs a personal AGENTS.md output, not the team one.
-        let d = doc(r#"{
-            "nodes": [
-                {"id": "i", "type": "block", "data": {"blockId": "builtin:a"}},
-                {"id": "c", "type": "output", "data": {"target": "instructions", "scope": "team"}},
-                {"id": "g", "type": "plan", "data": {"title": "Goal"}},
-                {"id": "p", "type": "output", "data": {"target": "plans", "scope": "personal"}}
-            ],
-            "edges": [{"source": "i", "target": "c"}, {"source": "g", "target": "p"}]
-        }"#);
-        let out = compile(&d, &catalog(), ToolId::Codex);
+        // A personal plan: Codex has only the team AGENTS.md, which points to it.
+        let personal_plan = |instructions: &str| {
+            doc(&format!(
+                r#"{{
+                "nodes": [
+                    {{"id": "i", "type": "block", "data": {{"blockId": "builtin:a"}}}},
+                    {{"id": "c", "type": "output", "data": {{"target": "instructions", "scope": "{instructions}"}}}},
+                    {{"id": "g", "type": "plan", "data": {{"title": "Goal"}}}},
+                    {{"id": "p", "type": "output", "data": {{"target": "plans", "scope": "personal"}}}}
+                ],
+                "edges": [{{"source": "i", "target": "c"}}, {{"source": "g", "target": "p"}}]
+            }}"#
+            ))
+        };
+        let out = compile(&personal_plan("team"), &catalog(), ToolId::Codex);
         assert_eq!(paths(&out), ["AGENTS.md", "PLANS.local.md"]);
+        assert!(!out.files[0].personal);
+        assert!(out.files[0].content.contains("`PLANS.local.md`"));
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+
+        // Claude Code keeps it in the matching scope: no CLAUDE.local.md output.
+        let out = compile(&personal_plan("team"), &catalog(), ToolId::Claude);
         assert!(!out.files[0].content.contains("PLANS"));
         assert_eq!(out.warnings.len(), 1);
-        assert!(out.warnings[0].message.contains("Codex"));
+
+        // Only a personal AGENTS.md output: it writes nothing, and the plan
+        // asks for a team one (which can coexist with nothing else).
+        let out = compile(&personal_plan("personal"), &catalog(), ToolId::Codex);
+        assert_eq!(paths(&out), ["PLANS.local.md"]);
+        assert_eq!(out.warnings.len(), 2, "{:?}", out.warnings);
+        let plan_warning = &out.warnings[1];
+        assert_eq!(plan_warning.node.as_deref(), Some("p"));
+        assert!(plan_warning.message.contains("AGENTS.md"));
+        assert!(
+            plan_warning.message.contains("(팀)"),
+            "{}",
+            plan_warning.message
+        );
+    }
+
+    #[test]
+    fn codex_stop_and_pre_tool_use_hooks_warn_about_the_output_contract() {
+        let mut stop = block("builtin:stop", BlockKind::Hook, "npm run lint --if-present");
+        stop.event = Some("Stop".into());
+        let mut pre = block("builtin:pre", BlockKind::Hook, "./check.sh");
+        pre.event = Some("PreToolUse".into());
+        let mut post = block("builtin:post", BlockKind::Hook, "pnpm format");
+        post.event = Some("PostToolUse".into());
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "s", "type": "block", "data": {"blockId": "builtin:stop"}},
+                {"id": "p", "type": "block", "data": {"blockId": "builtin:pre"}},
+                {"id": "q", "type": "block", "data": {"blockId": "builtin:post"}},
+                {"id": "o", "type": "output", "data": {"target": "hooks", "scope": "team"}}
+            ],
+            "edges": [{"source": "s", "target": "o"}, {"source": "p", "target": "o"}, {"source": "q", "target": "o"}]
+        }"#);
+        let catalog = [stop, pre, post];
+        let out = compile(&d, &catalog, ToolId::Codex);
+        // Still written: these are warnings only.
+        assert_eq!(out.files[0].blocks, ["s", "p", "q"]);
+        let nodes: Vec<_> = out.warnings.iter().map(|w| w.node.as_deref()).collect();
+        assert_eq!(nodes, [Some("s"), Some("p")]);
+        assert!(out.warnings[0].message.contains("JSON"));
+        assert!(out.warnings[1].message.contains("deny"));
+        assert!(compile(&d, &catalog, ToolId::Claude).warnings.is_empty());
+    }
+
+    #[test]
+    fn codex_skills_get_a_name_and_description_in_their_frontmatter() {
+        let mut skill = block("library:skill:fix", BlockKind::Skill, "Steps");
+        skill.description = None;
+        skill.summary = "Fixes things".into();
+        skill.frontmatter = Some("allowed-tools: Read\ndisable-model-invocation: true".into());
+        assert_eq!(
+            skill_file(&skill, "Steps", ToolId::Codex),
+            "---\nname: fix\ndescription: \"Fixes things\"\nallowed-tools: Read\ndisable-model-invocation: true\n---\n\nSteps\n"
+        );
+        // Claude Code gets the frontmatter as it is.
+        assert_eq!(
+            skill_file(&skill, "Steps", ToolId::Claude),
+            "---\nallowed-tools: Read\ndisable-model-invocation: true\n---\n\nSteps\n"
+        );
+        // Existing fields are kept, not doubled.
+        skill.frontmatter = Some("name: my-fix\ndescription: Mine".into());
+        assert_eq!(
+            skill_file(&skill, "Steps", ToolId::Codex),
+            "---\nname: my-fix\ndescription: Mine\n---\n\nSteps\n"
+        );
+
+        // A manual-only skill warns for Codex, which has no such setting.
+        skill.frontmatter = Some("disable-model-invocation: true".into());
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "s", "type": "block", "data": {"blockId": "library:skill:fix"}},
+                {"id": "S", "type": "output", "data": {"target": "skills"}}
+            ],
+            "edges": [{"source": "s", "target": "S"}]
+        }"#);
+        let catalog = [skill];
+        let out = compile(&d, &catalog, ToolId::Codex);
+        assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+        assert_eq!(out.warnings[0].node.as_deref(), Some("s"));
+        assert!(compile(&d, &catalog, ToolId::Claude).warnings.is_empty());
+    }
+
+    #[test]
+    fn a_model_picked_for_claude_code_is_dropped_silently_for_codex() {
+        let mut agent = block("builtin:helper", BlockKind::Agent, "Help.");
+        agent.tools = None;
+        let d = doc(r#"{
+            "nodes": [
+                {"id": "g", "type": "block", "data": {"blockId": "builtin:helper", "model": "sonnet"}},
+                {"id": "G", "type": "output", "data": {"target": "agents"}}
+            ],
+            "edges": [{"source": "g", "target": "G"}]
+        }"#);
+        let out = compile(&d, &[agent], ToolId::Codex);
+        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        assert!(!out.files[0].content.contains("sonnet"));
     }
 }
