@@ -12,6 +12,7 @@ import { useLibraryStore } from "../../store/library";
 import { useNotifyStore } from "../../store/notify";
 import { useSyncStore } from "../../store/sync";
 import { type ThemePref, useThemeStore } from "../../store/theme";
+import { useUpdaterStore } from "../../store/updater";
 
 const THEMES: ThemePref[] = ["system", "light", "dark"];
 
@@ -31,6 +32,19 @@ export function SettingsPage() {
   const { overview, busy, load, chooseDir } = useLibraryStore();
   const resetDir = useLibraryStore((s) => s.useDefaultDir);
   const [version, setVersion] = useState<string | null>(null);
+  const update = useUpdaterStore();
+  const updateLine =
+    update.status === "checking"
+      ? t("update.checking")
+      : update.status === "none"
+        ? t("update.none")
+        : update.status === "available"
+          ? t("update.available", { version: update.version ?? "" })
+          : update.status === "downloading"
+            ? t("update.downloading")
+            : update.status === "error"
+              ? t("update.failed", { error: update.error ?? "" })
+              : undefined;
 
   useEffect(() => {
     void load();
@@ -117,8 +131,17 @@ export function SettingsPage() {
       </Card>
 
       <Card title={t("settings.about")}>
-        <Row title={t("settings.version")}>
+        <Row title={t("settings.version")} description={updateLine}>
           <span className="text-sm text-text-muted">{version ?? "-"}</span>
+          <Button
+            size="sm"
+            disabled={update.status === "checking" || update.status === "downloading"}
+            onClick={() =>
+              update.status === "available" ? void update.install() : void update.check(true)
+            }
+          >
+            {update.status === "available" ? t("update.install") : t("update.check")}
+          </Button>
         </Row>
         <Row title={t("settings.license")} description={t("settings.licenseHint")} />
       </Card>

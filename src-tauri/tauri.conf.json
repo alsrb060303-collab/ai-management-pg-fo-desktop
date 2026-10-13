@@ -51,5 +51,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/oceanstarlight/ai-management-pg-fo-desktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

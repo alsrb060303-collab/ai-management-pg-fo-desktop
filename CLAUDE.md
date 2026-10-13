@@ -15,6 +15,7 @@ Tauri 2 desktop app (a main window plus a sidebar that docks next to the user's 
   - `capabilities/default.json`: every frontend-callable window/plugin API must be allowed here
 - `claude-mod/branch-notes/`: the Claude Code mod (talks to the app through `<app data>/bridge`, see `src-tauri/src/bridge.rs`). Check with `claude plugin validate` and `claude plugin test` in that folder.
 - `.github/workflows/ci.yml`: lint/build on Linux, clippy + NSIS installer on Windows
+- `.github/workflows/release.yml`: each new version on main becomes a GitHub Release the app updates from (`docs/release-setup.md`)
 
 ## Commands
 
