@@ -1,8 +1,10 @@
 import type { Messages } from "./types";
 
 export const ko = {
-  "mods.title": "Claude Code 연동",
+  "mods.title": "Claude Code 연동 (Claude Code 전용)",
   "mods.claude": "Claude Code",
+  "mods.scope":
+    "mods는 Claude Code에서만 동작하고, 프로젝트가 아니라 앱 전체에 적용돼요. Codex 프로젝트에는 영향이 없어요.",
   "mods.checking": "확인하는 중…",
   "mods.noClaude": "claude 명령을 찾지 못했어요. Claude Code를 설치한 뒤 다시 확인하세요.",
   "mods.tooOld": "{version} · mods는 2.1.287 이상에서 동작해요. `claude update`로 업데이트하세요.",
@@ -103,8 +105,10 @@ export const ko = {
 } as const;
 
 export const en: Messages<typeof ko> = {
-  "mods.title": "Claude Code integration",
+  "mods.title": "Claude Code integration (Claude Code only)",
   "mods.claude": "Claude Code",
+  "mods.scope":
+    "Mods work only in Claude Code and apply app-wide, not per project. Codex projects are not affected.",
   "mods.checking": "Checking…",
   "mods.noClaude": "Couldn't find the claude command. Install Claude Code, then check again.",
   "mods.tooOld": "{version} · mods need 2.1.287 or newer. Update with `claude update`.",

@@ -202,7 +202,11 @@ export const useWorkStore = create<WorkState>((set, get) => {
       if (!project || !isTauri() || get().drafting) return null;
       set({ drafting: true, error: null });
       try {
-        return await invoke<string>("work_draft_message", { project, all });
+        return await invoke<string>("work_draft_message", {
+          project,
+          all,
+          tool: useProjectStore.getState().tool,
+        });
       } catch (e) {
         set({ error: String(e) });
         return null;

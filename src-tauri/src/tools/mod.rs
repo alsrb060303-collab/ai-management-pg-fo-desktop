@@ -10,6 +10,7 @@
 //! Nothing here writes files, and no tool's credentials are ever read.
 
 pub mod claude;
+pub mod cli;
 pub mod codex;
 mod detect;
 pub(crate) mod frontmatter;

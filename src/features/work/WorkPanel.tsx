@@ -360,6 +360,7 @@ function Check({
 function CommitBox() {
   const t = useT();
   const { overview, busy, run, drafting, draftMessage } = useWorkStore();
+  const cli = useProjectStore((s) => s.tool);
   const [message, setMessage] = useState("");
   const commitFocus = useWorkUi((s) => s.commitFocus);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -400,17 +401,17 @@ function CommitBox() {
           placeholder={t("work.commit.message")}
           rows={message.includes("\n") ? 4 : 2}
           disabled={drafting}
-          className="w-full min-w-0 resize-y rounded-md border border-border bg-surface px-2 py-1 pr-20 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong disabled:opacity-60"
+          className="w-full min-w-0 resize-y rounded-md border border-border bg-surface px-2 py-1 pr-28 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong disabled:opacity-60"
         />
         <button
           type="button"
           onClick={() => void draft()}
           disabled={drafting || busy}
-          title={t("work.draft.title")}
+          title={t("work.draft.title", { cli })}
           className="absolute top-1 right-1 flex items-center gap-1 rounded-md border border-border bg-surface-raised px-1.5 py-0.5 text-fs-11 text-text-muted hover:border-border-strong hover:text-text disabled:opacity-60"
         >
           <Sparkles size={11} className={drafting ? "animate-pulse text-accent" : "text-accent"} />
-          {drafting ? t("work.draft.busy") : t("work.draft")}
+          {drafting ? t("work.draft.busy") : t("work.draft", { cli })}
         </button>
       </div>
       <div className="flex items-center gap-2 text-xs">

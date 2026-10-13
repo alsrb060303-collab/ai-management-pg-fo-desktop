@@ -136,34 +136,100 @@ pub async fn work_commit_diff(project: String, hash: String) -> Result<Diff, Str
     blocking(project, move |root| ops::commit_diff(root, &hash)).await
 }
 
-/// How `claude` is asked for a commit message. The diff follows on stdin.
+/// How the CLI is asked for a commit message. The diff follows on stdin.
 const DRAFT_PROMPT: &str = "Write a git commit message for the diff on stdin. \
 Match the language and style of the recent commit subjects if there are any, otherwise write in English. \
 First line: an imperative summary under 72 characters. If the change needs it, add a blank line and a short body. \
 Reply with the message only: no quotes, no code fences, no explanation.";
 
-/// A commit message drafted by the user's own `claude` (`claude -p`, no
-/// tools, not saved as a session) from what would be committed.
+/// Arguments of `claude -p` for a draft: no tools, not saved as a session.
+fn claude_draft_args() -> Vec<&'static str> {
+    vec![
+        "-p",
+        DRAFT_PROMPT,
+        "--model",
+        "haiku",
+        "--tools",
+        "",
+        "--no-session-persistence",
+        "--output-format",
+        "text",
+    ]
+}
+
+/// Arguments of `codex exec` for a draft: read-only, ephemeral, in an empty
+/// folder, the prompt on stdin (`-`), the final answer written to `out`.
+fn codex_draft_args<'a>(dir: &'a str, out: &'a str) -> Vec<&'a str> {
+    vec![
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "-s",
+        "read-only",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "-C",
+        dir,
+        "-o",
+        out,
+        "-",
+    ]
+}
+
+/// The whole stdin for `codex exec`: the prompt, then the diff context.
+fn codex_draft_input(context: &str) -> String {
+    format!("{DRAFT_PROMPT}\n\nReply with the message only.\n\n{context}")
+}
+
+/// A commit message drafted by the user's own CLI from what would be
+/// committed: `claude -p` for a Claude project, `codex exec` for a Codex one;
+/// the other tool's CLI when the project's own isn't installed.
 #[tauri::command]
-pub async fn work_draft_message(project: String, all: bool) -> Result<String, String> {
+pub async fn work_draft_message(
+    project: String,
+    all: bool,
+    tool: crate::tools::ToolId,
+) -> Result<String, String> {
+    use crate::tools::{ToolId, cli};
     blocking(project, move |root| {
         let context = ops::message_context(root, all)?;
-        let (ok, out, err) = crate::claude_mod::claude_with_input(
-            root,
-            &[
-                "-p",
-                DRAFT_PROMPT,
-                "--model",
-                "haiku",
-                "--tools",
-                "",
-                "--no-session-persistence",
-                "--output-format",
-                "text",
-            ],
-            Some(context),
-            std::time::Duration::from_secs(120),
-        )?;
+        let chosen = cli::choose(tool, &cli::installed()).unwrap_or(tool);
+        let name = cli::command_name(chosen);
+        let timeout = std::time::Duration::from_secs(120);
+        let (ok, out, err) = match chosen {
+            ToolId::Claude => {
+                cli::run_with_input(chosen, root, &claude_draft_args(), Some(context), timeout)?
+            }
+            ToolId::Codex => {
+                let dir = std::env::temp_dir().join(format!(
+                    "ai-mgmt-draft-{}-{}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_nanos())
+                ));
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                let out_file = dir.join("out.txt");
+                let dir_s = dir.to_string_lossy().into_owned();
+                let out_s = out_file.to_string_lossy().into_owned();
+                let result = cli::run_with_input(
+                    chosen,
+                    &dir,
+                    &codex_draft_args(&dir_s, &out_s),
+                    Some(codex_draft_input(&context)),
+                    timeout,
+                );
+                let answer = std::fs::read_to_string(&out_file).unwrap_or_default();
+                let _ = std::fs::remove_dir_all(&dir);
+                let (ok, stdout, stderr) = result?;
+                let text = if answer.trim().is_empty() {
+                    stdout
+                } else {
+                    answer
+                };
+                (ok, text, stderr)
+            }
+        };
         let text = out.trim();
         if !ok || text.is_empty() {
             let why = if err.trim().is_empty() {
@@ -172,8 +238,8 @@ pub async fn work_draft_message(project: String, all: bool) -> Result<String, St
                 err.trim()
             };
             return Err(crate::tr!(
-                "claude가 메시지를 만들지 못했어요: {why}",
-                "claude couldn't draft a message: {why}"
+                "{name}가 메시지를 만들지 못했어요: {why}",
+                "{name} couldn't draft a message: {why}"
             ));
         }
         Ok(strip_fences(text))
@@ -240,6 +306,21 @@ pub async fn work_git_version(project: String) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn codex_draft_is_read_only_and_reads_stdin() {
+        let args = super::codex_draft_args("/tmp/d", "/tmp/d/out.txt");
+        assert_eq!(&args[..2], &["exec", "--ephemeral"]);
+        assert!(args.windows(2).any(|w| w == ["-s", "read-only"]));
+        assert!(args.windows(2).any(|w| w == ["-C", "/tmp/d"]));
+        assert!(args.windows(2).any(|w| w == ["-o", "/tmp/d/out.txt"]));
+        assert!(!args.contains(&"--model"));
+        assert_eq!(args.last(), Some(&"-"));
+        let input = super::codex_draft_input("diff here");
+        assert!(input.contains("Reply with the message only"));
+        assert!(input.ends_with("diff here"));
+        assert!(super::claude_draft_args().contains(&"--no-session-persistence"));
+    }
+
     #[test]
     fn fenced_drafts_are_unwrapped() {
         assert_eq!(
