@@ -93,6 +93,7 @@ pub fn run() {
             work::work_stage,
             work::work_commit_diff,
             work::work_draft_message,
+            work::work_draft_tool,
             work::work_conflict,
             work::work_resolve,
             work::work_continue,

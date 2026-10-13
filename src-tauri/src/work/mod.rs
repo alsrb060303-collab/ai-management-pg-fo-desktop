@@ -32,7 +32,7 @@ fn codex_worktree_root(app: &tauri::AppHandle) -> Option<PathBuf> {
     use tauri::Manager;
     let home = app.path().home_dir().ok()?;
     let env = crate::tools::codex::Env::detect(home);
-    Some(read::codex_worktree_root_in(&env.codex_home))
+    Some(read::codex_worktree_root_in(&env.codex_home, &env.home))
 }
 
 /// `None` when the project is not a git repository.
@@ -194,6 +194,74 @@ fn codex_draft_input(context: &str) -> String {
     format!("{DRAFT_PROMPT}\n\nReply with the message only.\n\n{context}")
 }
 
+/// The tool whose CLI would draft for a project of `tool` (its own if
+/// installed, else the other one), or `None` when no CLI is installed.
+#[tauri::command]
+pub async fn work_draft_tool(tool: crate::tools::ToolId) -> Option<crate::tools::ToolId> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::tools::cli::choose(tool, &crate::tools::cli::installed())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+const MAX_ERR_LINES: usize = 20;
+const MAX_ERR_BYTES: usize = 2048;
+
+/// Keeps the end of a CLI's stderr for the error shown to the user: at most
+/// `MAX_ERR_LINES` lines and `MAX_ERR_BYTES` bytes, without the stdin echo
+/// (`codex exec` prints the prompt and diff it was given) when it can be told.
+fn tidy_stderr(err: &str, input: &str) -> String {
+    let mut text = err.trim().to_string();
+    // The echo is the exact stdin text; drop it wherever it appears.
+    let echo = input.trim();
+    if !echo.is_empty() {
+        text = text.replace(echo, "");
+    }
+    // Codex labels the echo with a `user` line; skip up to the next section
+    // header. If that leaves nothing, fall back to the plain tail.
+    let mut kept: Vec<&str> = Vec::new();
+    let mut skipping = false;
+    for line in text.lines() {
+        let l = line.trim();
+        if l == "user" {
+            skipping = true;
+            continue;
+        }
+        if skipping && matches!(l, "codex" | "exec" | "thinking" | "tokens used") {
+            skipping = false;
+        }
+        if !skipping && !l.is_empty() {
+            kept.push(line);
+        }
+    }
+    if kept.is_empty() {
+        kept = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    }
+    let start = kept.len().saturating_sub(MAX_ERR_LINES);
+    let mut out = kept[start..].join("\n");
+    if out.len() > MAX_ERR_BYTES {
+        let mut cut = out.len() - MAX_ERR_BYTES;
+        while !out.is_char_boundary(cut) {
+            cut += 1;
+        }
+        out = format!("…{}", &out[cut..]);
+    }
+    out
+}
+
+/// Removes the draft folder; the CLI may still hold it for a moment after it
+/// exits or is killed (Windows), so retry once after a short wait and give up
+/// quietly.
+fn remove_draft_dir(dir: &Path) {
+    if std::fs::remove_dir_all(dir).is_ok() {
+        return;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// A commit message drafted by the user's own CLI from what would be
 /// committed: `claude -p` for a Claude project, `codex exec` for a Codex one;
 /// the other tool's CLI when the project's own isn't installed.
@@ -208,6 +276,7 @@ pub async fn work_draft_message(
         let context = ops::message_context(root, all)?;
         let chosen = cli::choose(tool, &cli::installed()).unwrap_or(tool);
         let name = cli::command_name(chosen);
+        let input_echo = codex_draft_input(&context);
         let timeout = std::time::Duration::from_secs(120);
         let (ok, out, err) = match chosen {
             ToolId::Claude => {
@@ -233,7 +302,7 @@ pub async fn work_draft_message(
                     timeout,
                 );
                 let answer = std::fs::read_to_string(&out_file).unwrap_or_default();
-                let _ = std::fs::remove_dir_all(&dir);
+                remove_draft_dir(&dir);
                 let (ok, stdout, stderr) = result?;
                 let text = if answer.trim().is_empty() {
                     stdout
@@ -245,10 +314,11 @@ pub async fn work_draft_message(
         };
         let text = out.trim();
         if !ok || text.is_empty() {
-            let why = if err.trim().is_empty() {
-                text
+            let tidy = tidy_stderr(&err, &input_echo);
+            let why = if tidy.is_empty() {
+                tidy_stderr(text, &input_echo)
             } else {
-                err.trim()
+                tidy
             };
             return Err(crate::tr!(
                 "{name}가 메시지를 만들지 못했어요: {why}",
@@ -319,6 +389,23 @@ pub async fn work_git_version(project: String) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn stderr_is_trimmed_for_the_banner() {
+        let long: String = (0..50).map(|i| format!("line {i}\n")).collect();
+        let out = super::tidy_stderr(&long, "");
+        assert_eq!(out.lines().count(), 20);
+        assert!(out.ends_with("line 49"));
+        let big = "x".repeat(10_000);
+        assert!(super::tidy_stderr(&big, "").len() <= super::MAX_ERR_BYTES + 4);
+        let input = "PROMPT\n\ndiff --git a b";
+        let err = format!("header\nuser\n{input}\ncodex\nERROR: not logged in\n");
+        let out = super::tidy_stderr(&err, input);
+        assert!(!out.contains("diff --git"));
+        assert!(out.contains("ERROR: not logged in"));
+        let out = super::tidy_stderr("user\nsome echo\nERROR: rate limited\n", "");
+        assert!(out.contains("rate limited"));
+    }
+
     #[test]
     fn codex_draft_is_read_only_and_reads_stdin() {
         let args = super::codex_draft_args("/tmp/d", "/tmp/d/out.txt");

@@ -1,3 +1,4 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
@@ -361,7 +362,24 @@ function Check({
 function CommitBox() {
   const t = useT();
   const { overview, busy, run, drafting, draftMessage } = useWorkStore();
-  const cli = useProjectStore((s) => s.tool);
+  const tool = useProjectStore((s) => s.tool);
+  // The CLI that will really draft (the backend falls back to the other tool);
+  // null while asking or when none is installed.
+  const [cli, setCli] = useState<string | null>(null);
+  const [cliKnown, setCliKnown] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setCliKnown(false);
+    if (!isTauri()) return;
+    invoke<string | null>("work_draft_tool", { tool })
+      .then((c) => live && setCli(c))
+      .catch(() => live && setCli(null))
+      .finally(() => live && setCliKnown(true));
+    return () => {
+      live = false;
+    };
+  }, [tool]);
+  const noCli = cliKnown && !cli;
   const [message, setMessage] = useState("");
   const commitFocus = useWorkUi((s) => s.commitFocus);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -407,12 +425,12 @@ function CommitBox() {
         <button
           type="button"
           onClick={() => void draft()}
-          disabled={drafting || busy}
-          title={t("work.draft.title", { cli })}
+          disabled={drafting || busy || !cli}
+          title={noCli ? t("work.draft.none") : t("work.draft.title", { cli: cli ?? tool })}
           className="absolute top-1 right-1 flex items-center gap-1 rounded-md border border-border bg-surface-raised px-1.5 py-0.5 text-fs-11 text-text-muted hover:border-border-strong hover:text-text disabled:opacity-60"
         >
           <Sparkles size={11} className={drafting ? "animate-pulse text-accent" : "text-accent"} />
-          {drafting ? t("work.draft.busy") : t("work.draft", { cli })}
+          {drafting ? t("work.draft.busy") : t("work.draft", { cli: cli ?? tool })}
         </button>
       </div>
       <div className="flex items-center gap-2 text-xs">

@@ -10,6 +10,7 @@ import { Logo } from "../../components/Logo";
 import { type MessageKey, useT } from "../../i18n";
 import { useProjectStore } from "../../store/project";
 import { useWorkspaceStore } from "../../store/workspace";
+import { TOOLS } from "../../tools";
 import { switchToSidebar } from "../leave";
 
 function greeting(hour: number): MessageKey {
@@ -20,20 +21,21 @@ function greeting(hour: number): MessageKey {
 
 export function HomePage() {
   const go = useWorkspaceStore((s) => s.go);
-  const { recent, select } = useProjectStore();
+  const { recent, select, tool } = useProjectStore();
+  const toolInfo = TOOLS[tool];
   const t = useT();
 
   const actions: { icon: LucideIcon; title: string; description: string; onClick: () => void }[] = [
     {
       icon: Blocks,
-      title: t("shell.home.newClaudeMd"),
+      title: t("shell.home.newClaudeMd", { file: toolInfo.instructions.team }),
       description: t("shell.home.newClaudeMdDesc"),
       onClick: () => go("composer"),
     },
     {
       icon: MapIcon,
       title: t("shell.home.config"),
-      description: t("shell.home.configDesc"),
+      description: t("shell.home.configDesc", { tool: toolInfo.name }),
       onClick: () => go("config"),
     },
     {
