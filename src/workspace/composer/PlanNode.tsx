@@ -8,11 +8,12 @@ import {
   type PlanItem,
   type PlanNode,
   type PlanStatus,
+  planGroupSize,
   useComposerStore,
 } from "../../store/composer";
 import { kindColor } from "./kinds";
 import { DeleteNodeButton, useDraft } from "./nodeParts";
-import { ACTIONS, dropIndex, layout, nextStatus, STATUS } from "./plans";
+import { ACTIONS, dropIndex, layout, nextStatus, STATUS, setPlanDrop, usePlanDrop } from "./plans";
 
 const color = kindColor("plan");
 const field =
@@ -34,8 +35,19 @@ export const PlanNodeView = memo(function PlanNodeView({
   const title = useDraft(data.title, (title) => setPlan(id, { title }));
   const note = useDraft(data.note ?? "", (note) => setPlan(id, { note: note || undefined }));
   const listRef = useRef<HTMLOListElement>(null);
-  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
+  /** The row being dragged by its grip; with a sub-goal, its whole group moves. */
+  const [drag, setDrag] = useState<{ from: number; size: number } | null>(null);
+  const gap = usePlanDrop((d) => (d?.node === id ? d.gap : null));
+  // Dropping into the dragged group, or right beside it, changes nothing.
+  const line =
+    gap === null || (drag && gap >= drag.from && gap <= drag.from + drag.size) ? null : gap;
   const rows = layout(data.items);
+  const finish = (move: boolean) => {
+    const to = usePlanDrop.getState();
+    if (move && drag && to?.node === id) movePlanItem(id, drag.from, to.gap);
+    setDrag(null);
+    setPlanDrop(null);
+  };
 
   return (
     <div
@@ -90,7 +102,11 @@ export const PlanNodeView = memo(function PlanNodeView({
           />
 
           {data.items.length === 0 ? (
-            <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-text-subtle">
+            <p
+              className={`mt-3 rounded-lg border border-dashed px-3 py-4 text-center text-xs text-text-subtle ${
+                line === 0 ? "border-drop" : "border-border"
+              }`}
+            >
               {t("composer.plan.empty")}
             </p>
           ) : (
@@ -104,21 +120,24 @@ export const PlanNodeView = memo(function PlanNodeView({
                   number={rows[i].number}
                   level={rows[i].level}
                   hasSubAbove={data.items.slice(0, i).some((x) => x.kind === "sub")}
-                  dragging={drag?.from === i}
-                  dropTarget={!!drag && drag.from !== drag.to && drag.to === i}
-                  onGrab={() => setDrag({ from: i, to: i })}
+                  dragging={!!drag && i >= drag.from && i < drag.from + drag.size}
+                  line={
+                    line === i
+                      ? "before"
+                      : line === data.items.length && i === line - 1
+                        ? "after"
+                        : null
+                  }
+                  onGrab={() => {
+                    setDrag({ from: i, size: planGroupSize(data.items, i) });
+                    setPlanDrop({ node: id, gap: i });
+                  }}
                   onMove={(y) => {
                     if (drag && listRef.current)
-                      setDrag({
-                        ...drag,
-                        to: Math.min(dropIndex(listRef.current, y), data.items.length - 1),
-                      });
+                      setPlanDrop({ node: id, gap: dropIndex(listRef.current, y) });
                   }}
-                  onDrop={() => {
-                    if (drag) movePlanItem(id, drag.from, drag.to);
-                    setDrag(null);
-                  }}
-                  onCancel={() => setDrag(null)}
+                  onDrop={() => finish(true)}
+                  onCancel={() => finish(false)}
                 />
               ))}
             </ol>
@@ -182,7 +201,7 @@ function PlanRow({
   level,
   hasSubAbove,
   dragging,
-  dropTarget,
+  line,
   onGrab,
   onMove,
   onDrop,
@@ -195,7 +214,8 @@ function PlanRow({
   level: number;
   hasSubAbove: boolean;
   dragging: boolean;
-  dropTarget: boolean;
+  /** The drop line, drawn in the gap above or below this row. */
+  line: "before" | "after" | null;
   onGrab: () => void;
   onMove: (clientY: number) => void;
   onDrop: () => void;
@@ -213,14 +233,22 @@ function PlanRow({
     <li
       data-plan-row={index}
       style={{ marginLeft: level * 18 }}
-      className={`group/row flex items-start gap-1 rounded-lg px-1 py-1 text-xs ${
+      className={`group/row relative flex items-start gap-1 rounded-lg px-1 py-1 text-xs ${
         step
           ? "border border-dashed bg-surface"
           : item.kind === "sub"
             ? "bg-sunken font-medium"
             : "bg-sunken/60"
-      } ${dragging ? "ring-1 ring-accent" : ""} ${dropTarget ? "ring-1 ring-accent" : ""}`}
+      } ${dragging ? "opacity-50 ring-1 ring-accent" : ""}`}
     >
+      {line && (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute -inset-x-1 h-0.5 rounded-full bg-drop ${
+            line === "before" ? "-top-[3px]" : "-bottom-[3px]"
+          }`}
+        />
+      )}
       <button
         type="button"
         tabIndex={-1}
@@ -303,7 +331,10 @@ function RowButton({
   );
 }
 
-/** A step: what kind, which subagent or skill, and the text. */
+/** The block picker's "type a name" choice; catalog ids never look like this. */
+const TYPED = "__typed__";
+
+/** A step: what kind, which subagent or skill (picked or typed), and the text. */
 function StepFields({
   nodeId,
   item,
@@ -319,6 +350,10 @@ function StepFields({
   const action = item.action ?? "text";
   const kind = action === "agent" ? "agent" : action === "skill" ? "skill" : null;
   const options = kind ? catalog.filter((b) => b.kind === kind) : [];
+  const typed = item.name !== undefined;
+  const name = useDraft(item.name ?? "", (next) =>
+    setPlanItem(nodeId, item.id, { name: next.trim() }),
+  );
   const select =
     "nodrag nowheel rounded-md border border-border bg-surface px-1 py-0.5 text-[11px] outline-none focus:border-accent";
 
@@ -338,6 +373,7 @@ function StepFields({
             setPlanItem(nodeId, item.id, {
               action: e.target.value as PlanAction,
               block: undefined,
+              name: undefined,
             })
           }
           className={select}
@@ -350,9 +386,18 @@ function StepFields({
         </select>
         {kind && (
           <select
-            value={item.block ?? ""}
+            value={typed ? TYPED : (item.block ?? "")}
             aria-label={t(kind === "agent" ? "composer.plan.pickAgent" : "composer.plan.pickSkill")}
-            onChange={(e) => setPlanItem(nodeId, item.id, { block: e.target.value || undefined })}
+            onChange={(e) => {
+              const value = e.target.value;
+              setPlanItem(
+                nodeId,
+                item.id,
+                value === TYPED
+                  ? { block: undefined, name: item.name ?? "" }
+                  : { block: value || undefined, name: undefined },
+              );
+            }}
             className={`${select} max-w-44`}
           >
             <option value="">
@@ -363,9 +408,21 @@ function StepFields({
                 {b.title}
               </option>
             ))}
+            <option value={TYPED}>{t("composer.plan.typeName")}</option>
           </select>
         )}
       </div>
+      {kind && typed && (
+        <input
+          {...name}
+          // biome-ignore lint/a11y/noAutofocus: shown right after picking "type a name"
+          autoFocus={!item.name}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          placeholder={t(kind === "agent" ? "composer.plan.agentName" : "composer.plan.skillName")}
+          aria-label={t(kind === "agent" ? "composer.plan.agentName" : "composer.plan.skillName")}
+          className={`${field} block w-full font-mono text-[11px]`}
+        />
+      )}
       <textarea
         {...text}
         rows={1}

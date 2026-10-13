@@ -43,6 +43,7 @@
   --c-merged: #8250df;
   --c-kind-hook: #9a7a12;
   --c-kind-plan: #1f7f86;
+  --c-drop: #ea6c0a;
 }
 
 [data-theme="dark"] {
@@ -78,6 +79,7 @@
   --c-merged: #b08cf5;
   --c-kind-hook: #d6b74e;
   --c-kind-plan: #5cc0c7;
+  --c-drop: #fb923c;
 }
 
 @theme inline {
@@ -123,6 +125,8 @@
   --color-kind-agent: var(--c-kind-agent);
   --color-kind-hook: var(--c-kind-hook);
   --color-kind-plan: var(--c-kind-plan);
+  /* Where a dragged row will land. */
+  --color-drop: var(--c-drop);
 }
 
 html,

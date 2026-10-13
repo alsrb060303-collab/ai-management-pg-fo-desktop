@@ -28,6 +28,9 @@ pub struct PlanItem {
     pub action: Option<String>,
     /// Agent and skill steps: the catalog block to use.
     pub block: Option<String>,
+    /// Agent and skill steps: a name typed in instead of a block, for one the
+    /// user has outside this document (e.g. in `~/.claude`).
+    pub name: Option<String>,
 }
 
 /// A main goal as the plan node saves it.
@@ -185,6 +188,28 @@ fn step_text(
             } else {
                 BlockKind::Skill
             };
+            // A typed name is used as is: it may live outside this project,
+            // so whether it exists cannot be checked here.
+            if let Some(name) = item.name.as_deref().map(str::trim) {
+                if name.is_empty() {
+                    issues.push(Issue {
+                        node: node.into(),
+                        message: if action == "agent" {
+                            crate::tr!(
+                                "단계 지침에 맡길 subagent 이름을 입력해 주세요",
+                                "Type the name of the subagent a step hands work to"
+                            )
+                        } else {
+                            crate::tr!(
+                                "단계 지침에 쓸 skill 이름을 입력해 주세요",
+                                "Type the name of the skill a step uses"
+                            )
+                        },
+                    });
+                    return None;
+                }
+                return Some(handoff(action, &label, name, &extra));
+            }
             let Some(block) = item
                 .block
                 .as_deref()
@@ -225,19 +250,7 @@ fn step_text(
                     },
                 });
             }
-            Some(if action == "agent" {
-                crate::tr!(
-                    "{label}: 이 일은 `{}` subagent에게 맡겨요{extra}",
-                    "{label}: hand this to the `{}` subagent{extra}",
-                    block.name
-                )
-            } else {
-                crate::tr!(
-                    "{label}: `{}` skill을 써요{extra}",
-                    "{label}: use the `{}` skill{extra}",
-                    block.name
-                )
-            })
+            Some(handoff(action, &label, &block.name, &extra))
         }
         "ask" => Some(crate::tr!(
             "{label}: 여기서 멈추고, 다음 목표로 넘어가기 전에 사용자에게 확인받아요{extra}",
@@ -248,9 +261,56 @@ fn step_text(
     }
 }
 
+/// The step line for handing work to a subagent or using a skill.
+fn handoff(action: &str, label: &str, name: &str, extra: &str) -> String {
+    if action == "agent" {
+        crate::tr!(
+            "{label}: 이 일은 `{name}` subagent에게 맡겨요{extra}",
+            "{label}: hand this to the `{name}` subagent{extra}"
+        )
+    } else {
+        crate::tr!(
+            "{label}: `{name}` skill을 써요{extra}",
+            "{label}: use the `{name}` skill{extra}"
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn step(action: &str, name: Option<&str>) -> PlanItem {
+        PlanItem {
+            kind: "step".into(),
+            text: "리뷰".into(),
+            action: Some(action.into()),
+            name: name.map(Into::into),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn typed_names_are_used_without_a_block() {
+        let blocks = HashMap::new();
+        let mut issues = Vec::new();
+        let agent = step_text(
+            "n",
+            &step("agent", Some(" reviewer ")),
+            &blocks,
+            &[],
+            &mut issues,
+        )
+        .unwrap();
+        assert!(agent.contains("`reviewer`"), "{agent}");
+        assert!(agent.ends_with(": 리뷰"), "{agent}");
+        let skill = step_text("n", &step("skill", Some("pdf")), &blocks, &[], &mut issues).unwrap();
+        assert!(skill.contains("`pdf`"), "{skill}");
+        assert!(issues.is_empty());
+
+        assert!(step_text("n", &step("agent", Some("  ")), &blocks, &[], &mut issues).is_none());
+        assert_eq!(issues.len(), 1);
+    }
 
     #[test]
     fn marks_default_to_not_yet() {

@@ -15,7 +15,7 @@ import {
 } from "../../store/composer";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
 import { isLarge, LargeBlockDialog, largeWarningOff } from "./LargeBlockDialog";
-import { dropIndex, PLAN_ENTRIES, type PlanEntry } from "./plans";
+import { dropIndex, PLAN_ENTRIES, type PlanEntry, setPlanDrop } from "./plans";
 
 type Filter = BlockKind | "all" | "plans";
 
@@ -120,6 +120,7 @@ export function Palette() {
       window.removeEventListener("pointercancel", stop);
       window.removeEventListener("blur", stop);
       setGhost(null);
+      setPlanDrop(null);
     };
     const up = (ev: PointerEvent) => {
       stop();
@@ -177,6 +178,13 @@ export function Palette() {
       if (!dragging && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 5) return;
       dragging = true;
       setGhost({ title, x: ev.clientX, y: ev.clientY });
+      // Show where a goal or step would go in the plan under the pointer.
+      const over =
+        entry === "main"
+          ? null
+          : document.elementFromPoint(ev.clientX, ev.clientY)?.closest("[data-plan-node]");
+      const node = over?.getAttribute("data-plan-node");
+      setPlanDrop(over && node ? { node, gap: dropIndex(over, ev.clientY) } : null);
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -184,6 +192,7 @@ export function Palette() {
       window.removeEventListener("pointercancel", stop);
       window.removeEventListener("blur", stop);
       setGhost(null);
+      setPlanDrop(null);
     };
     const up = (ev: PointerEvent) => {
       stop();
