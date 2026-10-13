@@ -46,7 +46,7 @@ export const ko = {
   "settings.sidebar": "사이드바",
   "settings.dock": "자석 (터미널 옆에 붙이기)",
   "settings.dockHint":
-    "사이드바로 전환하면 Windows Terminal · VS Code · Claude 데스크탑 중 앞에 있는 창 옆에 자동으로 붙어요. 사이드바 위쪽 자석 버튼을 누를 때마다 자동 감지 → 지금 창에 고정 → 해제 순서로 바뀌어요.",
+    "사이드바로 전환하면 Windows Terminal · VS Code · Claude 데스크탑 · Codex 중 앞에 있는 창 옆에 자동으로 붙어요. 사이드바 위쪽 자석 버튼을 누를 때마다 자동 감지 → 지금 창에 고정 → 해제 순서로 바뀌어요.",
   "settings.pin": "항상 위",
   "settings.pinHint": "다른 창보다 항상 위에 보여요.",
   "settings.shortcut": "보이기 / 숨기기 단축키",
@@ -150,7 +150,7 @@ export const en: Messages<typeof ko> = {
   "settings.sidebar": "Sidebar",
   "settings.dock": "Magnet (dock next to terminal)",
   "settings.dockHint":
-    "Switching to the sidebar docks it next to the window in front: Windows Terminal, VS Code or Claude desktop. Each click on the magnet button in the sidebar goes from following the window in front, to staying with the current window, to off.",
+    "Switching to the sidebar docks it next to the window in front: Windows Terminal, VS Code, Claude desktop or Codex. Each click on the magnet button in the sidebar goes from following the window in front, to staying with the current window, to off.",
   "settings.pin": "Always on top",
   "settings.pinHint": "Stays above other windows.",
   "settings.shortcut": "Show / hide shortcut",

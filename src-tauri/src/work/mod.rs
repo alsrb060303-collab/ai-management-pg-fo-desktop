@@ -8,6 +8,7 @@ mod read;
 
 use std::path::{Path, PathBuf};
 
+use crate::tools::ToolId;
 use ops::{BranchCheck, Diff};
 use read::Overview;
 
@@ -25,14 +26,25 @@ fn repo_root(project: &str) -> Result<PathBuf, String> {
         .ok_or_else(|| crate::tr!("git 저장소가 아니에요", "Not a git repository"))
 }
 
+/// The Codex app's worktree root, to label its worktrees; `None` when the
+/// home folder is unknown.
+fn codex_worktree_root(app: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+    let home = app.path().home_dir().ok()?;
+    let env = crate::tools::codex::Env::detect(home);
+    Some(read::codex_worktree_root_in(&env.codex_home))
+}
+
 /// `None` when the project is not a git repository.
 #[tauri::command]
 pub async fn work_overview(
+    app: tauri::AppHandle,
     project: String,
     count_worktrees: bool,
 ) -> Result<Option<Overview>, String> {
+    let codex_root = codex_worktree_root(&app);
     tauri::async_runtime::spawn_blocking(move || match read::root(Path::new(&project))? {
-        Some(root) => read::overview(&root, count_worktrees).map(Some),
+        Some(root) => read::overview(&root, count_worktrees, codex_root.as_deref()).map(Some),
         None => Ok(None),
     })
     .await
@@ -85,9 +97,10 @@ pub async fn work_add_worktree(
     project: String,
     name: String,
     base: Option<String>,
+    tool: ToolId,
 ) -> Result<String, String> {
     blocking(project, move |root| {
-        ops::add_worktree(root, name.trim(), base.as_deref())
+        ops::add_worktree(root, name.trim(), base.as_deref(), tool)
     })
     .await
 }
