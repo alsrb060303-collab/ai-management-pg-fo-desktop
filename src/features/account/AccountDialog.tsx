@@ -303,7 +303,6 @@ function Manage() {
 
       <div className="flex items-center gap-3 border-t border-border pt-3">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-text-subtle">{t("account.signOutHint")}</p>
           <p className="selectable truncate font-mono text-[10.5px] text-text-subtle">
             {t("account.id")}: {info.uid}
           </p>

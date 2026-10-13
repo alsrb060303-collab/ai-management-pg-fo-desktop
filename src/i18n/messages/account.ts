@@ -39,7 +39,6 @@ export const ko = {
   "account.unlink": "연결 해제",
   "account.addPassword": "비밀번호 설정",
   "account.signOut": "로그아웃",
-  "account.signOutHint": "로그아웃해도 이 컴퓨터의 데이터는 지워지지 않아요.",
   "account.id": "계정 ID",
   "account.nav.signIn": "로그인",
 } as const;
@@ -85,7 +84,6 @@ export const en: Messages<typeof ko> = {
   "account.unlink": "Unlink",
   "account.addPassword": "Set a password",
   "account.signOut": "Sign out",
-  "account.signOutHint": "Signing out doesn't delete anything on this computer.",
   "account.id": "Account ID",
   "account.nav.signIn": "Sign in",
 };
