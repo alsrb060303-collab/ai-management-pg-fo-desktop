@@ -817,7 +817,8 @@ fn turn_off_codex(
             codex_config.display()
         ));
     }
-    codex::skill_off(codex_config, &path)?;
+    // Record first, so an entry in the user's config.toml always has a record
+    // the app can undo; drop the record again if the write fails.
     state.toggles.push(Toggle {
         project: key,
         tool: ToolId::Codex,
@@ -825,9 +826,23 @@ fn turn_off_codex(
         name: target.name.to_string(),
         mode: Mode::Personal,
         previous: None,
-        path: Some(path),
+        path: Some(path.clone()),
     });
-    lib.save(&state)
+    if let Err(e) = lib.save(&state) {
+        state.toggles.pop();
+        return Err(e);
+    }
+    if let Err(e) = codex::skill_off(codex_config, &path) {
+        state.toggles.pop();
+        return match lib.save(&state) {
+            Ok(()) => Err(e),
+            Err(save) => Err(crate::tr!(
+                "{e} (기록도 되돌리지 못했습니다: {save})",
+                "{e} (and couldn't undo the record either: {save})"
+            )),
+        };
+    }
+    Ok(())
 }
 
 /// Checks that `path` is a SKILL.md inside `project`. A skill outside it (the
@@ -1641,6 +1656,38 @@ mod tests {
         turn_on(&f.lib, &f.project, &target, &config).unwrap();
         assert_eq!(fs::read_to_string(&config).unwrap(), original);
         assert!(overview(&f.lib, Some(&f.project), X).toggled_off.is_empty());
+    }
+
+    #[test]
+    fn codex_turn_off_records_before_writing_and_rolls_back() {
+        let f = fixture();
+        let config = f._tmp.path().join("codex-home").join("config.toml");
+        fs::create_dir_all(config.parent().unwrap()).unwrap();
+        let original = "model = \"gpt-5\"\n";
+        fs::write(&config, original).unwrap();
+        let skill = codex_skill(&f.project, "lint");
+        let target = codex(ItemKind::Skill, "lint", Some(&skill));
+
+        // The record can't be saved: the user's config.toml stays untouched.
+        let applied = f.lib.data_dir.join("applied.json");
+        fs::create_dir_all(applied.join("blocker")).unwrap();
+        assert!(turn_off(&f.lib, &f.project, &target, Mode::Personal, &config).is_err());
+        assert_eq!(fs::read_to_string(&config).unwrap(), original);
+        assert!(f.lib.lock().toggles.is_empty());
+        fs::remove_dir_all(&applied).unwrap();
+
+        // config.toml can't be written: the record is dropped again.
+        let blocker = config.with_file_name(".config.toml.ai-management-tmp");
+        fs::create_dir_all(blocker.join("x")).unwrap();
+        assert!(turn_off(&f.lib, &f.project, &target, Mode::Personal, &config).is_err());
+        assert_eq!(fs::read_to_string(&config).unwrap(), original);
+        assert!(f.lib.lock().toggles.is_empty());
+        let saved = fs::read_to_string(&applied).unwrap();
+        assert!(!saved.contains("lint"), "{saved}");
+        fs::remove_dir_all(&blocker).unwrap();
+
+        turn_off(&f.lib, &f.project, &target, Mode::Personal, &config).unwrap();
+        assert!(fs::read_to_string(&applied).unwrap().contains("lint"));
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //! keys of a server entry the app doesn't edit (`cwd`, timeouts, tool
 //! filters…). `auth.json` is never read.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -329,9 +329,58 @@ fn set_map(entry: &mut dyn TableLike, key: &str, map: &BTreeMap<String, String>)
     set_value(entry, key, Value::InlineTable(table));
 }
 
+/// The name of one `env_vars` element (a name, or a `{ name = … }` table).
+fn env_var_name(value: &Value) -> Option<&str> {
+    match value {
+        Value::String(s) => Some(s.value()),
+        Value::InlineTable(t) => t.get("name").and_then(Value::as_str),
+        _ => None,
+    }
+}
+
+/// Makes `env_vars` pass exactly the names in `keep`, editing an existing
+/// array in place: elements for names still there stay as written (with any
+/// extra fields of a `{ name = … }` table), gone names are removed and new
+/// ones appended. Elements the app can't read stay.
+fn set_env_vars(entry: &mut dyn TableLike, keep: &BTreeSet<String>) {
+    if let Some(array) = entry.get_mut("env_vars").and_then(Item::as_array_mut) {
+        array.retain(|v| env_var_name(v).is_none_or(|n| keep.contains(n)));
+        let have: BTreeSet<String> = array
+            .iter()
+            .filter_map(env_var_name)
+            .map(str::to_string)
+            .collect();
+        for name in keep.difference(&have) {
+            array.push(name.as_str());
+        }
+        if array.is_empty() {
+            entry.remove("env_vars");
+        }
+    } else if !keep.is_empty() {
+        set_value(
+            entry,
+            "env_vars",
+            Value::Array(keep.iter().collect::<Array>()),
+        );
+    }
+}
+
+/// The value of the `authorization` header (any case) in `headers`.
+fn authorization(headers: &BTreeMap<String, String>) -> Option<&str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("authorization"))
+        .map(|(_, v)| v.as_str())
+}
+
 /// Writes `config` into `entry`. Keys the app doesn't edit stay; those of
-/// the other transport are dropped.
+/// the other transport are dropped. Keys the app model folds away
+/// (`bearer_token_env_var` next to an `Authorization` header, `env_vars`
+/// names shadowed by `env`, extra fields of `env_vars` tables) are only
+/// touched when the matching value in `config` changed.
 pub fn apply(entry: &mut dyn TableLike, config: &Config) {
+    let before = config_of(entry);
+    let env_before: BTreeSet<String> = string_map(entry.get("env")).into_keys().collect();
     let stdio = config.transport == "stdio";
     for key in if stdio { HTTP_KEYS } else { STDIO_KEYS } {
         entry.remove(key);
@@ -341,40 +390,61 @@ pub fn apply(entry: &mut dyn TableLike, config: &Config) {
         set_strings(entry, "args", &config.args);
         // `KEY = "${KEY}"` passes the variable on: `env_vars`.
         let mut plain = BTreeMap::new();
-        let mut passed = Vec::new();
+        let mut passed = BTreeSet::new();
         for (k, v) in &config.env {
             if referenced(v) == Some(k.as_str()) {
-                passed.push(k.clone());
+                passed.insert(k.clone());
             } else {
                 plain.insert(k.clone(), v.clone());
             }
         }
-        set_map(entry, "env", &plain);
-        let current = env_var_names(entry.get("env_vars"));
-        let mut sorted_current = current.clone();
-        sorted_current.sort();
-        if sorted_current != passed {
-            set_strings(entry, "env_vars", &passed);
+        // A name in both `env` and `env_vars` shows as its `env` value; it
+        // stays passed while the key is still there.
+        for name in env_var_names(entry.get("env_vars")) {
+            if env_before.contains(&name) && config.env.contains_key(&name) {
+                passed.insert(name);
+            }
         }
+        set_map(entry, "env", &plain);
+        set_env_vars(entry, &passed);
     } else {
         set_str(entry, "url", &config.url);
+        // Unchanged Authorization: `bearer_token_env_var` stays as written,
+        // also when an `Authorization` header hides it in the app model.
+        let keep_bearer = authorization(&config.headers) == authorization(&before.headers)
+            && entry
+                .get("bearer_token_env_var")
+                .and_then(Item::as_str)
+                .is_some_and(|s| !s.is_empty());
+        let header_in_file = [
+            string_map(entry.get("http_headers")),
+            string_map(entry.get("env_http_headers")),
+        ]
+        .iter()
+        .any(|m| authorization(m).is_some());
         let mut plain = BTreeMap::new();
         let mut from_env = BTreeMap::new();
         let mut bearer = String::new();
         for (k, v) in &config.headers {
-            let bearer_var = k
-                .eq_ignore_ascii_case("authorization")
-                .then(|| v.strip_prefix("Bearer ").and_then(referenced))
-                .flatten();
-            if let Some(var) = bearer_var {
-                bearer = var.to_string();
-            } else if let Some(var) = referenced(v) {
-                from_env.insert(k.clone(), var.to_string());
-            } else {
-                plain.insert(k.clone(), v.clone());
+            let is_auth = k.eq_ignore_ascii_case("authorization");
+            if is_auth && keep_bearer && !header_in_file {
+                // The app's view of `bearer_token_env_var` itself.
+                continue;
+            }
+            match bearer_var(k, v) {
+                Some(var) if !keep_bearer => bearer = var,
+                _ => {
+                    if let Some(var) = referenced(v) {
+                        from_env.insert(k.clone(), var.to_string());
+                    } else {
+                        plain.insert(k.clone(), v.clone());
+                    }
+                }
             }
         }
-        set_str(entry, "bearer_token_env_var", &bearer);
+        if !keep_bearer {
+            set_str(entry, "bearer_token_env_var", &bearer);
+        }
         set_map(entry, "http_headers", &plain);
         set_map(entry, "env_http_headers", &from_env);
     }
@@ -436,7 +506,55 @@ fn check_codex_config(config: &Config) -> Result<()> {
             "Codex only supports command (stdio) and HTTP servers"
         ));
     }
-    check_config(config)
+    check_config(config)?;
+    check_variables(config)
+}
+
+/// `NAME` of an `Authorization` value `Bearer ${NAME}`.
+fn bearer_var(header: &str, value: &str) -> Option<String> {
+    header
+        .eq_ignore_ascii_case("authorization")
+        .then(|| value.strip_prefix("Bearer ").and_then(referenced))
+        .flatten()
+        .map(str::to_string)
+}
+
+/// Codex doesn't expand `${VAR}` in its config: a variable reaches the
+/// server only as `env_vars` (`KEY = "${KEY}"`), a whole-value header
+/// (`env_http_headers`) or `Authorization: Bearer ${VAR}`
+/// (`bearer_token_env_var`). Any other `${` would be sent as literal text
+/// (e.g. as the server's secret), so it is refused with an explanation.
+fn check_variables(config: &Config) -> Result<()> {
+    let refuse = |field: String| {
+        Err(crate::tr!(
+            "Codex는 설정 값의 ${{변수}}를 펼치지 않아 '{field}'에 글자 그대로 전달돼요. 환경 변수는 같은 이름으로 KEY = ${{KEY}}처럼, 헤더는 값 전체를 ${{VAR}} 또는 Authorization = Bearer ${{VAR}}로 적어 주세요. 다른 값은 실제 값을 직접 입력해 주세요.",
+            "Codex doesn't expand ${{VAR}} in its config, so '{field}' would get the literal text. Pass a variable as KEY = ${{KEY}} (same name) in env, or as a whole header value ${{VAR}} or Authorization = Bearer ${{VAR}}; otherwise enter the actual value."
+        ))
+    };
+    let has = |v: &str| v.contains("${");
+    if config.transport == "stdio" {
+        if has(&config.command) {
+            return refuse("command".into());
+        }
+        if config.args.iter().any(|a| has(a)) {
+            return refuse("args".into());
+        }
+        for (k, v) in &config.env {
+            if has(v) && referenced(v) != Some(k.as_str()) {
+                return refuse(format!("env {k}"));
+            }
+        }
+    } else {
+        if has(&config.url) {
+            return refuse("url".into());
+        }
+        for (k, v) in &config.headers {
+            if has(v) && referenced(v).is_none() && bearer_var(k, v).is_none() {
+                return refuse(format!("header {k}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn exists_error(name: &str) -> String {
@@ -509,10 +627,43 @@ pub fn save(
     if let Some(table) = servers.as_table_like_mut() {
         table.insert(name, entry);
     }
+    // Moved: kept to restore the destination if the old copy can't go.
+    let original = match &old_doc {
+        Some(_) => Some(match fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                return Err(crate::tr!(
+                    "{}을(를) 읽지 못했어요: {e}",
+                    "Couldn't read {}: {e}",
+                    path.display()
+                ));
+            }
+        }),
+        None => None,
+    };
     write_doc(&path, &doc)?;
     // Moved: the new one is in place, so the old one can go.
-    if let Some((old_path, other)) = old_doc {
-        write_doc(&old_path, &other)?;
+    if let Some((old_path, other)) = old_doc
+        && let Err(e) = write_doc(&old_path, &other)
+    {
+        let restored = match original.flatten() {
+            Some(bytes) => ops::write_atomic(&path, bytes),
+            None => fs::remove_file(&path).map_err(|e| e.to_string()),
+        };
+        return Err(match restored {
+            Ok(()) => crate::tr!(
+                "{}에서 서버 '{name}'을(를) 지우지 못해 옮기기를 취소했어요 (바뀐 것 없음): {e}",
+                "Couldn't remove server '{name}' from {}, so the move was undone (nothing changed): {e}",
+                old_path.display()
+            ),
+            Err(undo) => crate::tr!(
+                "{}에서 서버 '{name}'을(를) 지우지 못했고 {}에서 되돌리지도 못해 두 파일 모두에 있어요. 하나를 직접 지워 주세요: {e}; {undo}",
+                "Couldn't remove server '{name}' from {} or undo the copy in {}, so it's now in both files; remove one by hand: {e}; {undo}",
+                old_path.display(),
+                path.display()
+            ),
+        });
     }
     Ok(())
 }
@@ -663,17 +814,166 @@ enabled = false
         let mut table = Table::new();
         apply(
             &mut table,
-            &stdio(
-                "uvx",
-                &["x"],
-                &[("TOKEN", "${TOKEN}"), ("MODE", "${OTHER}")],
-            ),
+            &stdio("uvx", &["x"], &[("TOKEN", "${TOKEN}"), ("MODE", "debug")]),
         );
         let back = config_of(&table);
         assert_eq!(back.env["TOKEN"], "${TOKEN}");
         let text = table.to_string();
         assert!(text.contains("env_vars = [\"TOKEN\"]"), "{text}");
-        assert!(text.contains("MODE = \"${OTHER}\""), "{text}");
+        assert!(text.contains("MODE = \"debug\""), "{text}");
+    }
+
+    fn http(headers: &[(&str, &str)]) -> Config {
+        Config {
+            transport: "http".into(),
+            url: "https://example.com/mcp".into(),
+            headers: headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn variables_codex_cannot_pass_are_refused() {
+        let ok = [
+            stdio("npx", &["x"], &[("KEY", "${KEY}"), ("MODE", "debug")]),
+            http(&[
+                ("Authorization", "Bearer ${TOKEN}"),
+                ("X-Key", "${KEY}"),
+                ("X-Team", "core"),
+            ]),
+        ];
+        for config in &ok {
+            assert!(check_codex_config(config).is_ok(), "{config:?}");
+        }
+        let refused = [
+            stdio("npx", &[], &[("API_KEY", "${MY_KEY}")]),
+            stdio("npx", &[], &[("KEY", "${KEY:-x}")]),
+            stdio("npx", &[], &[("KEY", "prefix-${KEY}")]),
+            stdio("npx", &["--token=${TOKEN}"], &[]),
+            stdio("${BIN}", &[], &[]),
+            http(&[("Authorization", "Basic ${CREDS}")]),
+            http(&[("X-Key", "pre-${KEY}")]),
+            http(&[("X-Key", "Bearer ${KEY}")]),
+        ];
+        for config in &refused {
+            let e = check_codex_config(config).unwrap_err();
+            assert!(e.contains("${VAR}") || e.contains("${변수}"), "{e}");
+        }
+        // Nothing is written for a refused config.
+        let f = Fixture::new("vars");
+        let (p, h) = (f.project(), f.home());
+        assert!(save(&p, &h, None, Scope::User, "x", &refused[0]).is_err());
+        assert!(!user_file(&h).exists());
+    }
+
+    #[test]
+    fn edits_keep_keys_the_form_does_not_model() {
+        // Bearer next to an Authorization header: kept on an unrelated edit.
+        let mut doc: DocumentMut = "[s]\nurl = \"https://a/mcp\"\nbearer_token_env_var = \"T\"\nhttp_headers = { Authorization = \"Basic abc\" }\n"
+            .parse()
+            .unwrap();
+        let entry = doc["s"].as_table_like_mut().unwrap();
+        let mut config = config_of(entry);
+        assert_eq!(config.headers["Authorization"], "Basic abc");
+        config.url = "https://b/mcp".into();
+        apply(entry, &config);
+        let text = doc.to_string();
+        assert!(text.contains("bearer_token_env_var = \"T\""), "{text}");
+        assert!(text.contains("Authorization = \"Basic abc\""), "{text}");
+        assert!(text.contains("https://b/mcp"), "{text}");
+
+        // Changing the Authorization header does update the bearer.
+        let entry = doc["s"].as_table_like_mut().unwrap();
+        apply(entry, &http(&[("Authorization", "Bearer ${NEW}")]));
+        let text = doc.to_string();
+        assert!(text.contains("bearer_token_env_var = \"NEW\""), "{text}");
+        assert!(!text.contains("Basic abc"), "{text}");
+
+        // Bearer only: unchanged edits keep it, removing it drops it.
+        let entry = doc["s"].as_table_like_mut().unwrap();
+        let mut config = config_of(entry);
+        config.headers.insert("X-Team".into(), "core".into());
+        apply(entry, &config);
+        let text = doc.to_string();
+        assert!(text.contains("bearer_token_env_var = \"NEW\""), "{text}");
+        assert!(!text.contains("Authorization"), "{text}");
+        let entry = doc["s"].as_table_like_mut().unwrap();
+        apply(entry, &http(&[]));
+        assert!(!doc.to_string().contains("bearer_token_env_var"));
+
+        // A name in both env and env_vars, and env_vars tables with extra
+        // fields, survive adding another variable.
+        let mut doc: DocumentMut = "[s]\ncommand = \"x\"\nenv = { A = \"1\" }\nenv_vars = [\"A\", { name = \"B\", source = \"remote\" }, \"C\"]\n"
+            .parse()
+            .unwrap();
+        let entry = doc["s"].as_table_like_mut().unwrap();
+        let mut config = config_of(entry);
+        assert_eq!(config.env["A"], "1");
+        config.env.insert("D".into(), "${D}".into());
+        config.env.remove("C");
+        apply(entry, &config);
+        let entry = doc["s"].as_table_like().unwrap();
+        let vars = entry.get("env_vars").unwrap().as_array().unwrap();
+        let text = vars.to_string();
+        assert_eq!(
+            vars.iter().filter_map(env_var_name).collect::<Vec<_>>(),
+            ["A", "B", "D"],
+            "{text}"
+        );
+        assert!(text.contains("source = \"remote\""), "{text}");
+        assert_eq!(string_map(entry.get("env"))["A"], "1");
+
+        // Removing the key from the form drops it from both.
+        let entry = doc["s"].as_table_like_mut().unwrap();
+        let mut config = config_of(entry);
+        config.env.remove("A");
+        apply(entry, &config);
+        let entry = doc["s"].as_table_like().unwrap();
+        assert!(entry.get("env").is_none());
+        assert_eq!(env_var_names(entry.get("env_vars")), ["B", "D"]);
+    }
+
+    #[test]
+    fn a_failed_move_leaves_both_files_as_they_were() {
+        let f = Fixture::new("move-fail");
+        fs::write(user_file(&f.home()), USER).unwrap();
+        let (p, h) = (f.project(), f.home());
+        // The user file can still be read but no longer written.
+        let blocker = h.join(".config.toml.ai-management-tmp");
+        fs::create_dir_all(blocker.join("x")).unwrap();
+        let e = save(
+            &p,
+            &h,
+            Some((Scope::User, "docs".into())),
+            Scope::Project,
+            "docs",
+            &stdio("npx", &["-y", "docs-mcp"], &[("LEVEL", "debug")]),
+        )
+        .unwrap_err();
+        assert!(e.contains("docs"), "{e}");
+        assert_eq!(f.user_text(), USER);
+        assert!(!project_file(&p).exists());
+
+        // An existing destination gets its exact text back.
+        fs::create_dir_all(p.join(".codex")).unwrap();
+        let project_text = "# team\n[mcp_servers.fs]\ncommand = \"npx\"\n";
+        fs::write(project_file(&p), project_text).unwrap();
+        assert!(
+            save(
+                &p,
+                &h,
+                Some((Scope::User, "docs".into())),
+                Scope::Project,
+                "docs",
+                &stdio("npx", &[], &[]),
+            )
+            .is_err()
+        );
+        assert_eq!(f.project_text(), project_text);
+        assert_eq!(f.user_text(), USER);
     }
 
     #[test]
