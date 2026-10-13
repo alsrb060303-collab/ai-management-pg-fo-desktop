@@ -83,6 +83,8 @@ export const ko = {
   "composer.node.personal": "나만",
   "composer.node.teamHint": "커밋해서 팀과 공유",
   "composer.node.personalHint": "git에 올리지 않고 나만 사용",
+  "composer.node.teamOnlyHint":
+    "{tool}에는 개인용 {file}이 없어서 팀으로만 쓸 수 있어요. {file}은 팀과 같이 쓰는 파일이에요.",
   "composer.node.deleteOutput": "출력 노드 삭제",
   "composer.model.label": "모델",
   "composer.model.auto": "자동",
@@ -141,6 +143,9 @@ export const ko = {
   "composer.write.gh.repo": "저장소",
   "composer.write.gh.branch": "브랜치",
   "composer.write.gh.pickRepo": "저장소를 골라 주세요",
+  "composer.write.gh.tool": "파일을 맞출 도구",
+  "composer.write.gh.toolDetected": "저장소의 파일을 보고 고른 도구예요. 바꿀 수 있어요.",
+  "composer.write.gh.toolPicked": "직접 고른 도구예요.",
   "composer.write.gh.hint":
     "GitHub에 있는 파일과 비교한 결과예요. 바뀌는 파일은 커밋 하나로 올라가요. '나만' 출력은 git에 올리지 않아서 빠져요.",
   "composer.write.gh.toPr": "새 브랜치에 커밋하고 PR 만들기",
@@ -301,6 +306,8 @@ export const en: Messages<typeof ko> = {
   "composer.node.personal": "Me",
   "composer.node.teamHint": "Commit it and share with your team",
   "composer.node.personalHint": "Just for you, kept out of git",
+  "composer.node.teamOnlyHint":
+    "{tool} has no personal {file}, so this is team only. {file} is shared with your team.",
   "composer.node.deleteOutput": "Delete output node",
   "composer.model.label": "Model",
   "composer.model.auto": "Auto",
@@ -356,6 +363,9 @@ export const en: Messages<typeof ko> = {
   "composer.write.gh.repo": "Repository",
   "composer.write.gh.branch": "Branch",
   "composer.write.gh.pickRepo": "Choose a repository",
+  "composer.write.gh.tool": "Lay the files out for",
+  "composer.write.gh.toolDetected": "Picked from the repository's files. You can change it.",
+  "composer.write.gh.toolPicked": "Picked by you.",
   "composer.write.gh.hint":
     "Compared with the files on GitHub. Changed files go up in one commit. 'Just me' outputs stay out of git, so they're left out.",
   "composer.write.gh.toPr": "Commit to a new branch and open a PR",

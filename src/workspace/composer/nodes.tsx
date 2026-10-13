@@ -23,6 +23,7 @@ import {
   useComposerTool,
   utf8Bytes,
 } from "../../store/composer";
+import { TOOLS } from "../../tools";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS, targetTitle } from "./kinds";
 import { DeleteNodeButton, useDraft } from "./nodeParts";
 import { PlanNodeView } from "./PlanNode";
@@ -260,6 +261,9 @@ export const OutputNodeView = memo(function OutputNodeView({
   const Icon = meta.icon;
   const inputs = doc ? inputsOf(doc, id) : [];
   const isInstructions = data.target === "instructions";
+  // Codex has no personal AGENTS.md or hooks file (compile.rs warns and writes
+  // nothing for a "Just me" one).
+  const teamOnly = tool === "codex" && (isInstructions || data.target === "hooks");
   // Claude Code: CLAUDE.md is followed better under a line budget. Codex:
   // AGENTS.md is cut after a byte limit.
   const budget =
@@ -330,22 +334,39 @@ export const OutputNodeView = memo(function OutputNodeView({
           aria-label={t("composer.node.scope")}
           className="nodrag flex rounded-md bg-sunken p-0.5 text-fs-11"
         >
-          {(["team", "personal"] as const).map((scope) => (
-            <button
-              key={scope}
-              type="button"
-              aria-pressed={data.scope === scope}
-              title={
-                scope === "team" ? t("composer.node.teamHint") : t("composer.node.personalHint")
-              }
-              onClick={() => setScope(id, scope)}
-              className={`rounded px-1.5 py-0.5 font-medium ${
-                data.scope === scope ? "bg-surface-raised text-text shadow-card" : "text-text-muted"
-              }`}
-            >
-              {scope === "team" ? t("composer.node.team") : t("composer.node.personal")}
-            </button>
-          ))}
+          {(["team", "personal"] as const).map((scope) => {
+            // An output already set to "Just me" keeps showing it (the canvas
+            // warns), but can only be switched to "Team".
+            const locked = scope === "personal" && teamOnly;
+            return (
+              <button
+                key={scope}
+                type="button"
+                aria-pressed={data.scope === scope}
+                disabled={locked}
+                title={
+                  locked
+                    ? t("composer.node.teamOnlyHint", {
+                        tool: TOOLS[tool].name,
+                        file: targetTitle(data.target, false, tool),
+                      })
+                    : scope === "team"
+                      ? t("composer.node.teamHint")
+                      : t("composer.node.personalHint")
+                }
+                onClick={() => setScope(id, scope)}
+                className={`rounded px-1.5 py-0.5 font-medium disabled:cursor-not-allowed ${
+                  data.scope === scope
+                    ? "bg-surface-raised text-text shadow-card"
+                    : locked
+                      ? "text-text-subtle opacity-50"
+                      : "text-text-muted"
+                }`}
+              >
+                {scope === "team" ? t("composer.node.team") : t("composer.node.personal")}
+              </button>
+            );
+          })}
         </fieldset>
         <span className={selected ? "[&>button]:opacity-100" : ""}>
           <DeleteNodeButton id={id} label={t("composer.node.deleteOutput")} />

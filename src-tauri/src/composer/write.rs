@@ -268,6 +268,19 @@ pub fn plan(
     {
         return item(Status::Blocked(reason), None, String::new(), None);
     }
+    // Codex's AGENTS.md is the team's file: keeping it out of git would hide
+    // the team's text too (`compile` doesn't produce this; a guard).
+    if file.personal && tool == ToolId::Codex && file.path == tool.instructions_file(false) {
+        return item(
+            Status::Blocked(crate::tr!(
+                "Codex에는 개인용 지침 파일이 없어요. AGENTS.md는 팀과 같이 쓰는 파일이라 '나만'으로 쓸 수 없어요",
+                "Codex has no personal instructions file. AGENTS.md is shared with the team, so it can't be written as 'Just me'"
+            )),
+            None,
+            String::new(),
+            None,
+        );
+    }
     let existing = match target.read(&file.path) {
         Ok(text) => text,
         Err(reason) => return item(Status::Blocked(reason), None, String::new(), None),
@@ -859,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn personal_codex_agents_md_is_blocked_when_tracked_and_excluded_otherwise() {
+    fn personal_codex_agents_md_is_always_blocked() {
         let mut f = file("AGENTS.md", "## Me", true);
         f.personal = true;
         let tracked = Fake(vec![("AGENTS.md", "# Team\n")]);
@@ -870,15 +883,19 @@ mod tests {
             item.status
         );
 
+        // Untracked team text, or no file at all: still never kept out of git.
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        fs::create_dir_all(root.join(".git").join("info")).unwrap();
         let item = plan_file(root, "p", &f, &[], ToolId::Codex);
-        assert_eq!(item.status, Status::New);
-        write_file(root, "p", &f, &item).unwrap();
-        sync_exclude(root, &f).unwrap();
-        let exclude = fs::read_to_string(root.join(".git/info/exclude")).unwrap();
-        assert!(exclude.contains("/AGENTS.md\n"), "{exclude}");
+        assert!(matches!(item.status, Status::Blocked(_)));
+        fs::write(root.join("AGENTS.md"), "# Team, not committed yet\n").unwrap();
+        let item = plan_file(root, "p", &f, &[], ToolId::Codex);
+        assert!(matches!(item.status, Status::Blocked(_)));
+
+        // A team AGENTS.md is fine.
+        f.personal = false;
+        let item = plan_file(root, "p", &f, &[], ToolId::Codex);
+        assert_eq!(item.status, Status::Update);
     }
 
     fn codex_hooks(cmd: &str) -> OutFile {

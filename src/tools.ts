@@ -45,8 +45,8 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
   codex: {
     id: "codex",
     name: "Codex",
-    // Codex has no personal file next to AGENTS.md; a personal section goes
-    // into AGENTS.md kept out of git.
+    // Codex has no personal file next to AGENTS.md, which is the team's; the
+    // composer writes Codex instructions for the team only.
     instructions: { team: "AGENTS.md", personal: "AGENTS.md" },
     skillsDir: ".agents/skills",
     agentsDir: ".codex/agents",

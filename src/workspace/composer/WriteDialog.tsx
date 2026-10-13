@@ -9,7 +9,7 @@ import { type ComposerDoc, useComposerTool } from "../../store/composer";
 import { type Pull, useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, useRemoteStore } from "../../store/remote";
-import { TOOLS } from "../../tools";
+import { TOOL_IDS, TOOLS, type ToolId } from "../../tools";
 
 // Mirrors `PlanItem` / `Status` in src-tauri/src/composer/write.rs.
 type Status =
@@ -35,6 +35,9 @@ interface WriteResult {
 // Mirrors `RemotePlan` / `RemoteWriteResult` in src-tauri/src/composer/remote.rs.
 interface RemotePlan {
   head: string;
+  /** The tool the files are laid out for, and whether it was detected from the repository. */
+  tool: ToolId;
+  detected: boolean;
   items: PlanItem[];
 }
 
@@ -129,11 +132,16 @@ export function WriteDialog({ doc, onClose }: { doc: ComposerDoc; onClose: () =>
               remember(MODE_KEY, m);
             }}
           />
+          {/* GitHub writes follow the repository's tool, picked in that pane. */}
           <span
             className="ml-auto truncate text-xs text-text-subtle"
-            title={t("composer.palette.toolHint", { tool: TOOLS[tool].name })}
+            title={
+              mode === "local"
+                ? t("composer.palette.toolHint", { tool: TOOLS[tool].name })
+                : undefined
+            }
           >
-            {t("composer.palette.forTool", { tool: TOOLS[tool].name })}
+            {mode === "local" && t("composer.palette.forTool", { tool: TOOLS[tool].name })}
           </span>
           <IconButton label={t("composer.write.close")} onClick={onClose}>
             <X size={17} />
@@ -354,8 +362,10 @@ const field =
 /** Writes straight to a GitHub branch: one commit, optionally on a new branch with a PR. */
 function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }) {
   const t = useT();
-  // No local project here: the files follow the composer's tool.
-  const tool = useComposerTool();
+  // No local project here: the files follow the repository's tool, detected
+  // from its files (else the default tool) unless the user picks one.
+  const defaultTool = useProjectStore((s) => s.defaultTool);
+  const [picked, setPicked] = useState<ToolId | null>(null);
   const account = useGitHubStore((s) => s.status?.account ?? null);
   const initGitHub = useGitHubStore((s) => s.init);
   const repos = useRemoteStore((s) => s.repos);
@@ -395,6 +405,7 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
     let live = true;
     setView(null);
     setBranch(null);
+    setPicked(null);
     setError(null);
     invoke<RemoteView>("github_remote", { slug, branch: null })
       .then((v) => {
@@ -415,11 +426,20 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
     setConfirmed(new Set());
     setOpen(null);
     try {
-      setPlan(await invoke<RemotePlan>("composer_plan_remote", { slug, branch, doc, tool }));
+      setPlan(
+        await invoke<RemotePlan>("composer_plan_remote", {
+          slug,
+          branch,
+          doc,
+          tool: picked,
+          fallback: defaultTool,
+        }),
+      );
     } catch (e) {
       setError(String(e));
     }
-  }, [slug, branch, doc, tool]);
+  }, [slug, branch, doc, picked, defaultTool]);
+  const shownTool = picked ?? plan?.tool ?? null;
 
   useEffect(() => {
     void load();
@@ -440,7 +460,7 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
         branch,
         head: plan.head,
         doc,
-        tool,
+        tool: plan.tool,
         confirmed: confirmationsOf(plan.items, confirmed),
         message,
         newBranch: commitTo === "pr" ? newBranch.trim() : null,
@@ -509,6 +529,20 @@ function GitHubWrite({ doc, onClose }: { doc: ComposerDoc; onClose: () => void }
             </option>
           ))}
         </select>
+        {shownTool && !result && (
+          <div className="flex w-full items-center gap-2 text-xs text-text-muted">
+            <span className="shrink-0">{t("composer.write.gh.tool")}</span>
+            <Segmented
+              label={t("composer.write.gh.tool")}
+              value={shownTool}
+              options={TOOL_IDS.map((id) => ({ value: id, label: TOOLS[id].name }))}
+              onChange={setPicked}
+            />
+            <span className="min-w-0 truncate text-text-subtle">
+              {picked ? t("composer.write.gh.toolPicked") : t("composer.write.gh.toolDetected")}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
