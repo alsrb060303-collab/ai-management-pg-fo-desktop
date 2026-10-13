@@ -13,7 +13,7 @@ pub fn apply(app: &AppHandle, dock: &Dock) {
     };
     let _ = window.set_always_on_top(settings.pinned);
 
-    if settings.enabled
+    if settings.magnet.on()
         && let Ok(Some(monitor)) = window.current_monitor()
     {
         let area = monitor.work_area();
@@ -35,10 +35,10 @@ pub fn apply(app: &AppHandle, dock: &Dock) {
     dock.publish(
         app,
         DockStatus {
-            enabled: settings.enabled,
+            magnet: settings.magnet,
             pinned: settings.pinned,
             visible: settings.visible,
-            mode: if settings.enabled {
+            mode: if settings.magnet.on() {
                 DockMode::Edge
             } else {
                 DockMode::Floating

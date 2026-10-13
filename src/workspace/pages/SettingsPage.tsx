@@ -1,5 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { isTauri } from "@tauri-apps/api/core";
+import { Magnet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Card, PageHeader, Row, Segmented, Switch } from "../../components/ui";
 import { ModsCard } from "../../features/mods/ModsCard";
@@ -23,7 +24,7 @@ export function SettingsPage() {
     { value: "ko", label: "한국어" },
     { value: "en", label: "English" },
   ];
-  const { status, setEnabled, setPinned } = useDockStore();
+  const { status, setPinned } = useDockStore();
   const { overview, busy, load, chooseDir } = useLibraryStore();
   const resetDir = useLibraryStore((s) => s.useDefaultDir);
   const [version, setVersion] = useState<string | null>(null);
@@ -58,12 +59,7 @@ export function SettingsPage() {
 
       <Card title={t("settings.sidebar")}>
         <Row title={t("settings.dock")} description={t("settings.dockHint")}>
-          <Switch
-            label={t("settings.dock")}
-            checked={status?.enabled ?? false}
-            disabled={!status}
-            onChange={(on) => void setEnabled(on)}
-          />
+          <Magnet size={16} className="shrink-0 text-text-muted" />
         </Row>
         <Row title={t("settings.pin")} description={t("settings.pinHint")}>
           <Switch

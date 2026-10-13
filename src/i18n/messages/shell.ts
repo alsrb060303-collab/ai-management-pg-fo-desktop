@@ -45,8 +45,9 @@ export const ko = {
 
   // Sidebar window: title bar
   "shell.title.toMain": "메인 창으로 전환",
-  "shell.title.undock": "터미널에서 떼기",
-  "shell.title.dock": "터미널 옆에 붙이기",
+  "shell.title.magnet.auto": "자석: 앞에 있는 창 자동 감지 (누르면 이 창에 고정)",
+  "shell.title.magnet.locked": "자석: 이 창에 고정 (누르면 자석 해제)",
+  "shell.title.magnet.off": "자석 해제됨 (누르면 자동 감지)",
   "shell.title.unpin": "항상 위 해제",
   "shell.title.pin": "항상 위",
   "shell.title.hide": "숨기기 (Ctrl+Alt+Space)",
@@ -61,6 +62,8 @@ export const ko = {
   "shell.dock.inside": "{app} 위에 겹쳐서 붙음",
   "shell.dock.waiting": "{app} 대기 중",
   "shell.dock.edge": "화면 가장자리",
+  "shell.dock.locked": "고정",
+  "shell.dock.lockNext": "다음에 여는 터미널·편집기 창에 고정해요",
   "shell.dock.floating": "도킹 꺼짐",
 } as const;
 
@@ -107,8 +110,9 @@ export const en: Messages<typeof ko> = {
   "shell.tab.commands": "Commands",
 
   "shell.title.toMain": "Switch to main window",
-  "shell.title.undock": "Undock from terminal",
-  "shell.title.dock": "Dock next to terminal",
+  "shell.title.magnet.auto": "Magnet: follows the window in front (click to stay with this one)",
+  "shell.title.magnet.locked": "Magnet: stays with this window (click to turn off)",
+  "shell.title.magnet.off": "Magnet off (click to follow the window in front)",
   "shell.title.unpin": "Turn off always on top",
   "shell.title.pin": "Always on top",
   "shell.title.hide": "Hide (Ctrl+Alt+Space)",
@@ -122,5 +126,7 @@ export const en: Messages<typeof ko> = {
   "shell.dock.inside": "Docked over {app}",
   "shell.dock.waiting": "Waiting for {app}",
   "shell.dock.edge": "Screen edge",
+  "shell.dock.locked": "locked",
+  "shell.dock.lockNext": "Will stay with the next terminal or editor you bring forward",
   "shell.dock.floating": "Docking off",
 };

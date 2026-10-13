@@ -34,7 +34,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             dock::dock_status,
-            dock::dock_set_enabled,
+            dock::dock_cycle_magnet,
             dock::dock_set_pinned,
             dock::sidebar_hide,
             claude_config::claude_config_scan,

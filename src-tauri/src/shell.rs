@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 
-use crate::dock::Dock;
+use crate::dock::{Dock, Magnet};
 
 pub const MAIN_LABEL: &str = "main";
 pub const VIEW_EVENT: &str = "view-mode";
@@ -108,13 +108,20 @@ pub fn show_main(app: &AppHandle) {
     });
 }
 
-/// Closes the main window and shows the sidebar beside the terminal.
+/// Closes the main window and shows the sidebar beside the terminal. Coming
+/// from the main window, the magnet starts over in auto mode, following
+/// whichever window is in front.
 pub fn show_sidebar(app: &AppHandle) {
-    app.state::<Shell>().set_mode(app, ViewMode::Sidebar);
+    let shell = app.state::<Shell>();
+    let dock = app.state::<Dock>();
+    if shell.mode() != ViewMode::Sidebar {
+        dock.reset_magnet(Magnet::Auto);
+    }
+    shell.set_mode(app, ViewMode::Sidebar);
     if let Some(window) = app.get_webview_window(MAIN_LABEL) {
         let _ = window.close();
     }
-    app.state::<Dock>().set_visible(app, true);
+    dock.set_visible(app, true);
 }
 
 /// Shows the window for the current mode, e.g. on a second launch or tray click.

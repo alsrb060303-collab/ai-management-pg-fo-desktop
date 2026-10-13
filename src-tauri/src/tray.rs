@@ -5,7 +5,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-use crate::dock::{Dock, STATUS_EVENT};
+use crate::dock::{Dock, Magnet, STATUS_EVENT};
 use crate::shell;
 
 /// Shows or hides the current window (main or sidebar) from anywhere.
@@ -44,7 +44,7 @@ pub fn relabel(app: &AppHandle) {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let enabled = app.state::<Dock>().settings().enabled;
+    let enabled = app.state::<Dock>().settings().magnet.on();
     let [
         toggle_label,
         main_label,
@@ -80,7 +80,14 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
                 "toggle" => shell::toggle(app, false),
                 "main" => shell::show_main(app),
                 "sidebar" => shell::show_sidebar(app),
-                "dock" => dock.set_enabled(app, !dock.settings().enabled),
+                "dock" => dock.set_magnet(
+                    app,
+                    if dock.settings().magnet.on() {
+                        Magnet::Off
+                    } else {
+                        Magnet::Auto
+                    },
+                ),
                 "quit" => app.exit(0),
                 _ => {}
             }
@@ -112,7 +119,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     // Keep the check mark in sync when docking is toggled from the sidebar.
     let handle = app.clone();
     app.listen(STATUS_EVENT, move |_| {
-        let enabled = handle.state::<Dock>().settings().enabled;
+        let enabled = handle.state::<Dock>().settings().magnet.on();
         let _ = dock_item.set_checked(enabled);
     });
     Ok(())

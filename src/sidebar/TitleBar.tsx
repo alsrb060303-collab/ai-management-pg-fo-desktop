@@ -1,18 +1,24 @@
-import { AppWindow, EyeOff, Magnet, Pin } from "lucide-react";
+import { AppWindow, EyeOff, Lock, Magnet, Pin } from "lucide-react";
 import { Logo } from "../components/Logo";
-import { useT } from "../i18n";
-import { useDockStore } from "../store/dock";
+import { type MessageKey, useT } from "../i18n";
+import { type Magnet as MagnetMode, useDockStore } from "../store/dock";
 import { switchView } from "../store/view";
+
+const MAGNET_LABEL: Record<MagnetMode, MessageKey> = {
+  auto: "shell.title.magnet.auto",
+  locked: "shell.title.magnet.locked",
+  off: "shell.title.magnet.off",
+};
 
 // The window is undecorated, so this bar provides dragging and the window buttons.
 export function TitleBar() {
   const status = useDockStore((s) => s.status);
-  const setEnabled = useDockStore((s) => s.setEnabled);
+  const cycleMagnet = useDockStore((s) => s.cycleMagnet);
   const setPinned = useDockStore((s) => s.setPinned);
   const hide = useDockStore((s) => s.hide);
   const t = useT();
 
-  const docked = status?.enabled ?? false;
+  const magnet = status?.magnet ?? "auto";
   const pinned = status?.pinned ?? false;
 
   return (
@@ -32,11 +38,20 @@ export function TitleBar() {
           <AppWindow size={14} />
         </TitleButton>
         <TitleButton
-          label={docked ? t("shell.title.undock") : t("shell.title.dock")}
-          onClick={() => setEnabled(!docked)}
-          active={docked}
+          label={t(MAGNET_LABEL[magnet])}
+          onClick={() => void cycleMagnet()}
+          active={magnet !== "off"}
         >
-          <Magnet size={14} />
+          <span className="relative flex">
+            <Magnet size={14} />
+            {magnet === "locked" && (
+              <Lock
+                size={8}
+                strokeWidth={3}
+                className="absolute -right-1.5 -bottom-1 rounded-sm bg-surface-raised"
+              />
+            )}
+          </span>
         </TitleButton>
         <TitleButton
           label={pinned ? t("shell.title.unpin") : t("shell.title.pin")}

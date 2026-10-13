@@ -27,10 +27,11 @@ function describe(status: DockStatus | null, t: T): string {
   switch (status.mode) {
     case "docked": {
       const app = status.target ? appName(status.target, t) : t("shell.dock.window");
-      return t(status.side ? SIDES[status.side] : "shell.dock.waiting", { app });
+      const where = t(status.side ? SIDES[status.side] : "shell.dock.waiting", { app });
+      return status.magnet === "locked" ? `${where} · ${t("shell.dock.locked")}` : where;
     }
     case "edge":
-      return t("shell.dock.edge");
+      return t(status.magnet === "locked" ? "shell.dock.lockNext" : "shell.dock.edge");
     case "floating":
       return t("shell.dock.floating");
   }
