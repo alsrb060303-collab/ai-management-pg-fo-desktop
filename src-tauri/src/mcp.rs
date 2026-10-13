@@ -1294,7 +1294,7 @@ pub fn recommended() -> Vec<Recommended> {
 
 fn config_dir(app: &AppHandle) -> Result<PathBuf> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    Ok(crate::claude_config::Env::detect(home).config_dir)
+    Ok(crate::tools::claude::Env::detect(home).config_dir)
 }
 
 fn project_dir(project: &str) -> Result<PathBuf> {

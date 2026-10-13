@@ -10,54 +10,93 @@ import {
   type ConfigState,
   useProjectStore,
 } from "../../store/project";
+import { TOOLS, type ToolId } from "../../tools";
 import { ModeButtons, smallButton } from "./ModeButtons";
+import { ToolPicker } from "./ToolPicker";
 
-/** `hint` says in one line what the kind does; `path` (where it lives) is the tooltip. */
-const SECTIONS: { kind: ConfigKind; title: MessageKey; hint: MessageKey; path: string }[] = [
-  {
-    kind: "instructions",
-    title: "docs.section.instructions",
-    hint: "docs.section.instructionsHint",
-    path: "CLAUDE.md",
-  },
-  {
-    kind: "rule",
-    title: "docs.section.rule",
-    hint: "docs.section.ruleHint",
-    path: ".claude/rules",
-  },
-  {
-    kind: "skill",
-    title: "docs.section.skill",
-    hint: "docs.section.skillHint",
-    path: ".claude/skills",
-  },
-  {
-    kind: "agent",
-    title: "docs.section.agent",
-    hint: "docs.section.agentHint",
-    path: ".claude/agents",
-  },
-  {
-    kind: "command",
-    title: "docs.section.command",
-    hint: "docs.section.commandHint",
-    path: ".claude/commands",
-  },
-  { kind: "mcp", title: "docs.section.mcp", hint: "docs.section.mcpHint", path: ".mcp.json" },
-  {
-    kind: "plugin",
-    title: "docs.section.plugin",
-    hint: "docs.section.pluginHint",
-    path: "enabledPlugins",
-  },
-  {
-    kind: "settings",
-    title: "docs.section.settings",
-    hint: "docs.section.settingsHint",
-    path: "settings.json",
-  },
-];
+interface Section {
+  kind: ConfigKind;
+  title: MessageKey;
+  /** What the kind does, in one line. */
+  hint: MessageKey;
+  /** Where it lives, as a tooltip. */
+  path: string;
+}
+
+/** Map sections for the tool the map was scanned for, in display order. */
+function sectionsFor(tool: ToolId): Section[] {
+  const info = TOOLS[tool];
+  const codex = tool === "codex";
+  const sections: (Section | null)[] = [
+    {
+      kind: "instructions",
+      title: "docs.section.instructions",
+      hint: "docs.section.instructionsHint",
+      path: info.instructions.team,
+    },
+    info.rulesDir
+      ? {
+          kind: "rule",
+          title: "docs.section.rule",
+          hint: "docs.section.ruleHint",
+          path: info.rulesDir,
+        }
+      : null,
+    {
+      kind: "skill",
+      title: "docs.section.skill",
+      hint: "docs.section.skillHint",
+      path: info.skillsDir,
+    },
+    {
+      kind: "agent",
+      title: "docs.section.agent",
+      hint: "docs.section.agentHint",
+      path: info.agentsDir,
+    },
+    {
+      kind: "command",
+      title: "docs.section.command",
+      hint: "docs.section.commandHint",
+      path: codex ? "~/.codex/prompts" : ".claude/commands",
+    },
+    {
+      kind: "mcp",
+      title: "docs.section.mcp",
+      hint: "docs.section.mcpHint",
+      path: codex ? "config.toml [mcp_servers]" : ".mcp.json",
+    },
+    codex
+      ? {
+          kind: "policy",
+          title: "docs.section.policy",
+          hint: "docs.section.policyHint",
+          path: "rules/*.rules",
+        }
+      : null,
+    {
+      kind: "hook",
+      title: "docs.section.hook",
+      hint: "docs.section.hookHint",
+      path: codex ? "hooks.json · config.toml [hooks]" : "settings.json hooks",
+    },
+    codex
+      ? null
+      : {
+          kind: "plugin",
+          title: "docs.section.plugin",
+          hint: "docs.section.pluginHint",
+          path: "enabledPlugins",
+        },
+    {
+      kind: "settings",
+      title: "docs.section.settings",
+      hint: "docs.section.settingsHint",
+      path: info.settingsFile,
+    },
+  ];
+  return sections.filter((s): s is Section => s !== null);
+}
 
 /** What each scope means, shown when an item is opened. */
 const SCOPE_HELP: Record<ConfigScope, MessageKey> = {
@@ -131,6 +170,7 @@ export function ConfigMapPanel({
         onSelect={select}
         onRefresh={refresh}
       />
+      {current && <ToolPicker />}
       {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
       {libraryError && (
         <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{libraryError}</p>
@@ -140,7 +180,7 @@ export function ConfigMapPanel({
       )}
       {!current && <p className="text-xs text-text-muted">{t("docs.map.pickProject")}</p>}
       {map &&
-        SECTIONS.map((section) => {
+        sectionsFor(map.tool).map((section) => {
           const items = map.items.filter((i) => i.kind === section.kind);
           if (items.length === 0) return null;
           return (
@@ -178,7 +218,9 @@ export function ConfigMapPanel({
           );
         })}
       {map && map.items.length === 0 && (
-        <p className="text-xs text-text-muted">{t("docs.map.empty")}</p>
+        <p className="text-xs text-text-muted">
+          {t("docs.map.empty", { tool: TOOLS[map.tool].name })}
+        </p>
       )}
       {map && map.notes.length > 0 && (
         <ul className="space-y-0.5 border-t border-border pt-2 text-fs-11 text-text-muted">

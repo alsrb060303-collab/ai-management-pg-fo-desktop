@@ -9,6 +9,7 @@ import * as mcp from "./messages/mcp";
 import * as memo from "./messages/memo";
 import * as settings from "./messages/settings";
 import * as shell from "./messages/shell";
+import * as tools from "./messages/tools";
 import * as work from "./messages/work";
 
 /**
@@ -30,6 +31,7 @@ const KO = {
   ...work.ko,
   ...memo.ko,
   ...account.ko,
+  ...tools.ko,
 };
 export type MessageKey = keyof typeof KO;
 const EN: Record<MessageKey, string> = {
@@ -43,6 +45,7 @@ const EN: Record<MessageKey, string> = {
   ...work.en,
   ...memo.en,
   ...account.en,
+  ...tools.en,
 };
 const MESSAGES: Record<Locale, Record<MessageKey, string>> = { ko: KO, en: EN };
 

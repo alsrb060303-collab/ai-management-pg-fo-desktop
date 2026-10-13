@@ -15,7 +15,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::claude_config::frontmatter;
+use crate::tools::frontmatter;
 use ops::Change;
 
 /// Error prefix the UI uses to ask before discarding the user's edits.

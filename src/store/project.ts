@@ -2,8 +2,9 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 import { onLocaleApplied, t } from "../i18n";
+import { isToolId, type ToolId, type ToolPref } from "../tools";
 
-// Mirrors `ConfigMap` in src-tauri/src/claude_config/mod.rs.
+// Mirrors `ConfigMap` in src-tauri/src/tools/mod.rs.
 export type ConfigKind =
   | "instructions"
   | "rule"
@@ -12,7 +13,9 @@ export type ConfigKind =
   | "agent"
   | "settings"
   | "mcp"
-  | "plugin";
+  | "plugin"
+  | "policy"
+  | "hook";
 export type ConfigScope = "managed" | "user" | "parent" | "project" | "local";
 export type ConfigState = "active" | "conditional" | "limited" | "off" | "shadowed" | "notLoaded";
 
@@ -27,10 +30,19 @@ export interface ConfigItem {
 }
 
 export interface ConfigMap {
+  tool: ToolId;
   project: string;
   repoRoot: string | null;
   items: ConfigItem[];
   notes: string[];
+}
+
+// Mirrors `Detection` in src-tauri/src/tools/detect.rs.
+export interface Detection {
+  tool: ToolId;
+  reason: "files" | "installed" | "fallback";
+  signals: { tool: ToolId; path: string }[];
+  installed: ToolId[];
 }
 
 // Both windows share localStorage; it is the source of truth for the recent
@@ -39,23 +51,39 @@ export interface ConfigMap {
 const RECENT_KEY = "recentProjects";
 const CURRENT_KEY = "currentProject";
 const MAX_RECENT = 8;
+/** `{ [project path]: ToolPref }`; a project not listed is "auto". */
+const TOOL_PREFS_KEY = "toolPrefs";
+const DEFAULT_TOOL_KEY = "defaultTool";
 let requestId = 0;
 
 interface ProjectState {
   current: string | null;
   recent: string[];
   map: ConfigMap | null;
+  /** The current project's choice and what detection found. */
+  toolPref: ToolPref;
+  detection: Detection | null;
+  /** The tool the app works with for the current project. */
+  tool: ToolId;
+  /** Used when detection finds nothing to go on. */
+  defaultTool: ToolId;
   loading: boolean;
   error: string | null;
   choose: () => Promise<void>;
   select: (path: string) => Promise<void>;
   refresh: () => Promise<void>;
+  setToolPref: (pref: ToolPref) => Promise<void>;
+  setDefaultTool: (tool: ToolId) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   current: null,
   recent: loadRecent(),
   map: null,
+  toolPref: "auto",
+  detection: null,
+  tool: loadDefaultTool(),
+  defaultTool: loadDefaultTool(),
   loading: false,
   error: null,
 
@@ -66,7 +94,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   select: async (path) => {
-    if (get().current !== path) set({ current: path, map: null, error: null });
+    if (get().current !== path) {
+      set({ current: path, map: null, detection: null, error: null, toolPref: loadToolPref(path) });
+    }
     saveCurrent(path);
     await get().refresh();
   },
@@ -76,9 +106,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!path || !isTauri()) return;
     // A newer request (or a project switch) supersedes this one.
     const id = ++requestId;
-    set({ loading: true, error: null });
+    const toolPref = loadToolPref(path);
+    const defaultTool = loadDefaultTool();
+    set({ loading: true, error: null, toolPref, defaultTool });
     try {
-      const map = await invoke<ConfigMap>("claude_config_scan", { path });
+      const detection = await invoke<Detection>("tool_detect", { path, fallback: defaultTool });
+      if (id !== requestId) return;
+      const tool = toolPref === "auto" ? detection.tool : toolPref;
+      set({ detection, tool });
+      const map = await invoke<ConfigMap>("config_scan", { path, tool });
       if (id !== requestId) return;
       const recent = [path, ...loadRecent().filter((p) => p !== path)].slice(0, MAX_RECENT);
       saveRecent(recent);
@@ -95,10 +131,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ map: null, loading: false, error, recent });
     }
   },
+
+  setToolPref: async (pref) => {
+    const path = get().current;
+    if (!path) return;
+    saveToolPref(path, pref);
+    set({ toolPref: pref, map: null });
+    await get().refresh();
+  },
+
+  setDefaultTool: async (tool) => {
+    try {
+      localStorage.setItem(DEFAULT_TOOL_KEY, tool);
+    } catch {
+      // Only a convenience.
+    }
+    set({ defaultTool: tool });
+    await get().refresh();
+  },
 }));
 
 /**
- * The backend's "folder not found" error from `claude_config_scan`. It is
+ * The backend's "folder not found" error from `config_scan` / `tool_detect`. It is
  * translated to the app language (Korean or English), so accept both prefixes.
  */
 function isFolderNotFound(error: string): boolean {
@@ -142,7 +196,46 @@ export function restoreProject() {
 
 window.addEventListener("storage", (event) => {
   if (event.key === RECENT_KEY) useProjectStore.setState({ recent: loadRecent() });
+  // A tool change in the other window: follow it.
+  if (event.key === TOOL_PREFS_KEY || event.key === DEFAULT_TOOL_KEY) {
+    void useProjectStore.getState().refresh();
+  }
 });
+
+function loadToolPrefs(): Record<string, ToolPref> {
+  try {
+    const value = JSON.parse(localStorage.getItem(TOOL_PREFS_KEY) ?? "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function loadToolPref(path: string): ToolPref {
+  const pref = loadToolPrefs()[path];
+  return isToolId(pref) ? pref : "auto";
+}
+
+function saveToolPref(path: string, pref: ToolPref) {
+  const prefs = loadToolPrefs();
+  if (pref === "auto") delete prefs[path];
+  else prefs[path] = pref;
+  try {
+    localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // The choice just won't persist.
+  }
+}
+
+function loadDefaultTool(): ToolId {
+  try {
+    const value = localStorage.getItem(DEFAULT_TOOL_KEY);
+    if (isToolId(value)) return value;
+  } catch {
+    // Fall through to the default.
+  }
+  return "claude";
+}
 
 function loadRecent(): string[] {
   try {
