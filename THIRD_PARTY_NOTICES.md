@@ -93,4 +93,7 @@ Only the Markdown of the listed files is included: no scripts, hooks, MCP
 configuration or other files from these projects.
 
 Fonts (SIL Open Font License 1.1): Pretendard, Source Serif 4, JetBrains Mono.
-Icons: Lucide (ISC). Graph editor: React Flow (MIT).
+Icons: Lucide (ISC). Google and GitHub marks on the sign-in buttons: Simple
+Icons 16.35.0 (CC0-1.0, unchanged paths drawn in the text color); the marks
+are trademarks of Google LLC and GitHub, Inc., used only to label signing in
+with those services. Graph editor: React Flow (MIT).
