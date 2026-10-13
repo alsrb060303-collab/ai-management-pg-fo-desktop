@@ -15,15 +15,45 @@ export function History({ compact }: { compact: boolean }) {
   const overview = useWorkStore((s) => s.overview);
   const view = useGitHubStore((s) => s.view);
   if (!overview) return null;
-  const { log, unpushed, hasRemote } = overview;
-  if (!log.length) return <p className="text-xs text-text-subtle">{t("work.log.empty")}</p>;
+  return (
+    <Timeline
+      commits={overview.log}
+      unpushed={overview.hasRemote ? overview.unpushed : 0}
+      compact={compact}
+      urlOf={view ? (c) => `${view.url}/commit/${c.hash}` : () => null}
+      expandable
+      hint={t("work.log.hint")}
+    />
+  );
+}
+
+/** A list of commits, newest first, drawn as a timeline. */
+export function Timeline({
+  commits,
+  unpushed,
+  compact,
+  urlOf,
+  expandable,
+  hint,
+}: {
+  commits: Commit[];
+  /** Commits not on GitHub yet (0 when there is no remote). */
+  unpushed: number;
+  compact: boolean;
+  urlOf: (c: Commit) => string | null;
+  /** Clicking a commit shows its changes (local repositories only). */
+  expandable: boolean;
+  hint?: string;
+}) {
+  const t = useT();
+  if (!commits.length) return <p className="text-xs text-text-subtle">{t("work.log.empty")}</p>;
   // The first pushed commit gets the "above isn't on GitHub" line.
-  const firstPushed = hasRemote && unpushed > 0 ? log.findIndex((c) => c.pushed) : -1;
+  const firstPushed = unpushed > 0 ? commits.findIndex((c) => c.pushed) : -1;
 
   return (
     <div>
       <ol>
-        {log.map((c, i) => (
+        {commits.map((c, i) => (
           <li key={c.hash}>
             {i === firstPushed && i > 0 && (
               <div className="my-1 flex items-center gap-2 pl-1 text-[10.5px] font-medium text-accent">
@@ -38,14 +68,15 @@ export function History({ compact }: { compact: boolean }) {
               commit={c}
               compact={compact}
               now={i === 0}
-              last={i === log.length - 1}
-              unpushed={hasRemote && !c.pushed}
-              url={view ? `${view.url}/commit/${c.hash}` : null}
+              last={i === commits.length - 1}
+              unpushed={unpushed > 0 && !c.pushed}
+              url={urlOf(c)}
+              expandable={expandable}
             />
           </li>
         ))}
       </ol>
-      <p className="mt-2 text-[11px] text-text-subtle">{t("work.log.hint")}</p>
+      {hint && <p className="mt-2 text-[11px] text-text-subtle">{hint}</p>}
     </div>
   );
 }
@@ -57,6 +88,7 @@ function CommitRow({
   last,
   unpushed,
   url,
+  expandable,
 }: {
   commit: Commit;
   compact: boolean;
@@ -64,10 +96,11 @@ function CommitRow({
   last: boolean;
   unpushed: boolean;
   url: string | null;
+  expandable: boolean;
 }) {
   const t = useT();
   const { openCommit, commitDiff, showCommit } = useWorkStore();
-  const open_ = openCommit === c.hash;
+  const open_ = expandable && openCommit === c.hash;
   const [copied, setCopied] = useState(false);
   const copy = () => {
     void navigator.clipboard
@@ -106,15 +139,17 @@ function CommitRow({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => void showCommit(c.hash)}
-            aria-expanded={open_}
-            title={`${c.subject}\n${t(open_ ? "work.log.hideChanges" : "work.log.showChanges")}`}
+            onClick={() => (expandable ? void showCommit(c.hash) : url && open(url))}
+            aria-expanded={expandable ? open_ : undefined}
+            title={`${c.subject}\n${expandable ? t(open_ ? "work.log.hideChanges" : "work.log.showChanges") : t("work.log.open")}`}
             className="flex min-w-0 items-center gap-1 rounded text-left hover:text-accent"
           >
-            <ChevronRight
-              size={12}
-              className={`shrink-0 text-text-subtle transition-transform ${open_ ? "rotate-90" : ""}`}
-            />
+            {expandable && (
+              <ChevronRight
+                size={12}
+                className={`shrink-0 text-text-subtle transition-transform ${open_ ? "rotate-90" : ""}`}
+              />
+            )}
             <span className="min-w-0 truncate">{c.subject}</span>
           </button>
           {now && (

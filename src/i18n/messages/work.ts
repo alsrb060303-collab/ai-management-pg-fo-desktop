@@ -294,6 +294,9 @@ export const ko = {
   "work.draft.replaceTitle": "초안으로 바꾸기",
   "work.log.showChanges": "변경 보기",
   "work.log.hideChanges": "변경 닫기",
+  "work.tab.files": "파일",
+  "work.flow.editing": "{n}개 수정 중",
+  "work.next.commitRemote": "수정한 파일 {n}개 커밋하기",
 } as const;
 
 export const en: Messages<typeof ko> = {
@@ -595,4 +598,7 @@ export const en: Messages<typeof ko> = {
   "work.draft.replaceTitle": "Replace with a draft",
   "work.log.showChanges": "Show changes",
   "work.log.hideChanges": "Hide changes",
+  "work.tab.files": "Files",
+  "work.flow.editing": "{n} edited",
+  "work.next.commitRemote": "Commit {n} edited files",
 };

@@ -27,6 +27,7 @@ export interface Commit {
   author: string;
   date: string;
   url: string;
+  merge: boolean;
 }
 
 export interface RemoteView {
@@ -34,6 +35,8 @@ export interface RemoteView {
   branch: string;
   branches: RemoteBranch[];
   commits: Commit[];
+  /** The branch against the default branch; `null` on the default branch. */
+  base: { name: string; ahead: number; behind: number } | null;
   view: RepoView;
 }
 

@@ -29,6 +29,7 @@ import { GitHubSection, PullBadge, useGitHubSync } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
 import { History } from "./History";
 import { RemoteRepo, RepoPicker } from "./RemoteRepo";
+import { TabBar, type TabItem } from "./TabBar";
 import { useWorkUi, type WorkTab } from "./ui";
 
 /** How often the state is re-read while the panel is visible. */
@@ -157,7 +158,7 @@ function Tabs({ compact }: { compact: boolean }) {
   const { tab, setTab } = useWorkUi();
   if (!overview) return null;
   const github = !!status?.configured && (!status.account || overview.hasRemote);
-  const tabs: { key: WorkTab; label: string; count?: number; dot?: boolean }[] = [
+  const tabs: TabItem<WorkTab>[] = [
     {
       key: "changes",
       label: t("work.tab.changes"),
@@ -180,38 +181,7 @@ function Tabs({ compact }: { compact: boolean }) {
   const shown = tabs.some((x) => x.key === tab) ? tab : "changes";
   return (
     <div className="space-y-3">
-      <div
-        role="tablist"
-        className={`flex gap-0.5 rounded-lg bg-sunken p-0.5 ${compact ? "flex-wrap" : ""}`}
-      >
-        {tabs.map((x) => (
-          <button
-            key={x.key}
-            type="button"
-            role="tab"
-            aria-selected={shown === x.key}
-            onClick={() => setTab(x.key)}
-            className={`flex shrink-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 py-1 ${
-              compact ? "text-[11px]" : "text-xs"
-            } ${
-              shown === x.key
-                ? "bg-surface-raised font-semibold text-text shadow-card"
-                : "text-text-muted hover:text-text"
-            }`}
-          >
-            {x.label}
-            {x.count !== undefined && (
-              <span
-                className={`rounded-full px-1 text-[10px] tabular-nums ${
-                  x.dot ? "bg-accent-soft text-accent" : "text-text-subtle"
-                }`}
-              >
-                {x.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={tabs} tab={shown} onTab={setTab} compact={compact} />
       <div role="tabpanel">
         {shown === "changes" && <Changes compact={compact} />}
         {shown === "history" && <History compact={compact} />}

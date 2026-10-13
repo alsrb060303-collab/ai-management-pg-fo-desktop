@@ -15,7 +15,7 @@ import {
 import type { ReactNode } from "react";
 import { IconButton } from "../../components/ui";
 import { useT } from "../../i18n";
-import { type Pull, useGitHubStore } from "../../store/github";
+import { type Checks, type Pull, useGitHubStore } from "../../store/github";
 import { useWorkStore } from "../../store/work";
 import { open, pullStyle } from "./GitHubSection";
 import { useWorkUi } from "./ui";
@@ -25,7 +25,7 @@ const OPERATIONS = ["rebase", "merge", "cherry-pick", "revert", "bisect"] as con
 type Operation = (typeof OPERATIONS)[number];
 const isOperation = (op: string): op is Operation => (OPERATIONS as readonly string[]).includes(op);
 
-type Tone = "done" | "wait" | "warn" | "bad" | "idle" | "open" | "merged" | "draft";
+export type Tone = "done" | "wait" | "warn" | "bad" | "idle" | "open" | "merged" | "draft";
 
 const TONE: Record<Tone, { dot: string; text: string }> = {
   done: { dot: "border-success bg-success text-surface", text: "text-success" },
@@ -38,7 +38,7 @@ const TONE: Record<Tone, { dot: string; text: string }> = {
   draft: { dot: "border-border-strong bg-sunken text-text-muted", text: "text-text-muted" },
 };
 
-interface Step {
+export interface Step {
   key: string;
   label: string;
   detail: string;
@@ -47,7 +47,7 @@ interface Step {
   onClick?: () => void;
 }
 
-interface Next {
+export interface Next {
   /** A sentence when there is nothing to press (or next to the button). */
   note?: string;
   noteTone?: "muted" | "warn" | "bad" | "good";
@@ -111,33 +111,8 @@ export function FlowCard({ compact }: { compact: boolean }) {
       onClick: () => setTab("history"),
     },
   ];
-  if (github && !isDefault) {
-    const style = pull ? pullStyle(pull) : null;
-    steps.push({
-      key: "pr",
-      label: t("work.flow.pr"),
-      detail: pull
-        ? `#${pull.number} ${t(style?.key === "draft" ? "work.github.draft" : `work.github.state.${pull.state}`)}`
-        : t("work.flow.noPull"),
-      tone: (style?.key as Tone | undefined) ?? "idle",
-      Icon: style?.Icon ?? GitPullRequest,
-      onClick: () => (pull ? open(pull.url) : setTab("github")),
-    });
-  }
-  if (github && (pull || github.pushed)) {
-    steps.push({
-      key: "ci",
-      label: t("work.flow.ci"),
-      ...(!checks
-        ? { detail: t("work.flow.noCi"), tone: "idle" as Tone, Icon: ShieldCheck }
-        : checks.failed
-          ? { detail: t("work.flow.ciFailed", { n: checks.failed }), tone: "bad" as Tone, Icon: X }
-          : checks.pending
-            ? { detail: t("work.flow.ciPending"), tone: "warn" as Tone, Icon: Clock }
-            : { detail: t("work.flow.ciPassed"), tone: "done" as Tone, Icon: Check }),
-      onClick: pull ? () => open(`${pull.url}/checks`) : undefined,
-    });
-  }
+  if (github && !isDefault) steps.push(pullStep(t, pull, () => setTab("github")));
+  if (github && (pull || github.pushed)) steps.push(ciStep(t, checks, pull));
 
   // What to do next, most urgent first.
   const next: Next = (() => {
@@ -185,61 +160,68 @@ export function FlowCard({ compact }: { compact: boolean }) {
           onClick: () => setTab("github"),
         },
       };
-    if (github && !isDefault) {
-      if (!pull || pull.state === "closed")
-        return {
-          button: { label: t("work.next.createPr"), Icon: GitPullRequest, onClick: openPullForm },
-        };
-      if (pull.state === "merged")
-        return {
-          note: t("work.next.merged"),
-          noteTone: "good",
-          button: baseBranch
-            ? {
-                label: t("work.next.backToBase", { base: baseBranch }),
-                Icon: GitBranch,
-                onClick: () => void run("work_switch", { branch: baseBranch }),
-              }
-            : undefined,
-        };
-      if (checks?.failed)
-        return {
-          button: {
-            label: t("work.next.ciFailed"),
-            Icon: X,
-            tone: "danger",
-            onClick: () => open(`${pull.url}/checks`),
-          },
-        };
-      if (checks?.pending) return { note: t("work.next.ciPending"), noteTone: "warn" };
-      return {
-        note: t("work.next.reviewHint"),
-        noteTone: "muted",
-        button: {
-          label: t("work.next.review"),
-          Icon: GitPullRequest,
-          onClick: () => open(pull.url),
-        },
-      };
-    }
+    if (github && !isDefault)
+      return pullNext(t, pull, checks, {
+        create: openPullForm,
+        base: baseBranch,
+        backToBase: (b) => void run("work_switch", { branch: b }),
+      });
     return { note: t("work.next.done"), noteTone: "good" };
   })();
 
+  return (
+    <FlowShell
+      compact={compact}
+      branch={branch ?? t("work.detached", { commit: head.commit ?? "" })}
+      pull={pull}
+      base={base}
+      steps={steps}
+      next={next}
+      busy={busy}
+      onRefresh={() => void refresh(true)}
+    />
+  );
+}
+
+/** The card itself, shared with the GitHub-only repository view. */
+export function FlowShell({
+  compact,
+  branch,
+  branchSlot,
+  pull,
+  base,
+  steps,
+  next,
+  busy,
+  onRefresh,
+}: {
+  compact: boolean;
+  branch: string;
+  /** Replaces the branch name (e.g. with a branch picker). */
+  branchSlot?: ReactNode;
+  pull: Pull | null;
+  base: { name: string; ahead: number; behind: number } | null;
+  steps: Step[];
+  next: Next;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  const t = useT();
   return (
     <section className="rounded-xl border border-border bg-surface-raised p-3 shadow-card">
       <div className="flex items-center gap-2">
         <GitBranch size={compact ? 16 : 18} className="shrink-0 text-accent" />
         <span
           className={`min-w-0 truncate font-semibold ${compact ? "text-sm" : "text-base"}`}
-          title={branch ?? undefined}
+          title={branch}
         >
-          {branch ?? t("work.detached", { commit: head.commit ?? "" })}
+          {branchSlot ?? branch}
         </span>
         {pull && <PullChip pull={pull} />}
         <IconButton
           label={t("work.refresh")}
           disabled={busy}
-          onClick={() => void refresh(true)}
+          onClick={onRefresh}
           className="ml-auto size-7 shrink-0"
         >
           <RefreshCw size={14} className={busy ? "animate-spin" : undefined} />
@@ -294,6 +276,78 @@ export function FlowCard({ compact }: { compact: boolean }) {
       )}
     </section>
   );
+}
+
+type T = ReturnType<typeof useT>;
+
+/** The PR step: its number and state in GitHub's colors. */
+export function pullStep(t: T, pull: Pull | null, onNoPull: () => void): Step {
+  const style = pull ? pullStyle(pull) : null;
+  return {
+    key: "pr",
+    label: t("work.flow.pr"),
+    detail: pull
+      ? `#${pull.number} ${t(style?.key === "draft" ? "work.github.draft" : `work.github.state.${pull.state}`)}`
+      : t("work.flow.noPull"),
+    tone: (style?.key as Tone | undefined) ?? "idle",
+    Icon: style?.Icon ?? GitPullRequest,
+    onClick: () => (pull ? open(pull.url) : onNoPull()),
+  };
+}
+
+export function ciStep(t: T, checks: Checks | null, pull: Pull | null): Step {
+  return {
+    key: "ci",
+    label: t("work.flow.ci"),
+    ...(!checks
+      ? { detail: t("work.flow.noCi"), tone: "idle" as Tone, Icon: ShieldCheck }
+      : checks.failed
+        ? { detail: t("work.flow.ciFailed", { n: checks.failed }), tone: "bad" as Tone, Icon: X }
+        : checks.pending
+          ? { detail: t("work.flow.ciPending"), tone: "warn" as Tone, Icon: Clock }
+          : { detail: t("work.flow.ciPassed"), tone: "done" as Tone, Icon: Check }),
+    onClick: pull ? () => open(`${pull.url}/checks`) : undefined,
+  };
+}
+
+/** What to do next once the branch is on GitHub: open a PR, fix CI, review, or go back. */
+export function pullNext(
+  t: T,
+  pull: Pull | null,
+  checks: Checks | null,
+  on: { create: () => void; base: string | null; backToBase: (base: string) => void },
+): Next {
+  if (!pull || pull.state === "closed")
+    return { button: { label: t("work.next.createPr"), Icon: GitPullRequest, onClick: on.create } };
+  if (pull.state === "merged") {
+    const base = on.base;
+    return {
+      note: t("work.next.merged"),
+      noteTone: "good",
+      button: base
+        ? {
+            label: t("work.next.backToBase", { base }),
+            Icon: GitBranch,
+            onClick: () => on.backToBase(base),
+          }
+        : undefined,
+    };
+  }
+  if (checks?.failed)
+    return {
+      button: {
+        label: t("work.next.ciFailed"),
+        Icon: X,
+        tone: "danger",
+        onClick: () => open(`${pull.url}/checks`),
+      },
+    };
+  if (checks?.pending) return { note: t("work.next.ciPending"), noteTone: "warn" };
+  return {
+    note: t("work.next.reviewHint"),
+    noteTone: "muted",
+    button: { label: t("work.next.review"), Icon: GitPullRequest, onClick: () => open(pull.url) },
+  };
 }
 
 function PullChip({ pull }: { pull: Pull }) {

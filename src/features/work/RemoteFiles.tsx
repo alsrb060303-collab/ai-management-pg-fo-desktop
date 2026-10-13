@@ -28,11 +28,18 @@ const KIND_COLOR: Record<string, string> = {
  * The shown branch's files on GitHub: browse, open, edit, add and delete
  * them, then commit every change at once to the branch or a new one.
  */
-export function RemoteFiles({ compact }: { compact: boolean }) {
+export function RemoteFiles({
+  compact,
+  defaultShown = false,
+}: {
+  compact: boolean;
+  /** Start with the file list open (it has its own tab). */
+  defaultShown?: boolean;
+}) {
   const t = useT();
   const { data, tree, treeLoading, drafts, openPath, loadTree, openFile, newFile } =
     useRemoteStore();
-  const [shown, setShown] = useState(false);
+  const [shown, setShown] = useState(defaultShown);
   const [dir, setDir] = useState("");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);

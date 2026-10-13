@@ -19,9 +19,9 @@ import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, type RepoSummary, useRemoteStore } from "../../store/remote";
+import { ciStep, FlowShell, type Next, pullNext, pullStep, type Step } from "./FlowCard";
 import {
   ChecksSummary,
-  Collapsible,
   IssueList,
   inputClass,
   open,
@@ -29,7 +29,9 @@ import {
   PullList,
   pullStyle,
 } from "./GitHubSection";
+import { Timeline } from "./History";
 import { RemoteFiles } from "./RemoteFiles";
+import { TabBar, type TabItem } from "./TabBar";
 
 /** Repositories listed before the search narrows them down. */
 const LIST_LIMIT = 40;
@@ -197,14 +199,7 @@ export function RemoteRepo({ compact }: { compact: boolean }) {
           {slug}
           <ExternalLink size={12} className="shrink-0 text-text-subtle" />
         </button>
-        <button
-          type="button"
-          onClick={() => void load()}
-          title={t("work.refresh")}
-          className="ml-auto rounded p-1 text-text-subtle hover:bg-hover hover:text-text"
-        >
-          <RefreshCw size={13} className={loading || busy ? "animate-spin" : ""} />
-        </button>
+        <CloneButton />
       </div>
       {error && (
         <div className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
@@ -214,24 +209,174 @@ export function RemoteRepo({ compact }: { compact: boolean }) {
           </button>
         </div>
       )}
-      <CloneCard />
       {!data ? (
         loading && <p className="text-xs text-text-muted">{t("work.loading")}</p>
       ) : (
-        <>
-          <Branches data={data} compact={compact} />
-          <BranchDetail data={data} compact={compact} />
-          <RemoteFiles compact={compact} />
-          <Commits data={data} />
-          <PullList pulls={data.view.pulls} />
-          <IssueList issues={data.view.issues} />
-        </>
+        <RemoteBody data={data} compact={compact} busy={loading || busy} onRefresh={load} />
       )}
     </div>
   );
 }
 
-function CloneCard() {
+type RemoteTab = "files" | "history" | "branches" | "github";
+const REMOTE_TAB_KEY = "work.remote.tab";
+
+function loadRemoteTab(): RemoteTab {
+  try {
+    const tab = localStorage.getItem(REMOTE_TAB_KEY);
+    return tab === "history" || tab === "branches" || tab === "github" ? tab : "files";
+  } catch {
+    return "files";
+  }
+}
+
+/** The flow card and the tabs, for a loaded repository. */
+function RemoteBody({
+  data,
+  compact,
+  busy,
+  onRefresh,
+}: {
+  data: RemoteView;
+  compact: boolean;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  const t = useT();
+  const { drafts, load } = useRemoteStore();
+  const [tab, setTabState] = useState<RemoteTab>(loadRemoteTab);
+  const [creating, setCreating] = useState(false);
+  const setTab = (next: RemoteTab) => {
+    try {
+      localStorage.setItem(REMOTE_TAB_KEY, next);
+    } catch {
+      // Only a convenience.
+    }
+    setTabState(next);
+  };
+  const { view, branch, base } = data;
+  const pull = view.current;
+  const isDefault = branch === view.defaultBranch;
+  const edited = Object.keys(drafts).length;
+
+  const switchTo = async (name: string) => {
+    if (name === data.branch) return;
+    if (
+      edited &&
+      !(await ask(t("work.files.switchConfirm", { n: edited }), {
+        title: t("work.remote.branches"),
+        kind: "warning",
+      }).catch(() => false))
+    )
+      return;
+    void load(name);
+  };
+
+  const steps: Step[] = [
+    {
+      key: "commit",
+      label: t("work.flow.commit"),
+      detail: edited ? t("work.flow.editing", { n: edited }) : t("work.flow.clean"),
+      tone: edited ? "wait" : "done",
+      Icon: GitCommitHorizontal,
+      onClick: () => setTab("files"),
+    },
+  ];
+  if (!isDefault) steps.push(pullStep(t, pull, () => setTab("github")));
+  steps.push(ciStep(t, view.checks, pull));
+
+  const next: Next = edited
+    ? {
+        button: {
+          label: t("work.next.commitRemote", { n: edited }),
+          Icon: GitCommitHorizontal,
+          onClick: () => setTab("files"),
+        },
+      }
+    : isDefault
+      ? { note: t("work.next.done"), noteTone: "good" }
+      : pullNext(t, pull, view.checks, {
+          create: () => {
+            setTab("github");
+            setCreating(true);
+          },
+          base: view.defaultBranch,
+          backToBase: (b) => void switchTo(b),
+        });
+
+  const tabs: TabItem<RemoteTab>[] = [
+    { key: "files", label: t("work.tab.files"), count: edited || undefined, dot: edited > 0 },
+    { key: "history", label: t("work.tab.history") },
+    { key: "branches", label: t("work.tab.branches"), count: data.branches.length },
+    { key: "github", label: t("work.tab.github"), count: view.pulls.length || undefined },
+  ];
+
+  return (
+    <>
+      <FlowShell
+        compact={compact}
+        branch={branch}
+        branchSlot={
+          <select
+            aria-label={t("work.remote.branches")}
+            value={branch}
+            onChange={(e) => void switchTo(e.target.value)}
+            className="max-w-full cursor-pointer truncate rounded-md bg-transparent pr-1 font-semibold outline-none hover:bg-hover"
+          >
+            {data.branches.map((b) => (
+              <option key={b.name} value={b.name}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        }
+        pull={pull}
+        base={base}
+        steps={steps}
+        next={next}
+        busy={busy}
+        onRefresh={onRefresh}
+      />
+      <TabBar tabs={tabs} tab={tab} onTab={setTab} compact={compact} />
+      <div role="tabpanel">
+        {tab === "files" && <RemoteFiles compact={compact} defaultShown />}
+        {tab === "history" && (
+          <Timeline
+            commits={data.commits.map((c) => ({
+              hash: c.sha,
+              short: c.sha,
+              subject: c.subject,
+              author: c.author,
+              time: seconds(c.date),
+              merge: c.merge,
+              pushed: true,
+              refs: [],
+            }))}
+            unpushed={0}
+            compact={compact}
+            urlOf={(c) => data.commits.find((x) => x.sha === c.hash)?.url ?? null}
+            expandable={false}
+          />
+        )}
+        {tab === "branches" && <Branches data={data} compact={compact} />}
+        {tab === "github" && (
+          <div className="space-y-2">
+            <BranchDetail
+              data={data}
+              compact={compact}
+              creating={creating}
+              setCreating={setCreating}
+            />
+            <PullList pulls={view.pulls} />
+            <IssueList issues={view.issues} />
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function CloneButton() {
   const t = useT();
   const { busy, clone, close } = useRemoteStore();
   const select = useProjectStore((s) => s.select);
@@ -250,18 +395,16 @@ function CloneCard() {
   };
 
   return (
-    <div className="space-y-2 rounded-lg border border-border bg-surface-raised p-3">
-      <p className="text-text-muted">{t("work.remote.cloneIntro")}</p>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void start()}
-        className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-fg hover:bg-primary-hover disabled:opacity-50"
-      >
-        <FolderDown size={13} />
-        {t(cloning ? "work.remote.cloning" : "work.remote.clone")}
-      </button>
-    </div>
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => void start()}
+      title={t("work.remote.cloneIntro")}
+      className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px] hover:border-border-strong disabled:opacity-50"
+    >
+      <FolderDown size={12} />
+      {t(cloning ? "work.remote.cloning" : "work.remote.clone")}
+    </button>
   );
 }
 
@@ -392,9 +535,18 @@ function Branches({ data, compact }: { data: RemoteView; compact: boolean }) {
 }
 
 /** The selected branch's PR and checks, or a form to open a PR from it. */
-function BranchDetail({ data, compact }: { data: RemoteView; compact: boolean }) {
+function BranchDetail({
+  data,
+  compact,
+  creating,
+  setCreating,
+}: {
+  data: RemoteView;
+  compact: boolean;
+  creating: boolean;
+  setCreating: (open: boolean) => void;
+}) {
   const t = useT();
-  const [creating, setCreating] = useState(false);
   const { view, branch } = data;
   const current = view.current;
   const isDefault = branch === view.defaultBranch;
@@ -527,32 +679,5 @@ function RemoteNewPull({
         </button>
       </div>
     </form>
-  );
-}
-
-function Commits({ data }: { data: RemoteView }) {
-  const t = useT();
-  return (
-    <Collapsible
-      title={t("work.remote.commits", { branch: data.branch })}
-      count={data.commits.length}
-    >
-      {data.commits.map((c) => (
-        <li key={c.sha}>
-          <button
-            type="button"
-            onClick={() => open(c.url)}
-            title={`${c.sha} · @${c.author}`}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-hover"
-          >
-            <GitCommitHorizontal size={13} className="shrink-0 text-text-subtle" />
-            <span className="min-w-0 flex-1 truncate">{c.subject}</span>
-            <span className="shrink-0 text-[11px] text-text-subtle">
-              {timeAgo(seconds(c.date))}
-            </span>
-          </button>
-        </li>
-      ))}
-    </Collapsible>
   );
 }
