@@ -9,7 +9,7 @@ mod instructions;
 mod scan;
 #[cfg(test)]
 mod tests;
-mod util;
+pub(crate) mod util;
 
 use std::path::PathBuf;
 

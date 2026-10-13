@@ -28,6 +28,7 @@ export const ko = {
   "mcp.health.needsAuth": "로그인 필요",
   "mcp.health.off": "꺼짐",
   "mcp.health.unknown": "확인 안 됨",
+  "mcp.health.noCheck": "연결 확인 미지원",
   "mcp.pendingHint": "처음 실행할 때 Claude Code가 물어봐요. 스위치를 켜면 미리 승인해요.",
   "mcp.authHint": "Claude Code에서 /mcp 를 열어 로그인하세요.",
   "mcp.toggle": "이 프로젝트에서 쓰기",
@@ -35,6 +36,21 @@ export const ko = {
   "mcp.delete": "삭제",
   "mcp.deleteConfirm": "'{name}' 서버를 지울까요?",
   "mcp.deleteTitle": "MCP 서버 삭제",
+
+  "mcp.codex.description":
+    "Codex가 쓰는 외부 도구 서버(MCP)를 보고 추가·수정·삭제해요. config.toml을 앱이 직접 고치고, 주석과 다른 설정은 그대로 둬요. Codex는 연결 상태를 확인하는 방법이 없어서 연결 여부는 보여주지 않아요.",
+  "mcp.codex.reading": "설정 읽는 중…",
+  "mcp.codex.scope.project": "프로젝트 (.codex/config.toml · 팀과 공유)",
+  "mcp.codex.scope.user": "개인 (~/.codex/config.toml · 모든 프로젝트)",
+  "mcp.codex.scopeHint.project": `프로젝트의 .codex/config.toml에 써요. Codex는 신뢰(trusted)한 프로젝트에서만 읽어요. 비밀값은 \${변수}로 쓰세요.`,
+  "mcp.codex.scopeHint.user": "내 모든 프로젝트에서 써요 (~/.codex/config.toml).",
+  "mcp.codex.toggle": "켜기 (enabled)",
+  "mcp.codex.untrusted":
+    "이 프로젝트는 신뢰하지 않음(untrusted)으로 표시되어 Codex가 프로젝트 서버를 읽지 않아요.",
+  "mcp.codex.trustUnknown":
+    "Codex가 이 프로젝트를 처음 열 때 신뢰 여부를 물어봐요. 신뢰한 뒤에 프로젝트 서버가 적용돼요.",
+  "mcp.codex.recHint":
+    "로그인이 필요한 서버는 터미널에서 `codex mcp login <이름>`으로 로그인하세요.",
 
   "mcp.form.titleNew": "MCP 서버 추가",
   "mcp.form.titleEdit": "MCP 서버 수정",
@@ -143,6 +159,7 @@ export const en: Messages<typeof ko> = {
   "mcp.health.needsAuth": "Sign-in needed",
   "mcp.health.off": "Off",
   "mcp.health.unknown": "Not checked",
+  "mcp.health.noCheck": "No connection check",
   "mcp.pendingHint": "Claude Code asks on the first run. Turn the switch on to approve it now.",
   "mcp.authHint": "Open /mcp in Claude Code to sign in.",
   "mcp.toggle": "Use in this project",
@@ -150,6 +167,20 @@ export const en: Messages<typeof ko> = {
   "mcp.delete": "Remove",
   "mcp.deleteConfirm": "Remove the '{name}' server?",
   "mcp.deleteTitle": "Remove MCP server",
+
+  "mcp.codex.description":
+    "See, add, change and remove the external tool servers (MCP) Codex uses. The app edits config.toml itself and keeps comments and other settings. Codex has no way to check connections, so connection status isn't shown.",
+  "mcp.codex.reading": "Reading settings…",
+  "mcp.codex.scope.project": "Project (.codex/config.toml · shared with the team)",
+  "mcp.codex.scope.user": "Personal (~/.codex/config.toml · all projects)",
+  "mcp.codex.scopeHint.project": `Written to the project's .codex/config.toml. Codex reads it only in trusted projects. Use \${VARIABLES} for secrets.`,
+  "mcp.codex.scopeHint.user": "Every project of mine (~/.codex/config.toml).",
+  "mcp.codex.toggle": "On (enabled)",
+  "mcp.codex.untrusted":
+    "This project is marked untrusted, so Codex doesn't read its project servers.",
+  "mcp.codex.trustUnknown":
+    "Codex asks whether to trust this project the first time it opens it. Project servers apply once it's trusted.",
+  "mcp.codex.recHint": "For servers that need sign-in, run `codex mcp login <name>` in a terminal.",
 
   "mcp.form.titleNew": "Add MCP server",
   "mcp.form.titleEdit": "Edit MCP server",

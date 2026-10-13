@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { onLocaleApplied } from "../i18n";
+import type { ToolId } from "../tools";
 import { useProjectStore } from "./project";
 
 // Mirrors src-tauri/src/project_docs.rs.
@@ -12,6 +13,8 @@ export type DocKind =
   | "command"
   | "settings"
   | "mcp"
+  | "hook"
+  | "policy"
   | "other";
 
 export interface DocEntry {
@@ -26,6 +29,8 @@ const CONFLICT = "conflict";
 
 interface ProjectDocsState {
   project: string | null;
+  /** The project's tool: which documents are listed and editable. */
+  tool: ToolId;
   entries: DocEntry[];
   loading: boolean;
   error: string | null;
@@ -40,7 +45,8 @@ interface ProjectDocsState {
   changedOutside: boolean;
   saving: boolean;
 
-  load: (project: string | null) => Promise<void>;
+  /** `tool` defaults to the current project's tool. */
+  load: (project: string | null, tool?: ToolId) => Promise<void>;
   /** Re-lists and picks up outside changes to the open file. */
   refresh: () => Promise<void>;
   open: (rel: string) => Promise<boolean>;
@@ -58,12 +64,13 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
   let seq = 0;
 
   const read = async (rel: string) => {
-    const project = get().project;
-    return invoke<{ text: string; modified: number }>("project_doc_read", { project, rel });
+    const { project, tool } = get();
+    return invoke<{ text: string; modified: number }>("project_doc_read", { project, tool, rel });
   };
 
   return {
     project: null,
+    tool: useProjectStore.getState().tool,
     entries: [],
     loading: false,
     error: null,
@@ -74,10 +81,11 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
     changedOutside: false,
     saving: false,
 
-    load: async (project) => {
-      if (project !== get().project) {
+    load: async (project, tool = useProjectStore.getState().tool) => {
+      if (project !== get().project || tool !== get().tool) {
         set({
           project,
+          tool,
           entries: [],
           error: null,
           rel: null,
@@ -91,12 +99,12 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
     },
 
     refresh: async () => {
-      const { project } = get();
+      const { project, tool } = get();
       if (!project || !isTauri()) return;
       const id = ++seq;
       set({ loading: !get().entries.length });
       try {
-        const entries = await invoke<DocEntry[]>("project_docs_list", { project });
+        const entries = await invoke<DocEntry[]>("project_docs_list", { project, tool });
         if (id !== seq) return;
         set({ entries, loading: false });
         const { rel, modified, text, saved } = get();
@@ -140,12 +148,13 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
     edit: (text) => set({ text }),
 
     save: async (force = false) => {
-      const { project, rel, text, modified } = get();
+      const { project, tool, rel, text, modified } = get();
       if (!project || !rel || !isTauri()) return false;
       set({ saving: true });
       try {
         const at = await invoke<number>("project_doc_write", {
           project,
+          tool,
           rel,
           text,
           expected: modified,
@@ -178,11 +187,12 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
     },
 
     create: async (rel, text) => {
-      const { project } = get();
+      const { project, tool } = get();
       if (!project || !isTauri()) return false;
       try {
         const at = await invoke<number>("project_doc_write", {
           project,
+          tool,
           rel,
           text,
           expected: null,
@@ -202,10 +212,10 @@ export const useProjectDocsStore = create<ProjectDocsState>((set, get) => {
     },
 
     remove: async (rel) => {
-      const { project } = get();
+      const { project, tool } = get();
       if (!project) return;
       try {
-        await invoke("project_doc_delete", { project, rel });
+        await invoke("project_doc_delete", { project, tool, rel });
         if (get().rel === rel) get().close();
         await get().refresh();
         void useProjectStore.getState().refresh();

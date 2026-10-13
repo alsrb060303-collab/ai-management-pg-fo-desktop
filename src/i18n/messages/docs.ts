@@ -23,9 +23,10 @@ export const ko = {
   "files.title": "프로젝트 문서",
   "files.description":
     "연결한 폴더의 CLAUDE.md(하위 폴더 포함)·규칙·Skills·Subagents·명령·설정 파일을 자동으로 찾아요. 여기서 고치고 저장하면 그 파일에 바로 써져요.",
-  "files.noProject":
-    "프로젝트 폴더를 연결하면 안에 있는 Claude Code 문서를 여기서 읽고 고칠 수 있어요.",
-  "files.empty": "아직 Claude Code 문서가 없어요. '새 문서'로 만들 수 있어요.",
+  "files.descriptionCodex":
+    "연결한 폴더의 AGENTS.md(하위 폴더 포함)·Skills(.agents/skills)·Subagents(.codex/agents)·config.toml·hooks·명령 실행 규칙을 자동으로 찾아요. 여기서 고치고 저장하면 그 파일에 바로 써져요.",
+  "files.noProject": "프로젝트 폴더를 연결하면 안에 있는 {tool} 문서를 여기서 읽고 고칠 수 있어요.",
+  "files.empty": "아직 {tool} 문서가 없어요. '새 문서'로 만들 수 있어요.",
   "files.pick": "왼쪽에서 문서를 고르세요.",
   "files.kind.other": "기타 (.claude)",
   "files.new": "새 문서",
@@ -165,8 +166,10 @@ export const en: Messages<typeof ko> = {
   "files.title": "Project docs",
   "files.description":
     "Finds the connected folder's CLAUDE.md files (subfolders too), rules, skills, subagents, commands and settings files. Edits you save here are written straight to the file.",
-  "files.noProject": "Connect a project folder to read and edit its Claude Code documents here.",
-  "files.empty": "No Claude Code documents yet. Create one with 'New document'.",
+  "files.descriptionCodex":
+    "Finds the connected folder's AGENTS.md files (subfolders too), skills (.agents/skills), subagents (.codex/agents), config.toml, hooks and command rules. Edits you save here are written straight to the file.",
+  "files.noProject": "Connect a project folder to read and edit its {tool} documents here.",
+  "files.empty": "No {tool} documents yet. Create one with 'New document'.",
   "files.pick": "Pick a document on the left.",
   "files.kind.other": "Other (.claude)",
   "files.new": "New document",
