@@ -54,7 +54,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUyREY2NjZFQkUzMEI0RkIKUldUN3REQytibWJmNHRqMXBMSDc5K0QrOHk4ekpuaEFoS1lXdFBEWjJXWGZHb2xVdWZ2SXlEc2QK",
       "endpoints": [
         "https://github.com/oceanstarlight/ai-management-pg-fo-desktop/releases/latest/download/latest.json"
       ],
