@@ -31,7 +31,7 @@ Claude Code로 작업할 때 **터미널 옆에 붙어서** 문서·git 작업·
 - 추천 mods(token-weather, blast-radius, replay-theater, claude-hud)도 설정에서 설치할 수 있다.
 
 **사이드바**
-- Windows Terminal · VS Code · Claude 데스크탑 중 지금 쓰는 창 옆에 자동으로 붙는다. 전역 단축키로 보이고 숨긴다.
+- Windows Terminal · VS Code · Claude 데스크탑 · Codex 중 지금 쓰는 창 옆에 자동으로 붙는다. 전역 단축키로 보이고 숨긴다.
 
 ## 개발 환경
 

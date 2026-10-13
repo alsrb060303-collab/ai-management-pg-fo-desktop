@@ -7,23 +7,26 @@ export const ko = {
   "docs.stateHelp.off": "설정에서 꺼져 있어서 읽히지 않아요.",
   "docs.stateHelp.limited": "읽히지만 설정 때문에 일부가 제한돼요.",
   "docs.stateHelp.conditional": "조건(특정 파일 경로 등)이 맞을 때만 읽혀요.",
-  "docs.stateHelp.active": "지금 Claude Code가 읽고 있어요.",
+  "docs.stateHelp.active": "지금 AI 도구가 읽고 있어요.",
   "docs.scopeHelp.local": "이 프로젝트에서 나만 쓰는 설정이에요(git에 안 올라감).",
   "docs.scopeHelp.project": "이 프로젝트에 들어 있어 git으로 팀과 함께 써요.",
   "docs.scopeHelp.parent": "이 프로젝트를 담은 상위 폴더에 있어서 함께 읽혀요.",
-  "docs.scopeHelp.user": "내 컴퓨터의 모든 프로젝트에 적용돼요(~/.claude).",
+  "docs.scopeHelp.user": "내 컴퓨터의 모든 프로젝트에 적용돼요(~/.claude, ~/.codex).",
   "docs.scopeHelp.managed": "회사·관리자가 배포한 정책이라 이 앱에서 바꿀 수 없어요.",
   "docs.section.settingsHint": "권한·hook·환경을 정하는 설정",
+  "docs.section.hookHint": "정해진 순간에 자동으로 실행되는 명령",
+  "docs.section.policyHint": "명령 실행을 허용·확인·금지하는 규칙 (지침 아님)",
   "docs.section.pluginHint": "skill·agent·명령을 묶어 설치한 확장",
-  "docs.section.mcpHint": "Claude가 쓸 수 있는 외부 도구 서버",
+  "docs.section.mcpHint": "AI가 쓸 수 있는 외부 도구 서버",
   "docs.section.commandHint": "/이름으로 직접 불러 쓰는 프롬프트",
   "docs.section.ruleHint": "항상, 또는 지정한 파일을 다룰 때만 적용되는 규칙",
   "files.title": "프로젝트 문서",
   "files.description":
     "연결한 폴더의 CLAUDE.md(하위 폴더 포함)·규칙·Skills·Subagents·명령·설정 파일을 자동으로 찾아요. 여기서 고치고 저장하면 그 파일에 바로 써져요.",
-  "files.noProject":
-    "프로젝트 폴더를 연결하면 안에 있는 Claude Code 문서를 여기서 읽고 고칠 수 있어요.",
-  "files.empty": "아직 Claude Code 문서가 없어요. '새 문서'로 만들 수 있어요.",
+  "files.descriptionCodex":
+    "연결한 폴더의 AGENTS.md(하위 폴더 포함)·Skills(.agents/skills)·Subagents(.codex/agents)·config.toml·hooks·명령 실행 규칙을 자동으로 찾아요. 여기서 고치고 저장하면 그 파일에 바로 써져요.",
+  "files.noProject": "프로젝트 폴더를 연결하면 안에 있는 {tool} 문서를 여기서 읽고 고칠 수 있어요.",
+  "files.empty": "아직 {tool} 문서가 없어요. '새 문서'로 만들 수 있어요.",
   "files.pick": "왼쪽에서 문서를 고르세요.",
   "files.kind.other": "기타 (.claude)",
   "files.new": "새 문서",
@@ -47,7 +50,7 @@ export const ko = {
   "docs.view.map": "설정 지도",
   "docs.view.library": "라이브러리",
   "docs.mapPage.description":
-    "Claude Code가 프로젝트에서 읽는 지침 · skill · subagent · 설정을 범위별로 보여줘요.",
+    "{tool}가 프로젝트에서 읽는 지침 · skill · subagent · 설정을 범위별로 보여줘요.",
   "docs.libraryPage.description":
     "내 skill · subagent를 모아 두고 프로젝트마다 나만 또는 팀으로 적용해요.",
 
@@ -58,11 +61,13 @@ export const ko = {
   "docs.section.skill": "Skills",
   "docs.section.skillHint": "관련된 일을 할 때만 꺼내 쓰는 작업 설명서",
   "docs.section.agent": "Subagents",
-  "docs.section.agentHint": "Claude가 일을 맡기는 별도 도우미",
+  "docs.section.agentHint": "AI가 일을 맡기는 별도 도우미",
   "docs.section.command": "명령",
   "docs.section.mcp": "MCP 서버",
   "docs.section.plugin": "플러그인",
   "docs.section.settings": "설정 파일",
+  "docs.section.policy": "명령 실행 규칙",
+  "docs.section.hook": "Hooks",
 
   // Settings map: scopes
   "docs.scope.managed": "관리",
@@ -82,8 +87,8 @@ export const ko = {
   // Settings map: panel
   "docs.map.reading": "읽는 중…",
   "docs.map.pickProject":
-    "프로젝트 폴더를 고르면 Claude Code가 그 프로젝트에서 읽는 설정을 범위별로 보여줍니다.",
-  "docs.map.empty": "이 프로젝트에 적용되는 Claude Code 설정이 없습니다.",
+    "프로젝트 폴더를 고르면 AI 코딩 도구가 그 프로젝트에서 읽는 설정을 범위별로 보여줍니다.",
+  "docs.map.empty": "이 프로젝트에 적용되는 {tool} 설정이 없습니다.",
   "docs.map.manageMcp": "MCP 관리",
   "docs.project.recent": "최근 프로젝트",
   "docs.project.none": "프로젝트 없음",
@@ -95,6 +100,11 @@ export const ko = {
   "docs.item.turnOnTeam": "켜기 (팀으로 끔)",
   "docs.item.turnOff": "끄기",
   "docs.item.import": "라이브러리에 추가",
+  "docs.item.agentToggleUnsupported": "{tool}는 subagent를 하나만 끌 수 없어요.",
+  "docs.item.userSkillToggleUnsupported":
+    "{tool}에서 개인 skill을 끄면 모든 프로젝트에서 꺼져서, 이 프로젝트 안의 skill만 끌 수 있어요.",
+  "docs.item.teamToggleUnsupported":
+    "{tool}는 내 설정(config.toml)에서만 skill 끄기를 읽어서 '팀'으로는 끌 수 없어요.",
 
   // Personal / team buttons
   "docs.mode.personal": "나만",
@@ -119,6 +129,10 @@ export const ko = {
     "설정 지도에서 프로젝트를 고르면 항목을 그 프로젝트에 적용하거나 뺄 수 있습니다.",
   "docs.library.empty":
     '라이브러리가 비어 있습니다. 설정 지도에서 skill·agent의 "라이브러리에 추가"를 누르거나 폴더에 직접 넣어 주세요.',
+  "docs.library.destinationHint":
+    "{tool} 프로젝트에 적용하면 skill은 {skills}, subagent는 {agents}에 들어가요.",
+  "docs.library.codexAgentsHint":
+    "Codex용 subagent는 TOML로 바뀌어요(name·description·본문만, tools·model 등은 빠져요).",
   "docs.library.apply": "적용",
   "docs.library.update": "업데이트",
   "docs.library.overwrite": "라이브러리 버전으로 덮어쓰기",
@@ -138,22 +152,24 @@ export const en: Messages<typeof ko> = {
   "docs.stateHelp.off": "Turned off in settings, so it isn't read.",
   "docs.stateHelp.limited": "Read, but settings limit part of it.",
   "docs.stateHelp.conditional": "Read only when a condition matches (such as a file path).",
-  "docs.stateHelp.active": "Claude Code reads it now.",
+  "docs.stateHelp.active": "Your AI tool reads it now.",
   "docs.scopeHelp.local": "Just for you in this project (not committed to git).",
   "docs.scopeHelp.project": "Part of this project, shared with the team through git.",
   "docs.scopeHelp.parent": "Lives in a folder above this project, so it's read too.",
-  "docs.scopeHelp.user": "Applies to every project on this computer (~/.claude).",
+  "docs.scopeHelp.user": "Applies to every project on this computer (~/.claude, ~/.codex).",
   "docs.scopeHelp.managed": "A policy deployed by your organization; it can't be changed here.",
   "docs.section.settingsHint": "Permissions, hooks and environment",
   "docs.section.pluginHint": "Installed bundles of skills, agents and commands",
-  "docs.section.mcpHint": "External tool servers Claude can use",
+  "docs.section.mcpHint": "External tool servers the AI can use",
   "docs.section.commandHint": "Prompts you run by typing /name",
   "docs.section.ruleHint": "Rules for always, or only for matching files",
   "files.title": "Project docs",
   "files.description":
     "Finds the connected folder's CLAUDE.md files (subfolders too), rules, skills, subagents, commands and settings files. Edits you save here are written straight to the file.",
-  "files.noProject": "Connect a project folder to read and edit its Claude Code documents here.",
-  "files.empty": "No Claude Code documents yet. Create one with 'New document'.",
+  "files.descriptionCodex":
+    "Finds the connected folder's AGENTS.md files (subfolders too), skills (.agents/skills), subagents (.codex/agents), config.toml, hooks and command rules. Edits you save here are written straight to the file.",
+  "files.noProject": "Connect a project folder to read and edit its {tool} documents here.",
+  "files.empty": "No {tool} documents yet. Create one with 'New document'.",
   "files.pick": "Pick a document on the left.",
   "files.kind.other": "Other (.claude)",
   "files.new": "New document",
@@ -176,7 +192,7 @@ export const en: Messages<typeof ko> = {
   "docs.view.map": "Settings map",
   "docs.view.library": "Library",
   "docs.mapPage.description":
-    "Shows the instructions, skills, subagents and settings Claude Code reads in a project, by scope.",
+    "Shows the instructions, skills, subagents and settings {tool} reads in a project, by scope.",
   "docs.libraryPage.description":
     "Keep your skills and subagents in one place and apply them to each project, just for you or for your team.",
 
@@ -184,13 +200,17 @@ export const en: Messages<typeof ko> = {
   "docs.section.instructionsHint": "Instructions included in every conversation",
   "docs.section.rule": "Rules",
   "docs.section.skill": "Skills",
-  "docs.section.skillHint": "How-tos Claude pulls in for related work",
+  "docs.section.skillHint": "How-tos the AI pulls in for related work",
   "docs.section.agent": "Subagents",
-  "docs.section.agentHint": "Separate helpers Claude hands work to",
+  "docs.section.agentHint": "Separate helpers the AI hands work to",
   "docs.section.command": "Commands",
   "docs.section.mcp": "MCP servers",
   "docs.section.plugin": "Plugins",
   "docs.section.settings": "Settings files",
+  "docs.section.policy": "Command rules",
+  "docs.section.policyHint": "Rules that allow, ask about or forbid commands (not instructions)",
+  "docs.section.hookHint": "Commands that run automatically at set moments",
+  "docs.section.hook": "Hooks",
 
   "docs.scope.managed": "Managed",
   "docs.scope.user": "User",
@@ -207,8 +227,8 @@ export const en: Messages<typeof ko> = {
 
   "docs.map.reading": "Reading…",
   "docs.map.pickProject":
-    "Choose a project folder to see the settings Claude Code reads in that project, by scope.",
-  "docs.map.empty": "No Claude Code settings apply to this project.",
+    "Choose a project folder to see the settings your AI coding tool reads in that project, by scope.",
+  "docs.map.empty": "No {tool} settings apply to this project.",
   "docs.map.manageMcp": "Manage MCP",
   "docs.project.recent": "Recent projects",
   "docs.project.none": "No project",
@@ -220,6 +240,11 @@ export const en: Messages<typeof ko> = {
   "docs.item.turnOnTeam": "Turn on (off for team)",
   "docs.item.turnOff": "Turn off",
   "docs.item.import": "Add to library",
+  "docs.item.agentToggleUnsupported": "{tool} can't turn off a single subagent.",
+  "docs.item.userSkillToggleUnsupported":
+    "In {tool}, turning off a personal skill turns it off in every project, so only skills inside this project can be turned off.",
+  "docs.item.teamToggleUnsupported":
+    "{tool} reads turned-off skills only from your own config (config.toml), so they can't be turned off for 'Team'.",
 
   "docs.mode.personal": "Just me",
   "docs.mode.personalHint": "Only for you, not pushed to git",
@@ -241,6 +266,10 @@ export const en: Messages<typeof ko> = {
     "Choose a project in the settings map to apply items to it or remove them.",
   "docs.library.empty":
     'The library is empty. Click "Add to library" on a skill or agent in the settings map, or put files in the folder yourself.',
+  "docs.library.destinationHint":
+    "In a {tool} project, skills go to {skills} and subagents to {agents}.",
+  "docs.library.codexAgentsHint":
+    "Subagents are converted to TOML for Codex (name, description and body only; tools, model and the like are dropped).",
   "docs.library.apply": "Apply",
   "docs.library.update": "Update",
   "docs.library.overwrite": "Overwrite with library version",

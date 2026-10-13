@@ -129,3 +129,15 @@ Phase 1 체크리스트(`phase1-windows.md`)와 함께 확인한다.
 - [ ] 비밀번호를 틀리면 "이메일이나 비밀번호가 맞지 않아요", 비밀번호를 잊었어요 → 재설정 메일이 온다.
 - [ ] Google 로그인 중 취소를 누르면 기다림이 멈추고 오류 없이 돌아온다.
 - [ ] 앱을 껐다 켜도 로그인이 유지된다(자격 증명 관리자에 `ai-management / app-account`).
+
+## Q. 여러 AI 도구 (Phase 13, Codex CLI 설치 후)
+- [ ] `.codex/` 또는 `AGENTS.override.md`가 있는 폴더를 열면 설정 지도의 도구가 "자동 (Codex)"이고 이유(감지한 파일)가 보인다. CLAUDE.md만 있는 폴더는 Claude Code.
+- [ ] 아무 파일도 없는 폴더: CLI가 하나만 설치돼 있으면 그 도구, 둘 다(또는 없음)면 설정의 기본 도구. 도구를 직접 고르면 앱을 껐다 켜도, 다른 창에서도 유지된다. worktree는 본 저장소의 선택을 따른다.
+- [ ] Codex 설정 지도: 전역·프로젝트 AGENTS.md, `.codex/config.toml`(신뢰 여부 표시), skills(`.agents/skills`), agents(`.codex/agents/*.toml`), MCP, 명령 실행 규칙, hooks("Codex /hooks에서 신뢰해야 실행")가 보인다.
+- [ ] 라이브러리 적용(Codex): skill이 `.agents/skills/<이름>/`, subagent가 `.codex/agents/<이름>.toml`로 들어가고 Codex에서 인식된다. skill "끄기 · 나만" → `~/.codex/config.toml`에 `[[skills.config]]`가 생기고 다른 내용은 그대로, "켜기"로 그 항목만 지워진다.
+- [ ] 작성기(Codex): AGENTS.md 관리 구역, `.agents/skills`, `.codex/agents/*.toml`, `.codex/hooks.json`이 써지고, RULES 출력은 팔레트에 없다. 지침 출력의 '나만'은 비활성.
+- [ ] 프로젝트 문서·MCP(Codex): AGENTS.md·`.codex/*` 파일을 열고 고칠 수 있다. MCP 서버를 추가·끄기·삭제하면 config.toml의 주석과 다른 키가 그대로다. `codex mcp list`에도 반영된다.
+- [ ] 커밋 메시지 초안: Codex 프로젝트에서 "codex로 초안"이 동작하고 `%TEMP%`에 `ai-mgmt-draft-*` 폴더가 남지 않는다. codex만 설치된 PC에서 Claude 프로젝트를 열면 버튼이 "codex로 초안".
+- [ ] worktree 추가(Codex 프로젝트) → `<레포>/.codex/worktrees/<이름>`. Codex 앱이 만든 worktree에 "Codex" 표시.
+- [ ] 도킹: Codex(ChatGPT) 데스크탑 앱 창 옆에 붙는다. 실제 프로세스 이름(`codex.exe` / `chatgpt.exe`)과 창 제목에 "Codex"가 들어가는지 확인. 일반 ChatGPT 대화 창에는 붙지 않는다.
+- [ ] Codex 프로젝트의 명령 화면은 안내만 보이고, 설정의 mod 카드는 "Claude Code 전용"이다.

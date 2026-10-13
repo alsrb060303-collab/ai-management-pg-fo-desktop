@@ -34,6 +34,7 @@ pub enum TargetApp {
     Console,
     VsCode,
     ClaudeDesktop,
+    CodexDesktop,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

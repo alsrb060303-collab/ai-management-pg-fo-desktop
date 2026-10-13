@@ -1,8 +1,10 @@
 import type { Messages } from "./types";
 
 export const ko = {
-  "mods.title": "Claude Code 연동",
+  "mods.title": "Claude Code 연동 (Claude Code 전용)",
   "mods.claude": "Claude Code",
+  "mods.scope":
+    "mods는 Claude Code에서만 동작하고, 프로젝트가 아니라 앱 전체에 적용돼요. Codex 프로젝트에는 영향이 없어요.",
   "mods.checking": "확인하는 중…",
   "mods.noClaude": "claude 명령을 찾지 못했어요. Claude Code를 설치한 뒤 다시 확인하세요.",
   "mods.tooOld": "{version} · mods는 2.1.287 이상에서 동작해요. `claude update`로 업데이트하세요.",
@@ -44,7 +46,7 @@ export const ko = {
   "settings.sidebar": "사이드바",
   "settings.dock": "자석 (터미널 옆에 붙이기)",
   "settings.dockHint":
-    "사이드바로 전환하면 Windows Terminal · VS Code · Claude 데스크탑 중 앞에 있는 창 옆에 자동으로 붙어요. 사이드바 위쪽 자석 버튼을 누를 때마다 자동 감지 → 지금 창에 고정 → 해제 순서로 바뀌어요.",
+    "사이드바로 전환하면 Windows Terminal · VS Code · Claude 데스크탑 · Codex 중 앞에 있는 창 옆에 자동으로 붙어요. 사이드바 위쪽 자석 버튼을 누를 때마다 자동 감지 → 지금 창에 고정 → 해제 순서로 바뀌어요.",
   "settings.pin": "항상 위",
   "settings.pinHint": "다른 창보다 항상 위에 보여요.",
   "settings.shortcut": "보이기 / 숨기기 단축키",
@@ -103,8 +105,10 @@ export const ko = {
 } as const;
 
 export const en: Messages<typeof ko> = {
-  "mods.title": "Claude Code integration",
+  "mods.title": "Claude Code integration (Claude Code only)",
   "mods.claude": "Claude Code",
+  "mods.scope":
+    "Mods work only in Claude Code and apply app-wide, not per project. Codex projects are not affected.",
   "mods.checking": "Checking…",
   "mods.noClaude": "Couldn't find the claude command. Install Claude Code, then check again.",
   "mods.tooOld": "{version} · mods need 2.1.287 or newer. Update with `claude update`.",
@@ -146,7 +150,7 @@ export const en: Messages<typeof ko> = {
   "settings.sidebar": "Sidebar",
   "settings.dock": "Magnet (dock next to terminal)",
   "settings.dockHint":
-    "Switching to the sidebar docks it next to the window in front: Windows Terminal, VS Code or Claude desktop. Each click on the magnet button in the sidebar goes from following the window in front, to staying with the current window, to off.",
+    "Switching to the sidebar docks it next to the window in front: Windows Terminal, VS Code, Claude desktop or Codex. Each click on the magnet button in the sidebar goes from following the window in front, to staying with the current window, to off.",
   "settings.pin": "Always on top",
   "settings.pinHint": "Stays above other windows.",
   "settings.shortcut": "Show / hide shortcut",

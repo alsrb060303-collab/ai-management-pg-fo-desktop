@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { MessageKey } from "../../i18n";
 import type { BlockKind, Target } from "../../store/composer";
+import { TOOLS, type ToolId } from "../../tools";
 
 /** Message keys; translate with `t(KIND_LABEL[kind])`. */
 export const KIND_LABEL: Record<BlockKind, MessageKey> = {
@@ -31,9 +32,12 @@ export const KIND_ICON: Record<BlockKind, LucideIcon> = {
 
 export const kindColor = (kind: BlockKind | "plan") => `var(--c-kind-${kind})`;
 
-/** `label` is a message key. */
-export const TARGETS: { target: Target; label: MessageKey; icon: LucideIcon }[] = [
-  { target: "claudeMd", label: "composer.target.claudeMd", icon: FileText },
+/**
+ * `label` is a message key; `null` for the instructions output, which is
+ * named after the tool's file (`instructionsLabel`).
+ */
+export const TARGETS: { target: Target; label: MessageKey | null; icon: LucideIcon }[] = [
+  { target: "instructions", label: null, icon: FileText },
   { target: "rules", label: "composer.target.rules", icon: Ruler },
   { target: "skills", label: "composer.target.skills", icon: Sparkles },
   { target: "agents", label: "composer.target.agents", icon: Bot },
@@ -42,19 +46,36 @@ export const TARGETS: { target: Target; label: MessageKey; icon: LucideIcon }[] 
   { target: "custom", label: "composer.target.custom", icon: FilePen },
 ];
 
-/** The file or folder an output writes; custom outputs show their path. */
-export function targetTitle(target: Target, personal: boolean, path?: string): string {
+/** The instructions output's palette name: its file without `.md`, uppercase (CLAUDE, AGENTS). */
+export function instructionsLabel(tool: ToolId): string {
+  return TOOLS[tool].instructions.team.replace(/\.md$/i, "").toUpperCase();
+}
+
+/** The hooks file of `tool` (as in compile.rs); Codex has no personal one. */
+export function hooksFile(tool: ToolId, personal: boolean): string {
+  if (tool === "codex") return ".codex/hooks.json";
+  return personal ? ".claude/settings.local.json" : ".claude/settings.json";
+}
+
+/** The file or folder an output writes for `tool`; custom outputs show their path. */
+export function targetTitle(
+  target: Target,
+  personal: boolean,
+  tool: ToolId,
+  path?: string,
+): string {
+  const info = TOOLS[tool];
   switch (target) {
-    case "claudeMd":
-      return personal ? "CLAUDE.local.md" : "CLAUDE.md";
+    case "instructions":
+      return personal ? info.instructions.personal : info.instructions.team;
     case "rules":
-      return ".claude/rules";
+      return info.rulesDir ?? ".claude/rules";
     case "skills":
-      return ".claude/skills";
+      return info.skillsDir;
     case "agents":
-      return ".claude/agents";
+      return info.agentsDir;
     case "hooks":
-      return personal ? ".claude/settings.local.json" : ".claude/settings.json";
+      return hooksFile(tool, personal);
     case "plans":
       return personal ? "PLANS.local.md" : "PLANS.md";
     case "custom":

@@ -339,3 +339,57 @@ AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는�
 | Docker Hub | 소스에서 직접 빌드해야 함 |
 
 검색 서버(Tavily, Exa, Brave)는 라이선스 문제는 없지만, 사용자가 이번에 고르지 않았다.
+
+## 13. Codex 설정 구조 (2026-10-13 조사, sonnet이 소스 코드로 검증)
+
+출처: [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [config basic](https://learn.chatgpt.com/docs/config-file/config-basic), [config reference](https://learn.chatgpt.com/docs/config-file/config-reference), [skills](https://learn.chatgpt.com/docs/build-skills), [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents), [rules](https://learn.chatgpt.com/docs/agent-configuration/rules), [hooks](https://learn.chatgpt.com/docs/hooks), [worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees), [non-interactive](https://learn.chatgpt.com/docs/non-interactive-mode), [managed config](https://learn.chatgpt.com/docs/enterprise/managed-configuration), [Windows app](https://learn.chatgpt.com/docs/windows/windows-app). (developers.openai.com/codex/* 주소가 여기로 넘어간다.) 소스는 [openai/codex](https://github.com/openai/codex) `codex-rs/`(2026-10-13 main).
+
+- 버전: CLI 0.162.1(2026-10-09). 실행 파일 `codex`(Windows `codex.exe`, npm 설치면 `codex.cmd`). 설치: `npm install -g @openai/codex` 또는 `irm https://chatgpt.com/codex/install.ps1 | iex`.
+- 홈 폴더: `CODEX_HOME`, 없으면 `~/.codex`(Windows `%USERPROFILE%\.codex`). 로그인 정보 `auth.json`은 읽지 않는다.
+- **AGENTS.md** (`core/src/agents_md.rs`)
+  - 전역: `$CODEX_HOME/AGENTS.override.md`가 비어 있지 않으면 그것, 아니면 `AGENTS.md`. 하나만 읽는다.
+  - 프로젝트: 루트(`project_root_markers`, 기본 `[".git"]`이 있는 가장 가까운 상위 폴더)부터 현재 폴더까지 폴더마다 `AGENTS.override.md` → `AGENTS.md` → `project_doc_fallback_filenames` 중 **처음 있는 하나만** 읽고, 위에서 아래로 이어 붙인다. 루트가 없으면 현재 폴더만.
+  - 프로젝트 문서 합계 `project_doc_max_bytes`(기본 32KiB)를 넘으면 넘는 파일을 바이트 단위로 자르고 이후 파일은 버린다. 빈 파일은 건너뛴다.
+  - **HTML 주석을 지우지 않는다.** 작성기의 관리 구역 표시 주석도 모델에 그대로 들어간다.
+  - 프로젝트가 `untrusted`로 표시되면 프로젝트 AGENTS.md를 전혀 읽지 않는다.
+  - Codex는 CLAUDE.md를 읽지 않는다(`project_doc_fallback_filenames`에 넣으면 읽음).
+- **config.toml**: 우선순위(높은 순) CLI 플래그 > 프로젝트 `.codex/config.toml`(루트→현재 폴더, 가까운 쪽 우선, **신뢰한 프로젝트만**) > `--profile`(`$CODEX_HOME/<이름>.config.toml`) > 사용자 `~/.codex/config.toml` > 클라우드 관리 기본값 > `/etc/codex/config.toml` > 기본값.
+  - 신뢰: 사용자 설정 `[projects."<경로>"] trust_level = "trusted" | "untrusted"`. Windows에서는 경로를 정규화하고 **소문자**로 쓴다.
+  - 관리 정책: `requirements.toml`(Unix `/etc/codex/`, Windows `%ProgramData%\OpenAI\Codex\`), 예전 `managed_config.toml`(Unix `/etc/codex/`, Windows `~/.codex/`).
+  - 프로젝트별 개인 설정 파일(`config.local.toml` 같은 것)은 **없다**.
+- **Skill** (`ext/skills/src/host_roots.rs`, `skills/src/parser.rs`)
+  - 위치: 현재 폴더부터 저장소 루트까지의 `.agents/skills`, 각 프로젝트 설정 층의 `.codex/skills`, `~/.agents/skills`, `$CODEX_HOME/skills`(구 위치, 아직 읽음), `/etc/codex/skills`, 내장 skill.
+  - SKILL.md는 frontmatter가 필수. `description` 필수, `name`은 없으면 폴더 이름(최대 64자). 문서는 둘 다 필수라고 하므로 둘 다 쓴다. 같은 이름은 합치지 않고 둘 다 보인다.
+  - 끄기: `[[skills.config]] path = "<SKILL.md 절대 경로>"`, `enabled = false`. **사용자 설정에서만** 적용되고 프로젝트 `.codex/config.toml`의 값은 무시된다. 나중 항목이 앞 항목을 덮는다.
+- **Subagent**: `~/.codex/agents/*.toml`, `.codex/agents/*.toml`(파일 하나에 agent 하나). 필수 `name`·`description`·`developer_instructions`. Markdown 형식은 없다. **하나만 끄는 설정은 없고** `agents.enabled = false`로 전부 끈다.
+- **MCP**: `[mcp_servers.<이름>]`(사용자·신뢰한 프로젝트 설정). `command`/`args` 또는 `url`. `enabled = false`면 시작하지 않는다.
+- **Custom prompts**(`~/.codex/prompts/*.md`): 폐지 예정(deprecated), skill로 대체.
+- **Rules**(`~/.codex/rules/*.rules`, 프로젝트 `.codex/rules/`): Starlark로 쓴 **명령 실행 허용 정책**이다. 지침이 아니다.
+- **Hooks**: `hooks.json` 또는 config.toml `[hooks]`(사용자·프로젝트). 신뢰 확인이 필요하다.
+- **Worktree**(Codex 앱): `$CODEX_HOME/worktrees/<UUID 앞 4자리>/<레포 폴더 이름>`에 브랜치 없이(detached) 만든다. `[desktop] git-worktree-root`로 위치 변경, 오래된 것은 자동 정리된다.
+- **Hooks 형식** (`config/src/hook_config.rs`, `hooks/`): `hooks.json` = `{"description"?, "hooks": {<이벤트>: [{"matcher"?, "hooks": [핸들러…]}]}}`로 **Claude Code의 `hooks` 객체와 같은 모양**이다. 알 수 없는 최상위 키가 있으면 파일 전체가 거부된다. config.toml에서는 `[[hooks.PreToolUse]]` + `[[hooks.PreToolUse.hooks]]`로 쓴다. 한 층에 둘 다 있으면 둘 다 실행된다(경고).
+  - 이벤트 12개: PreToolUse, PermissionRequest, PostToolUse, PreCompact, PostCompact, SessionStart, SessionEnd, UserPromptSubmit, SubagentStart, SubagentStop, Stop, Interrupt.
+  - 핸들러: `{"type":"command","command","commandWindows"?,"timeout"?(초, 기본 600),"async"?,"statusMessage"?}` 또는 `{"type":"mcp_tool",…}`. `prompt`·`agent` 형식은 무시된다.
+  - 실행 규약이 Claude와 일부 다르다: PreToolUse는 `permissionDecision:"deny"`(이유 필수)만 지원하고 `ask`는 거부, Stop은 stdout에 JSON 필수. 명령은 `$SHELL -lc`(Windows `cmd /C`).
+  - 신뢰: 관리 정책이 아닌 hook은 사용자가 `/hooks`에서 신뢰해야 실행된다. 신뢰는 hook 내용의 해시로 사용자 config.toml `[hooks.state."<키>"] trusted_hash`에 기록된다. **앱이 대신 신뢰 처리하지 않는다.** 내용이 바뀌면 다시 신뢰해야 한다. `[features] hooks = false`로 전부 끈다.
+- **MCP CLI** (`cli/src/mcp_cmd.rs`): `codex mcp list [--json]`, `get <이름> [--json]`, `add <이름> (--url <URL> | -- <명령>…) [--env K=V]`, `remove`, `login`, `logout`. `add`·`remove`는 **사용자 `$CODEX_HOME/config.toml`에만** 쓴다(프로젝트 범위 없음). `list --json`은 `{name, enabled, disabled_reason, transport, …, auth_status}` 배열. **연결 확인(health check)은 하지 않는다.**
+- **`codex exec`로 한 번 답 받기**: `codex exec --ephemeral --skip-git-repo-check -s read-only --ignore-user-config --ignore-rules -C <빈 폴더> -o <임시 파일> -`(프롬프트는 stdin). 최종 답은 stdout과 `-o` 파일에 나오고 진행 상황은 stderr. 승인 정책은 항상 Never. 도구를 완전히 끄는 옵션은 없다(읽기 전용 샌드박스가 한계). 빈 폴더에서 실행하면 프로젝트 AGENTS.md·설정·hook을 읽지 않는다.
+- **슬래시 명령**: 사용자가 만드는 명령은 폐지 예정인 `~/.codex/prompts`뿐이고, 대체는 skill(`$이름` 또는 `/skills`)이다.
+- **headless**: `codex exec`(기본 읽기 전용 샌드박스) `--json`, `--output-schema <파일>`, `--skip-git-repo-check`. 로그인 확인은 `codex login status`의 **종료 코드**(0 로그인, 1 아님).
+- **데스크탑 앱(Windows)**: "ChatGPT desktop app"(Microsoft Store). 실행 파일·프로세스 이름과 Electron 여부는 공식 자료에 없다 → 실기 확인 필요.
+
+## 14. 다른 도구 (Copilot, Antigravity) — 어댑터 설계 참고용 (2026-10-13, haiku 조사, 미검증)
+
+출처: [Copilot custom instructions](https://code.visualstudio.com/docs/copilot/customization/custom-instructions), [agent skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills), [custom agents](https://code.visualstudio.com/docs/copilot/customization/custom-agents), [Copilot CLI config dir](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference), [Antigravity rules](https://www.antigravity.google/docs/rules), [skills](https://www.antigravity.google/docs/skills), [MCP](https://www.antigravity.google/docs/mcp)
+
+| 개념 | GitHub Copilot (VS Code · CLI `copilot`) | Google Antigravity (IDE · CLI `agy`) |
+|---|---|---|
+| 항상 읽는 지침 | `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `~/.copilot/copilot-instructions.md` | `AGENTS.md`, `GEMINI.md`, `.agents/AGENTS.md`, `~/.gemini/AGENTS.md` |
+| 경로별 지침 | `.github/instructions/*.instructions.md`(`applyTo`) | `.agents/rules/*.md`(`trigger`, `globs`) |
+| Skill | `.github/skills`, `.claude/skills`, `.agents/skills`, `~/.copilot/skills` | `.agents/skills`, `~/.gemini/config/skills` |
+| Agent | `.github/agents/*.agent.md`, `~/.copilot/agents` | 없음 |
+| MCP | `.vscode/mcp.json`(`servers`), `.mcp.json`, `~/.copilot/mcp-config.json` | `.agents/mcp_config.json`, `~/.gemini/config/mcp_config.json` |
+| 끄기 | CLI `settings.json`의 `disabledSkills`(개인 `.github/copilot/settings.local.json` 있음) | MCP `disabled: true`, 그 밖에는 미확인 |
+
+- 공통: `AGENTS.md`와 `.agents/skills/<이름>/SKILL.md`는 Codex·Copilot·Antigravity가 함께 읽는다. 앱이 Codex용 skill을 `.agents/skills`에 넣으면 다른 도구에서도 보인다.
+- Gemini CLI는 2026-06에 Antigravity CLI로 대체됐다.

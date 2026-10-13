@@ -21,20 +21,21 @@ const SCOPE_ORDER: SlashCommand["scope"][] = ["project", "local", "parent", "use
 export function CommandsPanel({ compact = false }: { compact?: boolean }) {
   const t = useT();
   const project = useProjectStore((s) => s.current);
+  const tool = useProjectStore((s) => s.tool);
   const [list, setList] = useState<SlashCommand[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!isTauri() || !project) return;
+    if (!isTauri() || !project || tool !== "claude") return;
     try {
       setList(await invoke<SlashCommand[]>("claude_commands", { path: project }));
       setError(null);
     } catch (e) {
       setError(String(e));
     }
-  }, [project]);
+  }, [project, tool]);
 
   useEffect(() => {
     setList(null);
@@ -65,6 +66,14 @@ export function CommandsPanel({ compact = false }: { compact?: boolean }) {
   };
 
   if (!project) return <p className="text-xs text-text-muted">{t("commands.noProject")}</p>;
+
+  if (tool !== "claude")
+    return (
+      <div className="rounded-lg border border-border bg-surface-raised px-3 py-2.5">
+        <p className="text-xs font-medium">{t("commands.codex.title")}</p>
+        <p className="mt-1 text-fs-11 text-text-muted">{t("commands.codex.body")}</p>
+      </div>
+    );
 
   return (
     <div className="space-y-3">

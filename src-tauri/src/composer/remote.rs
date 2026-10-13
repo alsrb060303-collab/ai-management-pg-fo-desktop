@@ -10,6 +10,7 @@ use super::write::{self, PlanItem, Project, Status};
 use super::{Composer, Confirmation, blocking, catalog_for, compile, parse_doc};
 use crate::github::{self, Snapshot};
 use crate::library::ops;
+use crate::tools::ToolId;
 
 /// Records of files written to GitHub are kept per repository, so a change
 /// merged from a pull request still counts as ours on the base branch.
@@ -45,7 +46,28 @@ impl Project for Remote<'_> {
 pub struct RemotePlan {
     /// The commit the plan was made on; writing requires the branch to still be there.
     pub head: String,
+    /// The tool the files are laid out for: the one asked for, or the one
+    /// detected from the branch's files.
+    pub tool: ToolId,
+    /// Whether `tool` was detected from the branch rather than picked.
+    pub detected: bool,
     pub items: Vec<PlanItem>,
+}
+
+/// The tool a repository is set up for, from its file list: only one tool's
+/// own files (CLAUDE.md, `.claude/` against AGENTS.md, AGENTS.override.md,
+/// `.codex/`) decide it; otherwise `fallback` (the user's default tool).
+pub fn detect_remote<'a>(paths: impl IntoIterator<Item = &'a str>, fallback: ToolId) -> ToolId {
+    let (mut claude, mut codex) = (false, false);
+    for path in paths {
+        claude |= matches!(path, "CLAUDE.md" | "CLAUDE.local.md") || path.starts_with(".claude/");
+        codex |= matches!(path, "AGENTS.md" | "AGENTS.override.md") || path.starts_with(".codex/");
+    }
+    match (claude, codex) {
+        (true, false) => ToolId::Claude,
+        (false, true) => ToolId::Codex,
+        _ => fallback,
+    }
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -59,39 +81,87 @@ pub struct RemoteWriteResult {
     pub skipped: Vec<(String, String)>,
 }
 
+/// Which tool to plan for: the one picked, or one detected from the branch.
+#[derive(Clone, Copy)]
+enum ToolChoice {
+    Picked(ToolId),
+    /// Detect from the branch's files, else this (the user's default tool).
+    Detect(ToolId),
+}
+
+type Planned = (Snapshot, ToolId, Vec<(compile::OutFile, PlanItem)>);
+
 fn plan_items(
     app: &AppHandle,
     slug: &str,
     branch: &str,
     doc: Value,
-) -> ops::Result<(Snapshot, Vec<(compile::OutFile, PlanItem)>)> {
-    let compiled = compile::compile(&parse_doc(doc)?, &catalog_for(app));
-    let wanted: Vec<String> = compiled.files.iter().map(|f| f.path.clone()).collect();
+    choice: ToolChoice,
+) -> ops::Result<Planned> {
+    let doc = parse_doc(doc)?;
+    let catalog = catalog_for(app);
+    let tools: Vec<ToolId> = match choice {
+        ToolChoice::Picked(tool) => vec![tool],
+        ToolChoice::Detect(_) => ToolId::ALL.to_vec(),
+    };
+    // Before the tool is known, read the files either tool would write.
+    let mut compiled: Vec<compile::Compiled> = tools
+        .iter()
+        .map(|&tool| compile::compile(&doc, &catalog, tool))
+        .collect();
+    let mut wanted: Vec<String> = Vec::new();
+    for path in compiled
+        .iter()
+        .flat_map(|c| c.files.iter().map(|f| &f.path))
+    {
+        if !wanted.contains(path) {
+            wanted.push(path.clone());
+        }
+    }
     let snapshot = github::snapshot(app, slug, branch, &wanted)?;
+    let tool = match choice {
+        ToolChoice::Picked(tool) => tool,
+        ToolChoice::Detect(fallback) => {
+            detect_remote(snapshot.modes.keys().map(String::as_str), fallback)
+        }
+    };
+    let index = tools.iter().position(|&t| t == tool).unwrap_or(0);
+    let compiled = compiled.swap_remove(index);
     let composer = app.state::<Composer>();
     let records = composer.written.lock().unwrap_or_else(|e| e.into_inner());
     let items = compiled
         .files
         .into_iter()
         .map(|f| {
-            let item = write::plan(&Remote(&snapshot), &key(slug), &f, &records);
+            let item = write::plan(&Remote(&snapshot), &key(slug), &f, &records, tool);
             (f, item)
         })
         .collect();
-    Ok((snapshot, items))
+    Ok((snapshot, tool, items))
 }
 
+/// Plans a write to `branch` of `slug`. The files follow `tool`, or with
+/// none, the tool detected from the branch's files (else `fallback`): the
+/// repository's tool, not the open local project's.
 #[tauri::command]
 pub async fn composer_plan_remote(
     app: AppHandle,
     slug: String,
     branch: String,
     doc: Value,
+    tool: Option<ToolId>,
+    fallback: ToolId,
 ) -> Result<RemotePlan, String> {
     blocking(app, move |app| {
-        let (snapshot, items) = plan_items(app, &slug, &branch, doc)?;
+        let choice = match tool {
+            Some(tool) => ToolChoice::Picked(tool),
+            None => ToolChoice::Detect(fallback),
+        };
+        let (snapshot, tool, items) = plan_items(app, &slug, &branch, doc, choice)?;
         Ok(RemotePlan {
             head: snapshot.head,
+            tool,
+            detected: matches!(choice, ToolChoice::Detect(_)),
             items: items.into_iter().map(|(_, item)| item).collect(),
         })
     })
@@ -108,12 +178,14 @@ pub async fn composer_write_remote(
     branch: String,
     head: String,
     doc: Value,
+    tool: ToolId,
     confirmed: Vec<Confirmation>,
     message: String,
     new_branch: Option<String>,
 ) -> Result<RemoteWriteResult, String> {
     blocking(app, move |app| {
-        let (snapshot, items) = plan_items(app, &slug, &branch, doc)?;
+        let (snapshot, _, items) =
+            plan_items(app, &slug, &branch, doc, ToolChoice::Picked(tool))?;
         if snapshot.head != head {
             return Err(crate::tr!(
                 "그사이 '{branch}' 브랜치에 새 커밋이 생겼어요. 미리보기를 다시 불러온 뒤 써 주세요",
@@ -208,7 +280,7 @@ mod tests {
             section,
             personal,
             target: if section {
-                Target::ClaudeMd
+                Target::Instructions
             } else {
                 Target::Rules
             },
@@ -227,6 +299,7 @@ mod tests {
             "github:o/r",
             &out("CLAUDE.md", "Rules", true, false),
             &[],
+            ToolId::Claude,
         );
         assert_eq!(section.status, Status::Update);
         assert!(section.new.starts_with("# Mine\n"), "{}", section.new);
@@ -237,6 +310,7 @@ mod tests {
             "github:o/r",
             &out(".claude/rules/a.md", "A", false, true),
             &[],
+            ToolId::Claude,
         );
         assert!(matches!(personal.status, Status::Blocked(_)));
 
@@ -245,8 +319,25 @@ mod tests {
             "github:o/r",
             &out(".claude/rules/b.md", "B", false, false),
             &[],
+            ToolId::Claude,
         );
         assert_eq!(new.status, Status::New);
+    }
+
+    #[test]
+    fn the_repository_files_pick_the_tool() {
+        let detect = |paths: &[&str], fallback| detect_remote(paths.iter().copied(), fallback);
+        use ToolId::{Claude, Codex};
+        assert_eq!(detect(&["AGENTS.md", "src/a.rs"], Claude), Codex);
+        assert_eq!(detect(&[".codex/hooks.json"], Claude), Codex);
+        assert_eq!(detect(&["CLAUDE.md", "README.md"], Codex), Claude);
+        assert_eq!(detect(&[".claude/settings.json"], Codex), Claude);
+        // Both, or neither: the default tool.
+        assert_eq!(detect(&["CLAUDE.md", "AGENTS.md"], Codex), Codex);
+        assert_eq!(detect(&["CLAUDE.md", "AGENTS.md"], Claude), Claude);
+        assert_eq!(detect(&["README.md"], Codex), Codex);
+        // Only the root files count; nested ones belong to subprojects.
+        assert_eq!(detect(&["docs/CLAUDE.md", "AGENTS.md"], Claude), Codex);
     }
 
     #[test]
@@ -260,6 +351,7 @@ mod tests {
             "github:o/r",
             &out("CLAUDE.md", "R", true, false),
             &[],
+            ToolId::Claude,
         );
         assert_eq!(item.status, Status::Blocked("not text".into()));
     }

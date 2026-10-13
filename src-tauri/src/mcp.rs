@@ -9,6 +9,9 @@
 //!   it: it runs the user's own `claude mcp list/get/add/remove` instead.
 //! - Connection status comes from `claude mcp list`, which health-checks
 //!   each server it would use.
+//!
+//! Codex servers (`[mcp_servers.<name>]` in config.toml) are handled in
+//! [`codex`]: the app reads and edits the TOML files itself.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -21,6 +24,9 @@ use tauri::{AppHandle, Manager};
 
 use crate::claude_mod::claude_in;
 use crate::library::ops;
+use crate::tools::ToolId;
+
+mod codex;
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -83,6 +89,8 @@ pub enum Health {
     Off,
     #[default]
     Unknown,
+    /// The tool has no connection check the app can run (Codex).
+    NoCheck,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -111,8 +119,12 @@ pub struct Listing {
     pub servers: Vec<Server>,
     /// Why personal servers and connection status are missing, if they are.
     pub cli_error: Option<String>,
-    /// `.mcp.json` exists but can't be read.
+    /// `.mcp.json` (Codex: `.codex/config.toml`) exists but can't be read.
     pub project_error: Option<String>,
+    /// Codex: the user `config.toml` exists but can't be read.
+    pub user_error: Option<String>,
+    /// Codex: whether the project's `.codex/config.toml` is read at all.
+    pub trust: Option<codex::Trust>,
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +535,18 @@ fn run(project: &Path, args: &[String], timeout: Duration) -> Result<String> {
 // ---------------------------------------------------------------------------
 // Listing and changes
 
+/// What the list shows for a server: its command line, or its URL.
+fn target_of(config: &Config) -> String {
+    if config.transport == "stdio" {
+        std::iter::once(config.command.clone())
+            .chain(config.args.iter().cloned())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        config.url.clone()
+    }
+}
+
 fn list(project: &Path, config_dir: &Path) -> Listing {
     let mut listing = Listing::default();
     let approval = approval(project, config_dir);
@@ -558,14 +582,7 @@ fn list(project: &Path, config_dir: &Path) -> Listing {
             (None, None) => (Health::Pending, String::new()),
             _ => (Health::Unknown, String::new()),
         };
-        let target = if config.transport == "stdio" {
-            std::iter::once(config.command.clone())
-                .chain(config.args.iter().cloned())
-                .collect::<Vec<_>>()
-                .join(" ")
-        } else {
-            config.url.clone()
-        };
+        let target = target_of(&config);
         listing.servers.push(Server {
             name: name.clone(),
             scope: Scope::Project,
@@ -1294,7 +1311,12 @@ pub fn recommended() -> Vec<Recommended> {
 
 fn config_dir(app: &AppHandle) -> Result<PathBuf> {
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    Ok(crate::claude_config::Env::detect(home).config_dir)
+    Ok(crate::tools::claude::Env::detect(home).config_dir)
+}
+
+fn codex_home(app: &AppHandle) -> Result<PathBuf> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    Ok(crate::tools::codex::Env::detect(home).codex_home)
 }
 
 fn project_dir(project: &str) -> Result<PathBuf> {
@@ -1316,9 +1338,17 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 }
 
 #[tauri::command]
-pub async fn mcp_list(app: AppHandle, project: String) -> Result<Listing> {
-    let dir = config_dir(&app)?;
-    blocking(move || Ok(list(&project_dir(&project)?, &dir))).await
+pub async fn mcp_list(app: AppHandle, project: String, tool: ToolId) -> Result<Listing> {
+    match tool {
+        ToolId::Claude => {
+            let dir = config_dir(&app)?;
+            blocking(move || Ok(list(&project_dir(&project)?, &dir))).await
+        }
+        ToolId::Codex => {
+            let home = codex_home(&app)?;
+            blocking(move || Ok(codex::list(&project_dir(&project)?, &home))).await
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1333,34 +1363,74 @@ pub struct Original {
 pub async fn mcp_save(
     app: AppHandle,
     project: String,
+    tool: ToolId,
     original: Option<Original>,
     scope: Scope,
     name: String,
     config: Config,
 ) -> Result<()> {
-    let config_dir = config_dir(&app)?;
+    let config_dir = match tool {
+        ToolId::Claude => config_dir(&app)?,
+        ToolId::Codex => codex_home(&app)?,
+    };
     blocking(move || {
         let dir = project_dir(&project)?;
-        let old = original.map(|o| (o.scope, o.name, o.config));
-        save(&dir, &config_dir, old, scope, name.trim(), &config)
+        match tool {
+            ToolId::Claude => {
+                let old = original.map(|o| (o.scope, o.name, o.config));
+                save(&dir, &config_dir, old, scope, name.trim(), &config)
+            }
+            ToolId::Codex => {
+                let old = original.map(|o| (o.scope, o.name));
+                codex::save(&dir, &config_dir, old, scope, name.trim(), &config)
+            }
+        }
     })
     .await
 }
 
 #[tauri::command]
-pub async fn mcp_remove(project: String, scope: Scope, name: String) -> Result<()> {
-    blocking(move || remove(&project_dir(&project)?, scope, &name)).await
+pub async fn mcp_remove(
+    app: AppHandle,
+    project: String,
+    tool: ToolId,
+    scope: Scope,
+    name: String,
+) -> Result<()> {
+    match tool {
+        ToolId::Claude => blocking(move || remove(&project_dir(&project)?, scope, &name)).await,
+        ToolId::Codex => {
+            let home = codex_home(&app)?;
+            blocking(move || codex::remove(&project_dir(&project)?, &home, scope, &name)).await
+        }
+    }
 }
 
+/// Claude Code: approves or turns off a `.mcp.json` server for this project
+/// (`scope` is ignored). Codex: sets `enabled` of the server in `scope`.
 #[tauri::command]
 pub async fn mcp_set_enabled(
     app: AppHandle,
     project: String,
+    tool: ToolId,
+    scope: Option<Scope>,
     name: String,
     enabled: bool,
 ) -> Result<()> {
-    let dir = config_dir(&app)?;
-    blocking(move || set_enabled(&project_dir(&project)?, &dir, &name, enabled)).await
+    match tool {
+        ToolId::Claude => {
+            let dir = config_dir(&app)?;
+            blocking(move || set_enabled(&project_dir(&project)?, &dir, &name, enabled)).await
+        }
+        ToolId::Codex => {
+            let home = codex_home(&app)?;
+            let scope = scope.unwrap_or(Scope::Project);
+            blocking(move || {
+                codex::set_enabled(&project_dir(&project)?, &home, scope, &name, enabled)
+            })
+            .await
+        }
+    }
 }
 
 #[tauri::command]

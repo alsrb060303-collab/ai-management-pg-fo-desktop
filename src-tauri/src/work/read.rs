@@ -14,8 +14,58 @@ const MAX_CHANGES: usize = 1000;
 const MAX_COUNTED_WORKTREES: usize = 20;
 /// Commits shown in the history.
 const LOG_LIMIT: usize = 40;
-/// Folder Claude Code (and this app) creates worktrees in.
-pub const WORKTREES_DIR: &str = ".claude/worktrees";
+
+/// Who made a worktree, judged by where it lives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ManagedBy {
+    /// Under `<main>/.claude/worktrees` (Claude Code or this app).
+    Claude,
+    /// Under `<main>/.codex/worktrees` (this app, for a Codex project).
+    Codex,
+    /// Under the Codex worktree root (made by the Codex app).
+    CodexApp,
+}
+
+/// The folder the Codex app puts its worktrees in: `[desktop]
+/// git-worktree-root` from `config.toml` (`config` is its text), else
+/// `<codex_home>/worktrees`. A leading `~` means `home`. A relative value is
+/// resolved against `codex_home` (assumption: the config's own folder is the
+/// natural base; Codex's docs don't say).
+pub fn codex_worktree_root(codex_home: &Path, home: &Path, config: Option<&str>) -> PathBuf {
+    config
+        .and_then(|text| text.parse::<toml_edit::DocumentMut>().ok())
+        .and_then(|doc| {
+            doc.get("desktop")?
+                .get("git-worktree-root")?
+                .as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| expand_root(s, codex_home, home))
+        })
+        .unwrap_or_else(|| codex_home.join("worktrees"))
+}
+
+fn expand_root(value: &str, codex_home: &Path, home: &Path) -> PathBuf {
+    let rest = if value == "~" {
+        Some("")
+    } else {
+        value
+            .strip_prefix("~/")
+            .or_else(|| value.strip_prefix("~\\"))
+    };
+    match rest {
+        Some(rest) => home.join(rest),
+        // `join` keeps an absolute `value` as is.
+        None => codex_home.join(value),
+    }
+}
+
+/// Same, reading `<codex_home>/config.toml` (a missing file means the default).
+pub fn codex_worktree_root_in(codex_home: &Path, home: &Path) -> PathBuf {
+    let text = std::fs::read_to_string(codex_home.join("config.toml")).ok();
+    codex_worktree_root(codex_home, home, text.as_deref())
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,8 +133,8 @@ pub struct Worktree {
     pub is_main: bool,
     /// The worktree of the open project.
     pub is_current: bool,
-    /// Under `.claude/worktrees` (made by Claude Code or this app).
-    pub managed: bool,
+    /// Who made it, when it lives in a folder one of the tools uses.
+    pub managed_by: Option<ManagedBy>,
     pub locked: bool,
     /// Its folder is gone; `git worktree prune` would drop it.
     pub prunable: bool,
@@ -333,8 +383,16 @@ fn parse_branches(out: &str, current: Option<&str>) -> Vec<Branch> {
 }
 
 /// Parses `git worktree list --porcelain -z`.
-fn parse_worktrees(raw: &[u8], current_root: &str, main_root: &str) -> Vec<Worktree> {
-    let managed_dir = format!("{}/{WORKTREES_DIR}/", path_key(main_root));
+fn parse_worktrees(
+    raw: &[u8],
+    current_root: &str,
+    main_root: &str,
+    codex_root: Option<&Path>,
+) -> Vec<Worktree> {
+    let main_key = path_key(main_root);
+    let claude_dir = format!("{main_key}/.claude/worktrees/");
+    let codex_dir = format!("{main_key}/.codex/worktrees/");
+    let codex_app_dir = codex_root.map(|r| format!("{}/", path_key(&r.to_string_lossy())));
     let mut list = Vec::new();
     let mut entry: Option<Worktree> = None;
     for field in fields(raw) {
@@ -352,7 +410,15 @@ fn parse_worktrees(raw: &[u8], current_root: &str, main_root: &str) -> Vec<Workt
                 commit: None,
                 is_main: list.is_empty(),
                 is_current: k == path_key(current_root),
-                managed: k.starts_with(&managed_dir),
+                managed_by: if k.starts_with(&claude_dir) {
+                    Some(ManagedBy::Claude)
+                } else if k.starts_with(&codex_dir) {
+                    Some(ManagedBy::Codex)
+                } else if codex_app_dir.as_ref().is_some_and(|d| k.starts_with(d)) {
+                    Some(ManagedBy::CodexApp)
+                } else {
+                    None
+                },
                 locked: false,
                 prunable: false,
                 changes: None,
@@ -529,7 +595,13 @@ pub fn root(project: &Path) -> git::Result<Option<PathBuf>> {
 
 /// Everything the work panel shows. `count_worktrees` also counts the changes
 /// in other worktrees (one `git status` each), so polls can skip it.
-pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
+///
+/// `codex_root` is the Codex app's worktree root, to label its worktrees.
+pub fn overview(
+    root: &Path,
+    count_worktrees: bool,
+    codex_root: Option<&Path>,
+) -> git::Result<Overview> {
     let raw = git::run_raw(root, &["status", "--porcelain=v2", "-z", "--branch"])?;
     let (head, changes, change_count) = parse_status(&raw);
 
@@ -556,7 +628,7 @@ pub fn overview(root: &Path, count_worktrees: bool) -> git::Result<Overview> {
         .into_iter()
         .find_map(|f| f.strip_prefix("worktree ").map(str::to_string))
         .unwrap_or_else(|| root_str.clone());
-    let mut worktrees = parse_worktrees(&raw, &root_str, &first);
+    let mut worktrees = parse_worktrees(&raw, &root_str, &first, codex_root);
     let mut counted = 0;
     for wt in &mut worktrees {
         if wt.is_current {
@@ -669,7 +741,7 @@ u UU N... 100644 100644 100644 100644 a b c conflict.rs\0\
         let raw = b"worktree /r\0HEAD 1111111111\0branch refs/heads/main\0\0\
 worktree /r/.claude/worktrees/x\0HEAD 2222222222\0branch refs/heads/worktree-x\0locked\0\0\
 worktree /gone\0HEAD 3333333333\0detached\0prunable gitdir file points to non-existent location\0\0";
-        let list = parse_worktrees(raw, "/r/.claude/worktrees/x", "/r");
+        let list = parse_worktrees(raw, "/r/.claude/worktrees/x", "/r", None);
         let summary: Vec<_> = list
             .iter()
             .map(|w| {
@@ -678,7 +750,7 @@ worktree /gone\0HEAD 3333333333\0detached\0prunable gitdir file points to non-ex
                     w.branch.as_deref(),
                     w.is_main,
                     w.is_current,
-                    w.managed,
+                    w.managed_by,
                     w.locked,
                     w.prunable,
                 )
@@ -687,17 +759,17 @@ worktree /gone\0HEAD 3333333333\0detached\0prunable gitdir file points to non-ex
         assert_eq!(
             summary,
             [
-                ("/r", Some("main"), true, false, false, false, false),
+                ("/r", Some("main"), true, false, None, false, false),
                 (
                     "/r/.claude/worktrees/x",
                     Some("worktree-x"),
                     false,
                     true,
-                    true,
+                    Some(ManagedBy::Claude),
                     true,
                     false
                 ),
-                ("/gone", None, false, false, false, false, true),
+                ("/gone", None, false, false, None, false, true),
             ]
         );
     }
@@ -725,6 +797,73 @@ bbbb\x1fb\x1fp1 p2\x1fYou\x1f5\x1frefs/remotes/origin/main\x1fMerge y\x1e\n";
         );
         assert!(log[1].pushed && log[1].merge);
         assert_eq!(log[1].refs[0].kind, RefKind::Remote);
+    }
+
+    #[test]
+    fn codex_worktrees_are_labeled() {
+        let raw = b"worktree /r\0HEAD 1111111111\0branch refs/heads/main\0\0\
+worktree /r/.codex/worktrees/a\0HEAD 2222222222\0branch refs/heads/worktree-a\0\0\
+worktree /h/.codex/worktrees/ab12/r\0HEAD 3333333333\0detached\0\0\
+worktree /custom/ab12/r\0HEAD 4444444444\0detached\0\0\
+worktree /r/.claude/worktreesx/z\0HEAD 5555555555\0detached\0\0";
+        let by = |codex_root: Option<&Path>| -> Vec<Option<ManagedBy>> {
+            parse_worktrees(raw, "/r", "/r", codex_root)
+                .iter()
+                .map(|w| w.managed_by)
+                .collect()
+        };
+        let none = None;
+        let (c, app) = (Some(ManagedBy::Codex), Some(ManagedBy::CodexApp));
+        assert_eq!(by(None), [none, c, none, none, none]);
+        assert_eq!(
+            by(Some(Path::new("/h/.codex/worktrees"))),
+            [none, c, app, none, none]
+        );
+        assert_eq!(by(Some(Path::new("/custom"))), [none, c, none, app, none]);
+        assert_eq!(by(Some(Path::new("/custom/"))), [none, c, none, app, none]);
+    }
+
+    #[test]
+    fn codex_worktree_root_follows_the_config() {
+        let home = Path::new("/h/.codex");
+        let default = home.join("worktrees");
+        let user = Path::new("/h");
+        let codex_worktree_root =
+            |c: &Path, t: Option<&str>| super::codex_worktree_root(c, user, t);
+        assert_eq!(codex_worktree_root(home, None), default);
+        assert_eq!(codex_worktree_root(home, Some("model = 'x'\n")), default);
+        assert_eq!(codex_worktree_root(home, Some("[desktop]\n")), default);
+        assert_eq!(codex_worktree_root(home, Some("not toml [[")), default);
+        assert_eq!(
+            codex_worktree_root(home, Some("[desktop]\ngit-worktree-root = \"/w\"\n")),
+            PathBuf::from("/w")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some("[desktop]\ngit-worktree-root = \"\"\n")),
+            default
+        );
+        let cfg = |v: &str| format!("[desktop]\ngit-worktree-root = '{v}'\n");
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~/codex-wt"))),
+            PathBuf::from("/h/codex-wt")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~\\wt"))),
+            PathBuf::from("/h/wt")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~"))),
+            PathBuf::from("/h")
+        );
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("rel/wt"))),
+            PathBuf::from("/h/.codex/rel/wt")
+        );
+        // `~user` is not expanded; it stays relative to the Codex folder.
+        assert_eq!(
+            codex_worktree_root(home, Some(&cfg("~bob/wt"))),
+            PathBuf::from("/h/.codex/~bob/wt")
+        );
     }
 
     #[test]

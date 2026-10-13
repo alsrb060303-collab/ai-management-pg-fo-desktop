@@ -10,54 +10,93 @@ import {
   type ConfigState,
   useProjectStore,
 } from "../../store/project";
+import { TOOLS, type ToolId } from "../../tools";
 import { ModeButtons, smallButton } from "./ModeButtons";
+import { ToolPicker } from "./ToolPicker";
 
-/** `hint` says in one line what the kind does; `path` (where it lives) is the tooltip. */
-const SECTIONS: { kind: ConfigKind; title: MessageKey; hint: MessageKey; path: string }[] = [
-  {
-    kind: "instructions",
-    title: "docs.section.instructions",
-    hint: "docs.section.instructionsHint",
-    path: "CLAUDE.md",
-  },
-  {
-    kind: "rule",
-    title: "docs.section.rule",
-    hint: "docs.section.ruleHint",
-    path: ".claude/rules",
-  },
-  {
-    kind: "skill",
-    title: "docs.section.skill",
-    hint: "docs.section.skillHint",
-    path: ".claude/skills",
-  },
-  {
-    kind: "agent",
-    title: "docs.section.agent",
-    hint: "docs.section.agentHint",
-    path: ".claude/agents",
-  },
-  {
-    kind: "command",
-    title: "docs.section.command",
-    hint: "docs.section.commandHint",
-    path: ".claude/commands",
-  },
-  { kind: "mcp", title: "docs.section.mcp", hint: "docs.section.mcpHint", path: ".mcp.json" },
-  {
-    kind: "plugin",
-    title: "docs.section.plugin",
-    hint: "docs.section.pluginHint",
-    path: "enabledPlugins",
-  },
-  {
-    kind: "settings",
-    title: "docs.section.settings",
-    hint: "docs.section.settingsHint",
-    path: "settings.json",
-  },
-];
+interface Section {
+  kind: ConfigKind;
+  title: MessageKey;
+  /** What the kind does, in one line. */
+  hint: MessageKey;
+  /** Where it lives, as a tooltip. */
+  path: string;
+}
+
+/** Map sections for the tool the map was scanned for, in display order. */
+function sectionsFor(tool: ToolId): Section[] {
+  const info = TOOLS[tool];
+  const codex = tool === "codex";
+  const sections: (Section | null)[] = [
+    {
+      kind: "instructions",
+      title: "docs.section.instructions",
+      hint: "docs.section.instructionsHint",
+      path: info.instructions.team,
+    },
+    info.rulesDir
+      ? {
+          kind: "rule",
+          title: "docs.section.rule",
+          hint: "docs.section.ruleHint",
+          path: info.rulesDir,
+        }
+      : null,
+    {
+      kind: "skill",
+      title: "docs.section.skill",
+      hint: "docs.section.skillHint",
+      path: info.skillsDir,
+    },
+    {
+      kind: "agent",
+      title: "docs.section.agent",
+      hint: "docs.section.agentHint",
+      path: info.agentsDir,
+    },
+    {
+      kind: "command",
+      title: "docs.section.command",
+      hint: "docs.section.commandHint",
+      path: codex ? "~/.codex/prompts" : ".claude/commands",
+    },
+    {
+      kind: "mcp",
+      title: "docs.section.mcp",
+      hint: "docs.section.mcpHint",
+      path: codex ? "config.toml [mcp_servers]" : ".mcp.json",
+    },
+    codex
+      ? {
+          kind: "policy",
+          title: "docs.section.policy",
+          hint: "docs.section.policyHint",
+          path: "rules/*.rules",
+        }
+      : null,
+    {
+      kind: "hook",
+      title: "docs.section.hook",
+      hint: "docs.section.hookHint",
+      path: codex ? "hooks.json · config.toml [hooks]" : "settings.json hooks",
+    },
+    codex
+      ? null
+      : {
+          kind: "plugin",
+          title: "docs.section.plugin",
+          hint: "docs.section.pluginHint",
+          path: "enabledPlugins",
+        },
+    {
+      kind: "settings",
+      title: "docs.section.settings",
+      hint: "docs.section.settingsHint",
+      path: info.settingsFile,
+    },
+  ];
+  return sections.filter((s): s is Section => s !== null);
+}
 
 /** What each scope means, shown when an item is opened. */
 const SCOPE_HELP: Record<ConfigScope, MessageKey> = {
@@ -131,6 +170,7 @@ export function ConfigMapPanel({
         onSelect={select}
         onRefresh={refresh}
       />
+      {current && <ToolPicker />}
       {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
       {libraryError && (
         <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{libraryError}</p>
@@ -140,7 +180,7 @@ export function ConfigMapPanel({
       )}
       {!current && <p className="text-xs text-text-muted">{t("docs.map.pickProject")}</p>}
       {map &&
-        SECTIONS.map((section) => {
+        sectionsFor(map.tool).map((section) => {
           const items = map.items.filter((i) => i.kind === section.kind);
           if (items.length === 0) return null;
           return (
@@ -178,7 +218,9 @@ export function ConfigMapPanel({
           );
         })}
       {map && map.items.length === 0 && (
-        <p className="text-xs text-text-muted">{t("docs.map.empty")}</p>
+        <p className="text-xs text-text-muted">
+          {t("docs.map.empty", { tool: TOOLS[map.tool].name })}
+        </p>
       )}
       {map && map.notes.length > 0 && (
         <ul className="space-y-0.5 border-t border-border pt-2 text-fs-11 text-text-muted">
@@ -247,6 +289,7 @@ function ConfigRow({
   const state = STATE_STYLES[item.state];
   const dimmed = item.state === "shadowed" || item.state === "off" || item.state === "notLoaded";
   const { busy, setEnabled, importItem, overview } = useLibraryStore();
+  const tool = useProjectStore((s) => s.tool);
 
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState(false);
@@ -265,11 +308,25 @@ function ConfigRow({
     item.scope !== "managed" &&
     !item.name.startsWith("anthropic-skills:") &&
     item.state !== "notLoaded";
+  const info = TOOLS[tool];
+  // Codex matches turned-off skills by SKILL.md path, Claude Code by name.
+  const toggled = overview?.toggledOff.find(
+    (o) => o.kind === kind && (o.path ? o.path === item.path : o.name === item.name),
+  );
+  // Codex: one subagent can't be turned off, and a user skill (shared by every
+  // project) isn't offered; only skills inside the project.
+  const offReason: MessageKey | null =
+    kind === "agent" && !info.agentToggle
+      ? "docs.item.agentToggleUnsupported"
+      : kind === "skill" && info.skillToggle === "personalOnly" && item.scope !== "project"
+        ? "docs.item.userSkillToggleUnsupported"
+        : null;
   // Only offs this app made can be undone; rules the user wrote are left alone.
-  const toggled = overview?.toggledOff.find((o) => o.kind === kind && o.name === item.name);
   const canTurnOff =
     switchable && !toggled && (item.state === "active" || item.state === "limited");
-  const canImport = kind !== null && (item.scope === "user" || item.scope === "project");
+  // A Codex subagent defined inside config.toml has no file of its own to import.
+  const ownFile = !(tool === "codex" && kind === "agent" && baseName(item.path) === "config.toml");
+  const canImport = kind !== null && ownFile && (item.scope === "user" || item.scope === "project");
 
   return (
     <li className="rounded-md border border-border bg-surface-raised hover:border-border-strong">
@@ -333,12 +390,33 @@ function ConfigRow({
               type="button"
               className={smallButton}
               disabled={busy}
-              onClick={() => setEnabled(kind, item.name, true, toggled.mode)}
+              onClick={() => setEnabled(kind, item.name, true, toggled.mode, toggled.path)}
             >
               {t(toggled.mode === "personal" ? "docs.item.turnOnPersonal" : "docs.item.turnOnTeam")}
             </button>
           )}
-          {canTurnOff && kind && (
+          {canTurnOff && kind && offReason && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled
+              title={t(offReason, { tool: info.name })}
+            >
+              {t("docs.item.turnOff")}
+            </button>
+          )}
+          {canTurnOff && kind && !offReason && info.skillToggle === "personalOnly" && (
+            <button
+              type="button"
+              className={smallButton}
+              disabled={busy}
+              title={`${t("docs.mode.personalHint")}. ${t("docs.item.teamToggleUnsupported", { tool: info.name })}`}
+              onClick={() => setEnabled(kind, item.name, false, "personal", item.path)}
+            >
+              {t("docs.item.turnOff")} · {t("docs.mode.personal")}
+            </button>
+          )}
+          {canTurnOff && kind && !offReason && info.skillToggle !== "personalOnly" && (
             <ModeButtons
               label={t("docs.item.turnOff")}
               disabled={busy}

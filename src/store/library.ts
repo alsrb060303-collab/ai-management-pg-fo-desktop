@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 import { onLocaleApplied, t } from "../i18n";
-import { useProjectStore } from "./project";
+import { useProjectStore, whenToolReady } from "./project";
 
 // Mirrors src-tauri/src/library/mod.rs.
 export type ItemKind = "skill" | "agent";
@@ -23,6 +23,8 @@ export interface ToggledOff {
   kind: ItemKind;
   name: string;
   mode: Mode;
+  /** Codex: the SKILL.md path that was turned off (Codex matches skills by path). */
+  path: string | null;
 }
 
 export interface Overview {
@@ -48,7 +50,20 @@ interface LibraryState {
   update: (item: LibraryItem) => Promise<void>;
   forget: (item: LibraryItem) => Promise<void>;
   importItem: (path: string, kind: ItemKind) => Promise<void>;
-  setEnabled: (kind: ItemKind, name: string, enabled: boolean, mode: Mode) => Promise<void>;
+  /** `path` is the item's file; Codex needs it (it turns skills off by SKILL.md path). */
+  setEnabled: (
+    kind: ItemKind,
+    name: string,
+    enabled: boolean,
+    mode: Mode,
+    path?: string | null,
+  ) => Promise<void>;
+}
+
+/** The project and tool every library command works on, once the tool is settled. */
+async function target() {
+  const tool = await whenToolReady();
+  return { project: useProjectStore.getState().current, tool };
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => {
@@ -72,8 +87,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
 
   /** Asks before discarding edits made in the project copy. */
   const withForce = async (command: string, item: LibraryItem, question: string) => {
-    const project = useProjectStore.getState().current;
-    const args = { project, kind: item.kind, id: item.id };
+    const args = { ...(await target()), kind: item.kind, id: item.id };
     try {
       await invoke(command, { ...args, force: false });
     } catch (e) {
@@ -92,11 +106,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     load: async (keepError = false) => {
       if (!isTauri()) return;
       const id = ++loadId;
-      const project = useProjectStore.getState().current;
+      const { project, tool } = await target();
+      if (id !== loadId) return;
       // Drop the old project's toggles right away; they don't apply to the new one.
       if (get().overview && !keepError) set({ overview: null, error: null });
       try {
-        const overview = await invoke<Overview>("library_overview", { project });
+        const overview = await invoke<Overview>("library_overview", { project, tool });
         if (id === loadId) set({ overview });
       } catch (e) {
         if (id === loadId) set({ error: String(e) });
@@ -112,13 +127,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     useDefaultDir: () => run(() => invoke("library_set_dir", { dir: null })),
 
     apply: (item, mode) =>
-      run(() =>
-        invoke("library_apply", {
-          project: useProjectStore.getState().current,
-          kind: item.kind,
-          id: item.id,
-          mode,
-        }),
+      run(async () =>
+        invoke("library_apply", { ...(await target()), kind: item.kind, id: item.id, mode }),
       ),
 
     remove: (item) => run(() => withForce("library_remove", item, t("docs.library.confirmRemove"))),
@@ -126,28 +136,24 @@ export const useLibraryStore = create<LibraryState>((set, get) => {
     update: (item) => run(() => withForce("library_update", item, t("docs.library.confirmUpdate"))),
 
     forget: (item) =>
-      run(() =>
-        invoke("library_forget", {
-          project: useProjectStore.getState().current,
-          kind: item.kind,
-          id: item.id,
-        }),
+      run(async () =>
+        invoke("library_forget", { ...(await target()), kind: item.kind, id: item.id }),
       ),
 
-    importItem: (path, kind) => run(() => invoke("library_import", { path, kind })),
+    importItem: (path, kind) =>
+      run(async () => invoke("library_import", { path, tool: (await target()).tool, kind })),
 
-    setEnabled: (kind, name, enabled, mode) =>
-      run(() =>
-        invoke("config_set_enabled", {
-          project: useProjectStore.getState().current,
-          kind,
-          name,
-          enabled,
-          mode,
-        }),
+    setEnabled: (kind, name, enabled, mode, path = null) =>
+      run(async () =>
+        invoke("config_set_enabled", { ...(await target()), kind, name, enabled, mode, path }),
       ),
   };
 });
 
 // Library errors come from the backend: reload in the new language.
 onLocaleApplied(() => void useLibraryStore.getState().load());
+
+// Statuses and toggles are per tool: reload when the project's tool changes.
+useProjectStore.subscribe((state, prev) => {
+  if (state.tool !== prev.tool) void useLibraryStore.getState().load();
+});

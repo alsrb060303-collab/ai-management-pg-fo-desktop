@@ -7,6 +7,7 @@ import { PageHeader } from "../../components/ui";
 import { type MessageKey, useT } from "../../i18n";
 import { useProjectStore } from "../../store/project";
 import { type DocEntry, type DocKind, useProjectDocsStore } from "../../store/projectDocs";
+import { TOOLS, type ToolId } from "../../tools";
 
 /** How often the folder is re-read while the page is visible. */
 const POLL_MS = 4000;
@@ -19,20 +20,86 @@ const KINDS: { kind: DocKind; label: MessageKey }[] = [
   { kind: "command", label: "docs.section.command" },
   { kind: "settings", label: "docs.section.settings" },
   { kind: "mcp", label: "docs.section.mcp" },
+  { kind: "hook", label: "docs.section.hook" },
+  { kind: "policy", label: "docs.section.policy" },
   { kind: "other", label: "files.kind.other" },
 ];
 
 /** What "New document" can create, and where it goes. */
-type NewKind = "instructions" | "rule" | "skill" | "agent" | "command";
+type NewKind =
+  | "instructions"
+  | "override"
+  | "rule"
+  | "skill"
+  | "agent"
+  | "command"
+  | "settings"
+  | "hook"
+  | "policy";
 
-function newDoc(kind: NewKind, name: string): { rel: string; text: string } | null {
+/** The kinds each tool offers, in menu order. */
+const NEW_KINDS: Record<ToolId, NewKind[]> = {
+  claude: ["instructions", "rule", "skill", "agent", "command"],
+  codex: ["instructions", "override", "skill", "agent", "settings", "hook", "policy"],
+};
+
+/** Kinds created in a folder (empty for the project root) rather than by name. */
+const IN_FOLDER: NewKind[] = ["instructions", "override", "settings", "hook"];
+
+function newKindLabel(tool: ToolId, kind: NewKind): MessageKey | string {
+  switch (kind) {
+    case "instructions":
+      return TOOLS[tool].instructions.team;
+    case "override":
+      return "AGENTS.override.md";
+    case "settings":
+      return ".codex/config.toml";
+    case "hook":
+      return ".codex/hooks.json";
+    default:
+      return `docs.section.${kind}`;
+  }
+}
+
+function newDoc(tool: ToolId, kind: NewKind, name: string): { rel: string; text: string } | null {
   const n = name
     .trim()
     .replace(/\\/g, "/")
     .replace(/^\/+|\/+$/g, "");
+  const inFolder = (file: string) => (n ? `${n}/${file}` : file);
+  if (tool === "codex") {
+    switch (kind) {
+      case "instructions":
+        return { rel: inFolder("AGENTS.md"), text: "" };
+      case "override":
+        return { rel: inFolder("AGENTS.override.md"), text: "" };
+      case "skill":
+        return n
+          ? {
+              rel: `.agents/skills/${n}/SKILL.md`,
+              text: `---\nname: ${n}\ndescription: \n---\n\n`,
+            }
+          : null;
+      case "agent":
+        return n
+          ? {
+              rel: `.codex/agents/${n}.toml`,
+              text: `name = ${JSON.stringify(n)}\ndescription = ""\ndeveloper_instructions = """\n"""\n`,
+            }
+          : null;
+      case "settings":
+        return { rel: inFolder(".codex/config.toml"), text: "" };
+      case "hook":
+        return { rel: inFolder(".codex/hooks.json"), text: '{\n  "hooks": {}\n}\n' };
+      case "policy":
+        return n ? { rel: `.codex/rules/${n}.rules`, text: "" } : null;
+      default:
+        return null;
+    }
+  }
   switch (kind) {
     case "instructions":
-      return { rel: n ? `${n}/CLAUDE.md` : "CLAUDE.md", text: "" };
+      return { rel: inFolder("CLAUDE.md"), text: "" };
     case "rule":
       return n ? { rel: `.claude/rules/${n}.md`, text: "" } : null;
     case "skill":
@@ -51,6 +118,8 @@ function newDoc(kind: NewKind, name: string): { rel: string; text: string } | nu
         : null;
     case "command":
       return n ? { rel: `.claude/commands/${n}.md`, text: "" } : null;
+    default:
+      return null;
   }
 }
 
@@ -59,20 +128,24 @@ const joinPath = (project: string, rel: string) => {
   return `${project.replace(/[\\/]+$/, "")}${sep}${rel.split("/").join(sep)}`;
 };
 
-/** The project's Claude Code documents, found automatically, edited in place. */
+/** The project's AI tool documents, found automatically, edited in place. */
 export function ProjectDocsPage() {
   const t = useT();
   const project = useProjectStore((s) => s.current);
+  const tool = useProjectStore((s) => s.tool);
+  // Per-tool data waits until a newly selected project's tool is known.
+  const toolReady = useProjectStore((s) => s.toolReady || !s.current);
+  const toolName = TOOLS[tool].name;
   const choose = useProjectStore((s) => s.choose);
   const { entries, loading, error, rel, load, refresh, dismissError } = useProjectDocsStore();
   const [creating, setCreating] = useState(false);
   const docsPanel = usePanelWidth("project-docs", 256, 180, 520);
 
   useEffect(() => {
-    void load(project);
-  }, [project, load]);
+    if (toolReady) void load(project, tool);
+  }, [project, tool, toolReady, load]);
 
-  // Pick up files Claude Code or another editor adds or changes.
+  // Pick up files the AI tool or another editor adds or changes.
   useEffect(() => {
     const tick = () => {
       if (document.visibilityState === "visible") void refresh();
@@ -87,10 +160,13 @@ export function ProjectDocsPage() {
 
   return (
     <div className="mx-auto flex h-full max-w-6xl flex-col px-8 py-10">
-      <PageHeader title={t("files.title")} description={t("files.description")} />
+      <PageHeader
+        title={t("files.title")}
+        description={t(tool === "codex" ? "files.descriptionCodex" : "files.description")}
+      />
       {!project ? (
         <div className="space-y-3 text-sm">
-          <p className="text-text-muted">{t("files.noProject")}</p>
+          <p className="text-text-muted">{t("files.noProject", { tool: toolName })}</p>
           <button
             type="button"
             onClick={() => void choose()}
@@ -141,9 +217,9 @@ export function ProjectDocsPage() {
                   <Plus size={13} />
                   {t("files.new")}
                 </button>
-                {creating && <NewDocForm onDone={() => setCreating(false)} />}
+                {creating && <NewDocForm tool={tool} onDone={() => setCreating(false)} />}
                 {!loading && entries.length === 0 && (
-                  <p className="text-xs text-text-muted">{t("files.empty")}</p>
+                  <p className="text-xs text-text-muted">{t("files.empty", { tool: toolName })}</p>
                 )}
                 {KINDS.map(({ kind, label }) => {
                   const items = entries.filter((e) => e.kind === kind);
@@ -216,12 +292,14 @@ function DocRow({ entry, active }: { entry: DocEntry; active: boolean }) {
   );
 }
 
-function NewDocForm({ onDone }: { onDone: () => void }) {
+function NewDocForm({ tool, onDone }: { tool: ToolId; onDone: () => void }) {
   const t = useT();
   const create = useProjectDocsStore((s) => s.create);
-  const [kind, setKind] = useState<NewKind>("instructions");
+  const kinds = NEW_KINDS[tool];
+  const [picked, setKind] = useState<NewKind>("instructions");
+  const kind = kinds.includes(picked) ? picked : "instructions";
   const [name, setName] = useState("");
-  const doc = newDoc(kind, name);
+  const doc = newDoc(tool, kind, name);
   const input =
     "w-full min-w-0 rounded-md border border-border bg-surface px-2 py-1 text-xs outline-none placeholder:text-text-subtle focus:border-border-strong";
 
@@ -244,16 +322,19 @@ function NewDocForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => setKind(e.target.value as NewKind)}
         className={input}
       >
-        <option value="instructions">CLAUDE.md</option>
-        <option value="rule">{t("docs.section.rule")}</option>
-        <option value="skill">{t("docs.section.skill")}</option>
-        <option value="agent">{t("docs.section.agent")}</option>
-        <option value="command">{t("docs.section.command")}</option>
+        {kinds.map((k) => {
+          const label = newKindLabel(tool, k);
+          return (
+            <option key={k} value={k}>
+              {label.startsWith("docs.") ? t(label as MessageKey) : label}
+            </option>
+          );
+        })}
       </select>
       <input
         value={name}
         onChange={(e) => setName(e.target.value)}
-        placeholder={t(kind === "instructions" ? "files.new.folder" : "files.new.name")}
+        placeholder={t(IN_FOLDER.includes(kind) ? "files.new.folder" : "files.new.name")}
         className={input}
       />
       {doc && <p className="truncate text-fs-11 text-text-subtle">{doc.rel}</p>}

@@ -1,5 +1,4 @@
 mod bridge;
-mod claude_config;
 mod claude_mod;
 mod composer;
 mod dock;
@@ -12,6 +11,7 @@ mod memo;
 mod project_docs;
 mod shell;
 mod sync;
+mod tools;
 mod tray;
 mod work;
 
@@ -39,8 +39,9 @@ pub fn run() {
             dock::dock_cycle_magnet,
             dock::dock_set_pinned,
             dock::sidebar_hide,
-            claude_config::claude_config_scan,
-            claude_config::claude_commands,
+            tools::config_scan,
+            tools::tool_detect,
+            tools::claude::claude_commands,
             mcp::mcp_list,
             mcp::mcp_save,
             mcp::mcp_remove,
@@ -92,6 +93,7 @@ pub fn run() {
             work::work_stage,
             work::work_commit_diff,
             work::work_draft_message,
+            work::work_draft_tool,
             work::work_conflict,
             work::work_resolve,
             work::work_continue,

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use serde_json::Value;
 
-use super::frontmatter;
-use super::{ConfigMap, Env, Item, Kind, Scope, State};
+use super::Env;
+use crate::tools::{ConfigMap, Item, Kind, Scope, State, ToolId, frontmatter};
 
 /// CLAUDE.md files longer than this are flagged; the docs advise staying under it.
 const LONG_INSTRUCTIONS_LINES: usize = 200;
@@ -58,6 +58,7 @@ pub fn scan(project: &Path, env: &Env) -> ConfigMap {
     }
 
     ConfigMap {
+        tool: ToolId::Claude,
         project: project.display().to_string(),
         repo_root: repo_root.map(|p| p.display().to_string()),
         items,

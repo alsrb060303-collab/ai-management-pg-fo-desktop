@@ -6,14 +6,26 @@ import { ResizeHandle, usePanelWidth } from "../../components/Resizable";
 import { Button } from "../../components/ui";
 import { useT } from "../../i18n";
 import {
+  AGENTS_MD_BYTE_BUDGET,
   type BlockNode,
   CLAUDE_MD_LINE_BUDGET,
+  type OutFile,
   originUrl,
   useComposerStore,
+  utf8Bytes,
 } from "../../store/composer";
+import { TOOLS, type ToolId } from "../../tools";
 import { KIND_LABEL, kindColor } from "./kinds";
 
 type Tab = "preview" | "block";
+
+/** Whether an instructions file is over its tool's budget (lines, or bytes for Codex). */
+function overBudget(file: OutFile, tool: ToolId | undefined): boolean {
+  if (file.target !== "instructions") return false;
+  return tool === "codex"
+    ? utf8Bytes(file.content) > AGENTS_MD_BYTE_BUDGET
+    : file.lines > CLAUDE_MD_LINE_BUDGET;
+}
 
 export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
   const panel = usePanelWidth("composer-preview", 360, 280, 760);
@@ -53,6 +65,7 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
     setPath(p);
   };
   const file = alone ?? files.find((f) => f.path === path) ?? files[0];
+  const tool: ToolId | undefined = compiled?.tool;
 
   return (
     <aside
@@ -67,6 +80,14 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
         <TabButton active={tab === "block"} onClick={() => setTab("block")} disabled={!selected}>
           {t("composer.preview.blockTab")}
         </TabButton>
+        {tool && (
+          <span
+            className="ml-auto truncate px-1 text-fs-11 text-text-subtle"
+            title={t("composer.palette.toolHint", { tool: TOOLS[tool].name })}
+          >
+            {t("composer.palette.forTool", { tool: TOOLS[tool].name })}
+          </span>
+        )}
       </div>
 
       {tab === "block" && selected ? (
@@ -120,9 +141,7 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
                     )}
                     <span
                       className={`ml-auto shrink-0 ${
-                        file.section && file.lines > CLAUDE_MD_LINE_BUDGET
-                          ? "font-medium text-danger"
-                          : ""
+                        overBudget(file, tool) ? "font-medium text-danger" : ""
                       }`}
                     >
                       {t("composer.preview.lines", { n: file.lines })}

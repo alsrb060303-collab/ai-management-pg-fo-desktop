@@ -10,9 +10,11 @@ import { useDockStore } from "../../store/dock";
 import { FONT_SIZES, useFontSizeStore } from "../../store/fontSize";
 import { useLibraryStore } from "../../store/library";
 import { useNotifyStore } from "../../store/notify";
+import { useProjectStore } from "../../store/project";
 import { useSyncStore } from "../../store/sync";
 import { type ThemePref, useThemeStore } from "../../store/theme";
 import { useUpdaterStore } from "../../store/updater";
+import { TOOL_IDS, TOOLS } from "../../tools";
 
 const THEMES: ThemePref[] = ["system", "light", "dark"];
 
@@ -31,6 +33,8 @@ export function SettingsPage() {
   const setFontSize = useFontSizeStore((s) => s.setSize);
   const { overview, busy, load, chooseDir } = useLibraryStore();
   const resetDir = useLibraryStore((s) => s.useDefaultDir);
+  const defaultTool = useProjectStore((s) => s.defaultTool);
+  const setDefaultTool = useProjectStore((s) => s.setDefaultTool);
   const [version, setVersion] = useState<string | null>(null);
   const update = useUpdaterStore();
   const updateLine =
@@ -111,6 +115,14 @@ export function SettingsPage() {
       <ModsCard />
 
       <Card title={t("settings.library")}>
+        <Row title={t("tools.default")} description={t("tools.defaultHint")}>
+          <Segmented
+            label={t("tools.default")}
+            value={defaultTool}
+            options={TOOL_IDS.map((id) => ({ value: id, label: TOOLS[id].name }))}
+            onChange={(tool) => void setDefaultTool(tool)}
+          />
+        </Row>
         <Row
           title={t("settings.libraryDir")}
           description={

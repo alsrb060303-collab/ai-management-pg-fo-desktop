@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 
 // Mirrors `DockStatus` in src-tauri/src/dock/mod.rs.
-export type TargetApp = "windowsTerminal" | "console" | "vsCode" | "claudeDesktop";
+export type TargetApp = "windowsTerminal" | "console" | "vsCode" | "claudeDesktop" | "codexDesktop";
 export type DockMode = "docked" | "edge" | "floating";
 export type DockSide = "right" | "left" | "inside";
 /** auto: follow the window in front · locked: stay with one window · off: no docking */
