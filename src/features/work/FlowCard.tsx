@@ -13,7 +13,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { useT } from "../../i18n";
 import { type Checks, type Pull, useGitHubStore } from "../../store/github";
@@ -63,7 +63,7 @@ export interface Next {
  */
 export function FlowCard({ compact }: { compact: boolean }) {
   const t = useT();
-  const { overview, busy, run, refresh, select } = useWorkStore();
+  const { overview, busy, refreshing, run, refresh, select } = useWorkStore();
   const { status, view } = useGitHubStore();
   const reloadGitHub = useGitHubStore((s) => s.load);
   const { setTab, setCreatingPull, focusCommit } = useWorkUi();
@@ -229,7 +229,7 @@ export function FlowCard({ compact }: { compact: boolean }) {
       base={base}
       steps={steps}
       next={next}
-      busy={busy}
+      busy={busy || refreshing}
       onRefresh={() => void refresh(true)}
     />
   );
@@ -259,8 +259,35 @@ export function FlowShell({
   onRefresh: () => void;
 }) {
   const t = useT();
+  const card = useRef<HTMLElement>(null);
+  const anchor = useRef<HTMLSpanElement>(null);
+  // A refresh can take a few milliseconds; stay up long enough to be seen.
+  const spinning = useLinger(busy, 700);
+  // From the refresh button to the middle of the card.
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  useLayoutEffect(() => {
+    if (!spinning || !card.current || !anchor.current) return;
+    const c = card.current.getBoundingClientRect();
+    const a = anchor.current.getBoundingClientRect();
+    setOffset({
+      x: c.left + c.width / 2 - (a.left + a.width / 2),
+      y: c.top + c.height / 2 - (a.top + a.height / 2),
+    });
+  }, [spinning]);
+
   return (
-    <section className="rounded-xl border border-border bg-surface-raised p-3 shadow-card">
+    <section
+      ref={card}
+      aria-busy={busy}
+      className="relative isolate rounded-xl border border-border bg-surface-raised p-3 shadow-card"
+    >
+      {/* Dims the card while the refresh mark sits in its middle. */}
+      <div
+        aria-hidden
+        className={`pointer-events-none absolute inset-0 z-30 rounded-xl bg-surface-raised/80 transition-opacity duration-500 motion-reduce:transition-none ${
+          spinning ? "opacity-100" : "opacity-0"
+        }`}
+      />
       <div className="flex items-center gap-2">
         <GitBranch size={compact ? 16 : 18} className="shrink-0 text-accent" />
         <span
@@ -272,11 +299,25 @@ export function FlowShell({
         {pull && <PullChip pull={pull} />}
         <IconButton
           label={t("work.refresh")}
-          disabled={busy}
-          onClick={onRefresh}
+          // Not `disabled`: its faded look would carry over to the moving mark.
+          aria-disabled={busy}
+          onClick={busy ? undefined : onRefresh}
           className="ml-auto size-7 shrink-0"
         >
-          <RefreshCw size={14} className={busy ? "animate-spin" : undefined} />
+          <span ref={anchor} className="flex">
+            <span
+              className={`relative z-40 flex transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+                spinning ? "text-accent" : ""
+              }`}
+              style={{
+                transform: spinning
+                  ? `translate(${offset.x}px, ${offset.y}px) scale(2.6)`
+                  : undefined,
+              }}
+            >
+              <RefreshCw size={14} className={spinning ? "animate-spin" : undefined} />
+            </span>
+          </span>
         </IconButton>
       </div>
       {base && <BaseLine base={base} />}
@@ -418,7 +459,7 @@ function PullChip({ pull }: { pull: Pull }) {
     <button
       type="button"
       onClick={() => open(pull.url)}
-      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${s.chip} ${s.text} hover:opacity-80`}
+      className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-fs-11 font-medium ${s.chip} ${s.text} hover:opacity-80`}
     >
       <s.Icon size={12} />#{pull.number}
     </button>
@@ -444,7 +485,7 @@ function BaseLine({ base }: { base: { name: string; ahead: number; behind: numbe
     );
   return (
     <p
-      className="mt-1 flex flex-wrap items-center gap-x-2 pl-6 text-[11px] text-text-subtle"
+      className="mt-1 flex flex-wrap items-center gap-x-2 pl-6 text-fs-11 text-text-subtle"
       title={t("work.flow.baseTitle", { base: base.name, ahead: base.ahead, behind: base.behind })}
     >
       {parts.length ? (
@@ -478,8 +519,8 @@ function StepNode({ step, first, prev }: { step: Step; first: boolean; prev?: St
           <step.Icon size={13} strokeWidth={2.5} />
         </span>
       </span>
-      <span className="mt-1 text-[11px] font-medium text-text">{step.label}</span>
-      <span className={`max-w-full truncate px-0.5 text-[10.5px] leading-tight ${tone.text}`}>
+      <span className="mt-1 text-fs-11 font-medium text-text">{step.label}</span>
+      <span className={`max-w-full truncate px-0.5 text-fs-10.5 leading-tight ${tone.text}`}>
         {step.detail}
       </span>
     </>
@@ -498,5 +539,36 @@ function StepNode({ step, first, prev }: { step: Step; first: boolean; prev?: St
         <div className="flex w-full flex-col items-center pb-0.5">{inner}</div>
       )}
     </li>
+  );
+}
+
+/** `on`, but once on it stays on for at least `min` milliseconds. */
+function useLinger(on: boolean, min: number): boolean {
+  const [shown, setShown] = useState(on);
+  const since = useRef(0);
+  useEffect(() => {
+    if (on) {
+      since.current = performance.now();
+      setShown(true);
+      return;
+    }
+    const left = min - (performance.now() - since.current);
+    if (left <= 0) {
+      setShown(false);
+      return;
+    }
+    const timer = setTimeout(() => setShown(false), left);
+    return () => clearTimeout(timer);
+  }, [on, min]);
+  return shown;
+}
+
+/** The first load, before there is a card to refresh: the same mark, large. */
+export function LoadingSpin({ label }: { label: string }) {
+  return (
+    <div role="status" className="flex flex-col items-center gap-2 py-10 text-accent">
+      <RefreshCw size={30} className="animate-spin motion-reduce:animate-none" />
+      <span className="text-xs text-text-muted">{label}</span>
+    </div>
   );
 }

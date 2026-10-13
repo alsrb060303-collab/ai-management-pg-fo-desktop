@@ -101,7 +101,7 @@ export function CommandsPanel({ compact = false }: { compact?: boolean }) {
         if (!items.length) return null;
         return (
           <section key={scope}>
-            <h3 className="mb-1 text-[11px] font-semibold text-text-muted">
+            <h3 className="mb-1 text-fs-11 font-semibold text-text-muted">
               {t(`commands.scope.${scope}` as MessageKey)}{" "}
               <span className="font-normal">{items.length}</span>
             </h3>
@@ -118,14 +118,14 @@ export function CommandsPanel({ compact = false }: { compact?: boolean }) {
                       <div className="flex flex-wrap items-baseline gap-x-1.5">
                         <span className="font-mono text-xs font-medium">/{c.name}</span>
                         {c.argumentHint && (
-                          <span className="font-mono text-[11px] text-text-subtle">
+                          <span className="font-mono text-fs-11 text-text-subtle">
                             {c.argumentHint}
                           </span>
                         )}
                         {c.manual && (
                           <span
                             title={t("commands.manualHint")}
-                            className="rounded bg-sunken px-1 text-[10px] text-text-subtle"
+                            className="rounded bg-sunken px-1 text-fs-10 text-text-subtle"
                           >
                             {c.kind === "command" ? t("commands.command") : t("commands.manual")}
                           </span>
@@ -133,7 +133,7 @@ export function CommandsPanel({ compact = false }: { compact?: boolean }) {
                       </div>
                       {c.description && (
                         <p
-                          className={`mt-0.5 text-[11px] leading-snug text-text-muted ${compact ? "line-clamp-2" : ""}`}
+                          className={`mt-0.5 text-fs-11 leading-snug text-text-muted ${compact ? "line-clamp-2" : ""}`}
                         >
                           {c.description}
                         </p>
@@ -153,7 +153,7 @@ export function CommandsPanel({ compact = false }: { compact?: boolean }) {
           </section>
         );
       })}
-      {list && <p className="text-[11px] text-text-subtle">{t("commands.plugins")}</p>}
+      {list && <p className="text-fs-11 text-text-subtle">{t("commands.plugins")}</p>}
     </div>
   );
 }

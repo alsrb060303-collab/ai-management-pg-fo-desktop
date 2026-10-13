@@ -42,7 +42,7 @@ export function LibraryPanel() {
             </button>
           )}
         </div>
-        <p className="mt-1 text-[10px] text-text-muted">{t("docs.library.structureHint")}</p>
+        <p className="mt-1 text-fs-10 text-text-muted">{t("docs.library.structureHint")}</p>
       </div>
 
       {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
@@ -87,16 +87,16 @@ function LibraryRow({ item }: { item: LibraryItem }) {
           {item.name}
         </span>
         {item.mode && (
-          <span className="shrink-0 rounded bg-sunken px-1 text-[10px] text-text-muted">
+          <span className="shrink-0 rounded bg-sunken px-1 text-fs-10 text-text-muted">
             {t(item.mode === "personal" ? "docs.mode.personal" : "docs.mode.team")}
           </span>
         )}
         {status && (
-          <span className={`shrink-0 text-[10px] ${status.className}`}>{t(status.label)}</span>
+          <span className={`shrink-0 text-fs-10 ${status.className}`}>{t(status.label)}</span>
         )}
       </div>
       {item.description && (
-        <p className="mt-0.5 line-clamp-2 text-[11px] text-text-muted">{item.description}</p>
+        <p className="mt-0.5 line-clamp-2 text-fs-11 text-text-muted">{item.description}</p>
       )}
       {current && (
         <div className="mt-1.5 flex flex-wrap gap-1">

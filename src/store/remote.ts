@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { onLocaleApplied } from "../i18n";
 import { type Pull, type RepoView, useGitHubStore } from "./github";
-import { useProjectStore } from "./project";
+import { isRestoringProject, useProjectStore } from "./project";
 
 // Mirrors src-tauri/src/github (api.rs).
 export interface RepoSummary {
@@ -386,15 +386,17 @@ onLocaleApplied(() => {
   void useRemoteStore.getState().load();
 });
 
-// Another account (or none) sees other repositories.
+// Another account (or none) sees other repositories. The first status load
+// at startup is not a change of account, so it keeps the saved repository.
 useGitHubStore.subscribe((state, prev) => {
-  if (state.status?.account?.login !== prev.status?.account?.login) {
+  if (prev.status && state.status?.account?.login !== prev.status.account?.login) {
     useRemoteStore.setState({ repos: null });
     useRemoteStore.getState().close();
   }
 });
 
-// Opening a local project leaves the GitHub-only view.
+// Opening a local project leaves the GitHub-only view; reopening the last
+// project at startup does not.
 useProjectStore.subscribe((state, prev) => {
-  if (state.current !== prev.current) useRemoteStore.getState().close();
+  if (state.current !== prev.current && !isRestoringProject()) useRemoteStore.getState().close();
 });

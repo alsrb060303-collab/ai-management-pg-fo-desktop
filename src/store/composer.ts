@@ -112,6 +112,11 @@ export interface PlanItem {
   action?: PlanAction;
   /** Agent and skill steps: the catalog block. */
   block?: string;
+  /**
+   * Agent and skill steps: a name typed in instead of a catalog block (one the
+   * user has elsewhere, e.g. in ~/.claude). Set, even empty, while typing one.
+   */
+  name?: string;
 }
 /** A main goal and everything under it (a plan node). */
 export type PlanData = {
@@ -130,6 +135,15 @@ export type ComposerNode = BlockNode | OutputNode | PlanNode;
  * A detail goal needs a sub-goal above it: one that ends up first becomes a
  * sub-goal (compile.rs reads it the same way).
  */
+/** Rows that move with row `index`: a sub-goal takes everything up to the next one. */
+export function planGroupSize(items: PlanItem[], index: number): number {
+  let size = 1;
+  if (items[index]?.kind === "sub") {
+    while (index + size < items.length && items[index + size].kind !== "sub") size++;
+  }
+  return size;
+}
+
 export function fixPlan(items: PlanItem[]): PlanItem[] {
   let sub = false;
   return items.map((item) => {
@@ -265,6 +279,7 @@ interface ComposerState {
     index?: number,
   ) => string;
   setPlanItem: (nodeId: string, itemId: string, patch: Partial<Omit<PlanItem, "id">>) => void;
+  /** Moves row `from` (a sub-goal with its group) to the gap before row `to`. */
   movePlanItem: (nodeId: string, from: number, to: number) => void;
   removePlanItem: (nodeId: string, itemId: string) => void;
   reorder: (nodeId: string, from: number, to: number) => void;
@@ -853,13 +868,10 @@ export const useComposerStore = create<ComposerState>((set, get) => {
         const items = [...data.items];
         if (!items[from]) return data;
         // A sub-goal takes its detail goals and steps along.
-        let size = 1;
-        if (items[from].kind === "sub") {
-          while (from + size < items.length && items[from + size].kind !== "sub") size++;
-        }
-        if (to >= from && to < from + size) return data;
+        const size = planGroupSize(items, from);
+        if (to >= from && to <= from + size) return data;
         const moved = items.splice(from, size);
-        items.splice(to > from ? to - size + 1 : to, 0, ...moved);
+        items.splice(to > from ? to - size : to, 0, ...moved);
         return { ...data, items: fixPlan(items) };
       });
     },

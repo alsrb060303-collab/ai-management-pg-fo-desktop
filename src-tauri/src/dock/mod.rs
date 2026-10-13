@@ -14,7 +14,7 @@ use std::sync::Mutex;
 #[cfg(windows)]
 use std::sync::OnceLock;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub use layout::Side;
@@ -48,10 +48,40 @@ pub enum DockMode {
     Floating,
 }
 
+/// What the magnet button does, cycled by clicking it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Magnet {
+    /// Follows whichever terminal or editor window comes to the front.
+    #[default]
+    Auto,
+    /// Stays with the window it is docked to; others coming forward are
+    /// ignored. With nothing docked yet, the next target to come forward
+    /// becomes the one it stays with.
+    Locked,
+    /// Docking is off; the window stays where the user puts it.
+    Off,
+}
+
+impl Magnet {
+    /// The next mode for the title-bar button: auto → locked → off → auto.
+    pub fn next(self) -> Self {
+        match self {
+            Magnet::Auto => Magnet::Locked,
+            Magnet::Locked => Magnet::Off,
+            Magnet::Off => Magnet::Auto,
+        }
+    }
+
+    pub fn on(self) -> bool {
+        self != Magnet::Off
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DockStatus {
-    pub enabled: bool,
+    pub magnet: Magnet,
     pub pinned: bool,
     pub visible: bool,
     pub mode: DockMode,
@@ -61,7 +91,7 @@ pub struct DockStatus {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
-    pub enabled: bool,
+    pub magnet: Magnet,
     pub pinned: bool,
     pub visible: bool,
 }
@@ -79,14 +109,14 @@ impl Dock {
     /// hidden; the shell shows it when the sidebar is the current view.
     pub fn manage(app: &AppHandle) {
         let settings = Settings {
-            enabled: true,
+            magnet: Magnet::Auto,
             pinned: false,
             visible: false,
         };
         app.manage(Dock {
             settings: Mutex::new(settings),
             status: Mutex::new(DockStatus {
-                enabled: settings.enabled,
+                magnet: settings.magnet,
                 pinned: settings.pinned,
                 visible: settings.visible,
                 mode: DockMode::Floating,
@@ -125,9 +155,15 @@ impl Dock {
             .clone()
     }
 
-    pub fn set_enabled(&self, app: &AppHandle, enabled: bool) {
-        self.update(|s| s.enabled = enabled);
+    pub fn set_magnet(&self, app: &AppHandle, magnet: Magnet) {
+        self.update(|s| s.magnet = magnet);
         self.apply(app, false);
+    }
+
+    /// Sets the magnet without re-placing the sidebar, for a caller that
+    /// applies placement right after (switching to the sidebar view).
+    pub fn reset_magnet(&self, magnet: Magnet) {
+        self.update(|s| s.magnet = magnet);
     }
 
     pub fn set_pinned(&self, app: &AppHandle, pinned: bool) {
@@ -200,16 +236,31 @@ pub fn dock_status(dock: State<'_, Dock>) -> DockStatus {
 }
 
 #[tauri::command]
-pub fn dock_set_enabled(app: AppHandle, dock: State<'_, Dock>, enabled: bool) {
-    dock.set_enabled(&app, enabled);
-}
-
-#[tauri::command]
 pub fn dock_set_pinned(app: AppHandle, dock: State<'_, Dock>, pinned: bool) {
     dock.set_pinned(&app, pinned);
+}
+
+/// The title-bar magnet button: auto → locked → off → auto.
+#[tauri::command]
+pub fn dock_cycle_magnet(app: AppHandle, dock: State<'_, Dock>) {
+    dock.set_magnet(&app, dock.settings().magnet.next());
 }
 
 #[tauri::command]
 pub fn sidebar_hide(app: AppHandle, dock: State<'_, Dock>) {
     dock.set_visible(&app, false);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn magnet_cycles_auto_locked_off() {
+        assert_eq!(Magnet::Auto.next(), Magnet::Locked);
+        assert_eq!(Magnet::Locked.next(), Magnet::Off);
+        assert_eq!(Magnet::Off.next(), Magnet::Auto);
+        assert!(Magnet::Locked.on());
+        assert!(!Magnet::Off.on());
+    }
 }

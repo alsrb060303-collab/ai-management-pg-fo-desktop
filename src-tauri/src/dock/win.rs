@@ -42,7 +42,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::{BOOL, PWSTR};
 
 use super::layout::{self, Rect, Side};
-use super::{Dock, DockMode, DockStatus, SIDEBAR_MIN_HEIGHT, SIDEBAR_WIDTH, Settings, TargetApp};
+use super::{
+    Dock, DockMode, DockStatus, Magnet, SIDEBAR_MIN_HEIGHT, SIDEBAR_WIDTH, Settings, TargetApp,
+};
 
 const WM_DOCK_REFRESH: u32 = WM_APP + 1;
 const REFRESH_USER_SHOW: usize = 1;
@@ -281,7 +283,14 @@ impl Tracker {
         // Re-apply the rect even if the target did not move: the user may have
         // dragged the sidebar away.
         self.last_rect = None;
-        if self.settings().enabled
+        // Auto follows every target that comes forward; locked only takes one
+        // while it has none.
+        let take = match self.settings().magnet {
+            Magnet::Auto => true,
+            Magnet::Locked => self.target.is_none(),
+            Magnet::Off => false,
+        };
+        if take
             && let Some(app) = classify(hwnd)
             && self.target.as_ref().map(|t| t.hwnd) != Some(hwnd)
         {
@@ -309,7 +318,7 @@ impl Tracker {
         if user_show && self.target.as_ref().is_some_and(|t| is_hidden(t.hwnd)) {
             self.detach();
         }
-        if self.settings().enabled
+        if self.settings().magnet.on()
             && self.target.is_none()
             && let Some((hwnd, app)) = find_target()
         {
@@ -329,7 +338,7 @@ impl Tracker {
             self.detach();
         }
 
-        if !settings.enabled {
+        if !settings.magnet.on() {
             self.detach();
             self.set_visible(settings.visible);
             self.set_topmost(settings.pinned);
@@ -511,7 +520,7 @@ impl Tracker {
 
     fn publish(&self, settings: &Settings, mode: DockMode, side: Option<Side>) {
         let status = DockStatus {
-            enabled: settings.enabled,
+            magnet: settings.magnet,
             pinned: settings.pinned,
             visible: settings.visible,
             mode,

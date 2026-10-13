@@ -121,11 +121,22 @@ function loadCurrent(): string | null {
   }
 }
 
+let restoring = false;
+
+/** Whether the current project change is `restoreProject`, not the user's pick. */
+export const isRestoringProject = () => restoring;
+
 /** Opens the project selected last (in either window). */
 export function restoreProject() {
   const saved = loadCurrent();
   if (saved && saved !== useProjectStore.getState().current) {
-    void useProjectStore.getState().select(saved);
+    // `select` sets `current` before its first await, so subscribers see the flag.
+    restoring = true;
+    try {
+      void useProjectStore.getState().select(saved);
+    } finally {
+      restoring = false;
+    }
   }
 }
 

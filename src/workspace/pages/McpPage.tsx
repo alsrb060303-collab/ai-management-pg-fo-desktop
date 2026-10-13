@@ -244,20 +244,17 @@ function ServerRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{s.name}</span>
-          <span className="rounded bg-sunken px-1.5 text-[10px] text-text-subtle">
+          <span className="rounded bg-sunken px-1.5 text-fs-10 text-text-subtle">
             {s.config?.transport ?? "—"}
           </span>
-          <span className="text-[11px] text-text-muted">
+          <span className="text-fs-11 text-text-muted">
             {t(`mcp.health.${s.health}` as MessageKey)}
           </span>
         </div>
-        <div
-          className="selectable truncate font-mono text-[11px] text-text-subtle"
-          title={s.target}
-        >
+        <div className="selectable truncate font-mono text-fs-11 text-text-subtle" title={s.target}>
           {s.target}
         </div>
-        {hint && <p className="mt-0.5 text-[11px] text-text-muted">{hint}</p>}
+        {hint && <p className="mt-0.5 text-fs-11 text-text-muted">{hint}</p>}
       </div>
       {s.scope === "project" && (
         <span title={t("mcp.toggle")}>
@@ -304,7 +301,7 @@ function RecommendedList({
   return (
     <section className="mt-8">
       <h3 className="text-xs font-semibold text-text-muted">{t("mcp.rec.title")}</h3>
-      <p className="mb-2 text-[11px] text-text-subtle">{t("mcp.rec.hint")}</p>
+      <p className="mb-2 text-fs-11 text-text-subtle">{t("mcp.rec.hint")}</p>
       <div className="grid grid-cols-2 gap-2">
         {recommended.map((r) => {
           const added = taken.has(r.name);
@@ -321,21 +318,21 @@ function RecommendedList({
                       type="button"
                       onClick={() => void openUrl(`https://github.com/${r.repo}`)}
                       title={r.repo}
-                      className="flex items-center gap-0.5 text-[10px] text-text-subtle hover:text-text"
+                      className="flex items-center gap-0.5 text-fs-10 text-text-subtle hover:text-text"
                     >
                       {r.license}
                       <ExternalLink size={9} />
                     </button>
                   ) : (
-                    <span className="text-[10px] text-text-subtle">{t("mcp.rec.hosted")}</span>
+                    <span className="text-fs-10 text-text-subtle">{t("mcp.rec.hosted")}</span>
                   )}
                   {r.needs && (
-                    <span className="rounded bg-sunken px-1 text-[10px] text-text-subtle">
+                    <span className="rounded bg-sunken px-1 text-fs-10 text-text-subtle">
                       {t(`mcp.rec.needs.${r.needs}` as MessageKey)}
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-[11px] leading-snug text-text-muted">
+                <p className="mt-0.5 text-fs-11 leading-snug text-text-muted">
                   {t(`mcp.rec.${r.id}` as MessageKey)}
                 </p>
               </div>
@@ -402,7 +399,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     <div>
       <span className="mb-1 block text-xs font-medium text-text-muted">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-[11px] text-text-subtle">{hint}</span>}
+      {hint && <span className="mt-1 block text-fs-11 text-text-subtle">{hint}</span>}
     </div>
   );
 }
@@ -592,7 +589,7 @@ function Pairs({
         <button
           type="button"
           onClick={() => commit([...rows, ["", ""]])}
-          className="ml-auto flex items-center gap-0.5 text-[11px] text-text-muted hover:text-text"
+          className="ml-auto flex items-center gap-0.5 text-fs-11 text-text-muted hover:text-text"
         >
           <Plus size={11} />
           {t("mcp.form.addRow")}
@@ -645,7 +642,7 @@ function Pairs({
                 </IconButton>
               </div>
               {secret && (
-                <div className="mt-1 rounded-md bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
+                <div className="mt-1 rounded-md bg-warning/10 px-2 py-1.5 text-fs-11 text-warning">
                   {shared ? t("mcp.form.secretProject") : t("mcp.form.secret")}{" "}
                   <button
                     type="button"
@@ -718,7 +715,7 @@ function ImportDialog({ onClose, onPick }: { onClose: () => void; onPick: (p: Pa
               <li key={i} className="flex items-center gap-2 px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium">{p.name || t("mcp.import.noName")}</div>
-                  <div className="truncate font-mono text-[11px] text-text-subtle">
+                  <div className="truncate font-mono text-fs-11 text-text-subtle">
                     {p.config.transport === "stdio"
                       ? [p.config.command, ...p.config.args].join(" ")
                       : p.config.url}

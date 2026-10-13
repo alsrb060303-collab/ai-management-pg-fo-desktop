@@ -147,7 +147,7 @@ export function ModsCard() {
                 type="button"
                 onClick={() => open(m.url)}
                 title={m.url}
-                className="flex items-center gap-0.5 text-[11px] font-normal text-text-subtle hover:text-text"
+                className="flex items-center gap-0.5 text-fs-11 font-normal text-text-subtle hover:text-text"
               >
                 {m.license}
                 <ExternalLink size={10} />

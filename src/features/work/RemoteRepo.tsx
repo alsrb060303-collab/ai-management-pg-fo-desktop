@@ -6,6 +6,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
+  Globe,
   Lock,
   Plus,
   RefreshCw,
@@ -19,7 +20,15 @@ import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, type RepoSummary, useRemoteStore } from "../../store/remote";
-import { ciStep, FlowShell, type Next, pullNext, pullStep, type Step } from "./FlowCard";
+import {
+  ciStep,
+  FlowShell,
+  LoadingSpin,
+  type Next,
+  pullNext,
+  pullStep,
+  type Step,
+} from "./FlowCard";
 import {
   ChecksSummary,
   IssueList,
@@ -89,6 +98,18 @@ export function RepoPicker({ compact }: { compact: boolean }) {
     setQuery("");
   };
 
+  /** A cloned repository, opened in the GitHub view anyway after a warning. */
+  const viewOnGitHub = async (repo: RepoSummary) => {
+    const ok = await ask(t("work.repos.githubViewWarn", { slug: repo.slug }), {
+      title: t("work.repos.githubView"),
+      kind: "warning",
+    }).catch(() => false);
+    if (!ok) return;
+    openRemote(repo.slug);
+    setShown(false);
+    setQuery("");
+  };
+
   return (
     <section className={`space-y-1.5 ${compact ? "text-xs" : "text-sm"}`}>
       <div className="flex items-center gap-2">
@@ -134,26 +155,39 @@ export function RepoPicker({ compact }: { compact: boolean }) {
                 const local = clones[r.slug.toLowerCase()];
                 const active = local ? local === current && !slug : r.slug === slug;
                 return (
-                  <li key={r.slug}>
+                  <li key={r.slug} className="flex items-center gap-0.5">
                     <button
                       type="button"
                       onClick={() => pick(r)}
                       title={local ?? r.description ?? r.slug}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-hover ${active ? "bg-hover" : ""}`}
+                      className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-hover ${active ? "bg-hover" : ""}`}
                     >
                       <span className="min-w-0 flex-1 truncate">{r.slug}</span>
                       {r.private && <Lock size={11} className="shrink-0 text-text-subtle" />}
                       <span
-                        className={`shrink-0 rounded-full px-1.5 py-px text-[10px] ${local ? "bg-success/15 text-success" : "bg-sunken text-text-muted"}`}
+                        className={`shrink-0 rounded-full px-1.5 py-px text-fs-10 ${local ? "bg-success/15 text-success" : "bg-sunken text-text-muted"}`}
                       >
                         {t(local ? "work.repos.local" : "work.repos.remote")}
                       </span>
                       {!compact && (
-                        <span className="w-16 shrink-0 text-right text-[11px] text-text-subtle">
+                        <span className="w-16 shrink-0 text-right text-fs-11 text-text-subtle">
                           {timeAgo(seconds(r.pushedAt))}
                         </span>
                       )}
                     </button>
+                    {local && (
+                      <button
+                        type="button"
+                        onClick={() => void viewOnGitHub(r)}
+                        title={t("work.repos.githubView")}
+                        aria-label={t("work.repos.githubView")}
+                        className={`shrink-0 rounded-md p-1 text-text-subtle hover:bg-hover hover:text-text ${
+                          r.slug === slug ? "bg-hover text-text" : ""
+                        }`}
+                      >
+                        <Globe size={12} />
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -210,9 +244,15 @@ export function RemoteRepo({ compact }: { compact: boolean }) {
         </div>
       )}
       {!data ? (
-        loading && <p className="text-xs text-text-muted">{t("work.loading")}</p>
+        loading && <LoadingSpin label={t("work.loading")} />
       ) : (
-        <RemoteBody data={data} compact={compact} busy={loading || busy} onRefresh={load} />
+        <RemoteBody
+          data={data}
+          compact={compact}
+          busy={loading || busy}
+          // Not `onRefresh={load}`: the click event would become the branch.
+          onRefresh={() => void load()}
+        />
       )}
     </div>
   );
@@ -400,7 +440,7 @@ function CloneButton() {
       disabled={busy}
       onClick={() => void start()}
       title={t("work.remote.cloneIntro")}
-      className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2 py-1 text-[11px] hover:border-border-strong disabled:opacity-50"
+      className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2 py-1 text-fs-11 hover:border-border-strong disabled:opacity-50"
     >
       <FolderDown size={12} />
       {t(cloning ? "work.remote.cloning" : "work.remote.clone")}
@@ -503,7 +543,7 @@ function Branches({ data, compact }: { data: RemoteView; compact: boolean }) {
                 <GitBranch size={12} className="shrink-0 text-text-subtle" />
                 <span className="min-w-0 flex-1 truncate">{b.name}</span>
                 {isDefault && (
-                  <span className="shrink-0 rounded-full bg-sunken px-1.5 py-px text-[10px] text-text-muted">
+                  <span className="shrink-0 rounded-full bg-sunken px-1.5 py-px text-fs-10 text-text-muted">
                     {t("work.remote.default")}
                   </span>
                 )}

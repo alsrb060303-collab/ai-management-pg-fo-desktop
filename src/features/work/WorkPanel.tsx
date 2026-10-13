@@ -25,7 +25,7 @@ import {
 } from "../../store/work";
 import { ConflictView } from "./ConflictView";
 import { DiffView } from "./DiffView";
-import { FlowCard } from "./FlowCard";
+import { FlowCard, LoadingSpin } from "./FlowCard";
 import { GitHubSection, PullBadge } from "./GitHubSection";
 import { GitSetupGuide } from "./GitSetupGuide";
 import { History } from "./History";
@@ -114,9 +114,7 @@ export function WorkPanel({ compact = false }: { compact?: boolean }) {
           </button>
         </div>
       )}
-      {loading && !overview && !notGit && (
-        <p className="text-xs text-text-muted">{t("work.loading")}</p>
-      )}
+      {loading && !overview && !notGit && <LoadingSpin label={t("work.loading")} />}
       {notGit && (
         <GitSetupGuide
           key={project}
@@ -196,11 +194,11 @@ function Tabs({ compact }: { compact: boolean }) {
 function Track({ ahead, behind, gone }: { ahead: number; behind: number; gone?: boolean }) {
   const t = useT();
   if (gone)
-    return <span className="shrink-0 text-[11px] text-text-subtle">{t("work.track.gone")}</span>;
+    return <span className="shrink-0 text-fs-11 text-text-subtle">{t("work.track.gone")}</span>;
   if (!ahead && !behind) return null;
   return (
     <span
-      className="flex shrink-0 items-center gap-1 text-[11px] text-text-muted"
+      className="flex shrink-0 items-center gap-1 text-fs-11 text-text-muted"
       title={t("work.track.title", { ahead, behind })}
     >
       {ahead > 0 && (
@@ -279,7 +277,7 @@ function Changes({ compact }: { compact: boolean }) {
     : [{ key: "all", title: null, items: changes }];
   return (
     <div>
-      <div className="mb-1 flex items-center gap-2 px-2 text-[11px] text-text-muted">
+      <div className="mb-1 flex items-center gap-2 px-2 text-fs-11 text-text-muted">
         <Check
           state={allIn ? "on" : staged.length ? "some" : "off"}
           disabled={busy || !stageable.length}
@@ -291,7 +289,7 @@ function Changes({ compact }: { compact: boolean }) {
       {groups.map((g) => (
         <div key={g.key} className="mb-2">
           {g.title && (
-            <h4 className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold text-text-muted">
+            <h4 className="mb-1 flex items-center gap-1.5 px-1 text-fs-11 font-semibold text-text-muted">
               {g.title}
               <span className="font-normal text-text-subtle">{g.items.length}</span>
             </h4>
@@ -317,7 +315,7 @@ function Changes({ compact }: { compact: boolean }) {
         </div>
       ))}
       {changeCount > changes.length && (
-        <p className="px-2 pb-1 text-[11px] text-text-subtle">
+        <p className="px-2 pb-1 text-fs-11 text-text-subtle">
           {t("work.changes.more", { n: changeCount - changes.length })}
         </p>
       )}
@@ -409,14 +407,14 @@ function CommitBox() {
           onClick={() => void draft()}
           disabled={drafting || busy}
           title={t("work.draft.title")}
-          className="absolute top-1 right-1 flex items-center gap-1 rounded-md border border-border bg-surface-raised px-1.5 py-0.5 text-[11px] text-text-muted hover:border-border-strong hover:text-text disabled:opacity-60"
+          className="absolute top-1 right-1 flex items-center gap-1 rounded-md border border-border bg-surface-raised px-1.5 py-0.5 text-fs-11 text-text-muted hover:border-border-strong hover:text-text disabled:opacity-60"
         >
           <Sparkles size={11} className={drafting ? "animate-pulse text-accent" : "text-accent"} />
           {drafting ? t("work.draft.busy") : t("work.draft")}
         </button>
       </div>
       <div className="flex items-center gap-2 text-xs">
-        <span className="min-w-0 truncate text-[11px] text-text-subtle">
+        <span className="min-w-0 truncate text-fs-11 text-text-subtle">
           {onlyStaged ? t("work.commit.onlyChecked") : t("work.commit.noneChecked")}
         </span>
         <button
@@ -459,7 +457,7 @@ function ChangeRow({
   return (
     <div
       className={`flex w-full items-center gap-2 rounded-md px-2 py-1 ${
-        compact ? "text-[11px]" : "text-xs"
+        compact ? "text-fs-11" : "text-xs"
       } ${open ? "bg-active" : "hover:bg-hover"}`}
     >
       <Check
@@ -481,7 +479,7 @@ function ChangeRow({
         className="flex min-w-0 flex-1 items-center gap-2 text-left font-mono"
       >
         <span
-          className={`w-14 shrink-0 truncate rounded px-1 py-px text-center font-sans text-[10px] font-medium ${kind}`}
+          className={`w-14 shrink-0 truncate rounded px-1 py-px text-center font-sans text-fs-10 font-medium ${kind}`}
         >
           {label}
         </span>
@@ -490,7 +488,7 @@ function ChangeRow({
           {name}
         </span>
         {change.staged && change.unstaged && (
-          <span className="shrink-0 font-sans text-[10px] text-text-subtle">
+          <span className="shrink-0 font-sans text-fs-10 text-text-subtle">
             {t("work.partlyStaged")}
           </span>
         )}
@@ -584,7 +582,7 @@ function Branches({ compact }: { compact: boolean }) {
             {!compact && (
               <span className="min-w-0 flex-1 truncate text-xs text-text-subtle">{b.subject}</span>
             )}
-            <span className="ml-auto shrink-0 text-[11px] text-text-subtle group-hover:hidden">
+            <span className="ml-auto shrink-0 text-fs-11 text-text-subtle group-hover:hidden">
               {timeAgo(b.time)}
             </span>
             {!b.current && !b.worktree && (
@@ -593,7 +591,7 @@ function Branches({ compact }: { compact: boolean }) {
                   type="button"
                   disabled={busy}
                   onClick={() => void run("work_switch", { branch: b.name })}
-                  className="rounded px-1.5 py-0.5 text-[11px] text-accent hover:bg-active disabled:opacity-50"
+                  className="rounded px-1.5 py-0.5 text-fs-11 text-accent hover:bg-active disabled:opacity-50"
                 >
                   {t("work.branch.switch")}
                 </button>
@@ -614,7 +612,7 @@ function Branches({ compact }: { compact: boolean }) {
         <button
           type="button"
           onClick={() => setAll(!all)}
-          className="mt-1 rounded px-2 py-0.5 text-[11px] text-text-subtle hover:bg-hover hover:text-text"
+          className="mt-1 rounded px-2 py-0.5 text-fs-11 text-text-subtle hover:bg-hover hover:text-text"
         >
           {all
             ? t("work.branch.showLess")
@@ -627,7 +625,7 @@ function Branches({ compact }: { compact: boolean }) {
 
 function Badge({ children }: { children: ReactNode }) {
   return (
-    <span className="shrink-0 rounded-full bg-sunken px-1.5 py-px text-[10px] text-text-muted">
+    <span className="shrink-0 rounded-full bg-sunken px-1.5 py-px text-fs-10 text-text-muted">
       {children}
     </span>
   );
@@ -782,7 +780,7 @@ function Worktrees({ compact }: { compact: boolean }) {
               disabled={busy}
               onClick={() => void run("work_prune_worktrees", {})}
               title={t("work.worktree.pruneHint")}
-              className="mr-1 rounded px-1.5 py-0.5 text-[11px] font-normal text-text-muted hover:bg-hover"
+              className="mr-1 rounded px-1.5 py-0.5 text-fs-11 font-normal text-text-muted hover:bg-hover"
             >
               {t("work.worktree.prune")}
             </button>
@@ -818,11 +816,11 @@ function Worktrees({ compact }: { compact: boolean }) {
             {wt.managed && <Badge>Claude Code</Badge>}
             {wt.locked && <Badge>{t("work.worktree.locked")}</Badge>}
             {wt.prunable && <Badge>{t("work.worktree.missing")}</Badge>}
-            <span className="min-w-0 flex-1 truncate text-[11px] text-text-subtle">
+            <span className="min-w-0 flex-1 truncate text-fs-11 text-text-subtle">
               {wt.branch ?? (wt.commit ? t("work.detached", { commit: wt.commit }) : "")}
             </span>
             {wt.changes !== null && wt.changes > 0 && (
-              <span className="shrink-0 text-[11px] text-warning group-hover:hidden">
+              <span className="shrink-0 text-fs-11 text-warning group-hover:hidden">
                 {t("work.worktree.changes", { n: wt.changes })}
               </span>
             )}
@@ -832,7 +830,7 @@ function Worktrees({ compact }: { compact: boolean }) {
                   <button
                     type="button"
                     onClick={() => void select(wt.path)}
-                    className="rounded px-1.5 py-0.5 text-[11px] text-accent hover:bg-active"
+                    className="rounded px-1.5 py-0.5 text-fs-11 text-accent hover:bg-active"
                   >
                     {t("work.worktree.openAction")}
                   </button>
@@ -888,7 +886,7 @@ function NewWorktree({ onDone }: { onDone: () => void }) {
         placeholder={t("work.worktree.namePlaceholder")}
         className={`${inputClass} w-full font-mono`}
       />
-      <p className="text-[11px] text-text-subtle">
+      <p className="text-fs-11 text-text-subtle">
         {name && !valid
           ? t("work.worktree.invalidName")
           : t("work.worktree.hint", {

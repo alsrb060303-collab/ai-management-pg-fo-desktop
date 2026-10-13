@@ -6,9 +6,11 @@ import { create } from "zustand";
 export type TargetApp = "windowsTerminal" | "console" | "vsCode" | "claudeDesktop";
 export type DockMode = "docked" | "edge" | "floating";
 export type DockSide = "right" | "left" | "inside";
+/** auto: follow the window in front · locked: stay with one window · off: no docking */
+export type Magnet = "auto" | "locked" | "off";
 
 export interface DockStatus {
-  enabled: boolean;
+  magnet: Magnet;
   pinned: boolean;
   visible: boolean;
   mode: DockMode;
@@ -18,14 +20,15 @@ export interface DockStatus {
 
 interface DockState {
   status: DockStatus | null;
-  setEnabled: (enabled: boolean) => Promise<void>;
+  /** auto → locked → off → auto */
+  cycleMagnet: () => Promise<void>;
   setPinned: (pinned: boolean) => Promise<void>;
   hide: () => Promise<void>;
 }
 
 export const useDockStore = create<DockState>(() => ({
   status: null,
-  setEnabled: (enabled) => call("dock_set_enabled", { enabled }),
+  cycleMagnet: () => call("dock_cycle_magnet"),
   setPinned: (pinned) => call("dock_set_pinned", { pinned }),
   hide: () => call("sidebar_hide"),
 }));

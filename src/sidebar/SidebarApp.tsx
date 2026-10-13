@@ -48,7 +48,7 @@ export default function SidebarApp() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col text-[13px]">
+    <div className="flex h-full flex-col text-fs-13">
       <TitleBar />
       <TabNav />
       <main className="flex-1 overflow-y-auto p-4">

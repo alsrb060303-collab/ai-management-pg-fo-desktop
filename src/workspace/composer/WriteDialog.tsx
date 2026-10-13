@@ -283,9 +283,9 @@ function PlanList({
               >
                 {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
               </button>
-              <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{item.path}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-fs-12">{item.path}</span>
               {item.personal && (
-                <span className="rounded bg-sunken px-1 text-[10px] text-text-subtle">
+                <span className="rounded bg-sunken px-1 text-fs-10 text-text-subtle">
                   {t("composer.personal")}
                 </span>
               )}
@@ -603,7 +603,7 @@ function RemoteDone({
           : t("composer.write.wroteNone")}
       </p>
       {res.written.length > 0 && (
-        <ul className="space-y-0.5 font-mono text-[12px] text-success">
+        <ul className="space-y-0.5 font-mono text-fs-12 text-success">
           {res.written.map((p) => (
             <li key={p}>{p}</li>
           ))}
@@ -648,7 +648,7 @@ function Result({ result }: { result: WriteResult }) {
           : t("composer.write.wroteNone")}
       </p>
       {result.written.length > 0 && (
-        <ul className="space-y-0.5 font-mono text-[12px] text-success">
+        <ul className="space-y-0.5 font-mono text-fs-12 text-success">
           {result.written.map((p) => (
             <li key={p}>{p}</li>
           ))}
@@ -680,7 +680,7 @@ function Result({ result }: { result: WriteResult }) {
 function Diff({ old, next }: { old: string; next: string }) {
   const parts = diffLines(old, next);
   return (
-    <pre className="selectable max-h-72 overflow-auto border-t border-border bg-sunken px-3 py-2 font-mono text-[11.5px] leading-[1.55]">
+    <pre className="selectable max-h-72 overflow-auto border-t border-border bg-sunken px-3 py-2 font-mono text-fs-11.5 leading-[1.55]">
       {parts.map((part, i) => {
         const cls = part.added
           ? "bg-success/15 text-success"

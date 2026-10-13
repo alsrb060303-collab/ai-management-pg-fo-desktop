@@ -224,7 +224,7 @@ export function PullBadge({ pull, number }: { pull: Pull; number?: boolean }) {
   const s = pullStyle(pull);
   return (
     <span
-      className={`flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ${s.chip} ${s.text}`}
+      className={`flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-fs-10 font-medium ${s.chip} ${s.text}`}
     >
       <s.Icon size={11} />
       {number && `#${pull.number} `}
@@ -235,7 +235,7 @@ export function PullBadge({ pull, number }: { pull: Pull; number?: boolean }) {
 
 export function ChecksSummary({ checks }: { checks: Checks | null }) {
   const t = useT();
-  if (!checks) return <span className="text-[11px] text-text-subtle">{t("work.github.noCi")}</span>;
+  if (!checks) return <span className="text-fs-11 text-text-subtle">{t("work.github.noCi")}</span>;
   const parts: ReactNode[] = [];
   if (checks.failed)
     parts.push(
@@ -260,7 +260,7 @@ export function ChecksSummary({ checks }: { checks: Checks | null }) {
     );
   const title = t("work.github.ciTitle", { ...checks });
   return (
-    <span className="flex shrink-0 items-center gap-1.5 text-[11px]" title={title}>
+    <span className="flex shrink-0 items-center gap-1.5 text-fs-11" title={title}>
       {parts.length ? (
         parts
       ) : (
@@ -407,7 +407,7 @@ function NewPull({ compact, onDone }: { compact: boolean; onDone: () => void }) 
         </select>
       </div>
       {ahead > 0 && (
-        <p className="text-[11px] text-warning">
+        <p className="text-fs-11 text-warning">
           {rich(t(ahead === 1 ? "work.github.unpushed.one" : "work.github.unpushed"), {
             n: ahead,
             push: <code>git push</code>,
@@ -461,7 +461,7 @@ export function Collapsible({
       </button>
       {shown &&
         (count === 0 ? (
-          <p className="px-2 py-1 text-[11px] text-text-subtle">{t("work.github.none")}</p>
+          <p className="px-2 py-1 text-fs-11 text-text-subtle">{t("work.github.none")}</p>
         ) : (
           <ul className="mt-0.5 space-y-px">{children}</ul>
         ))}
@@ -538,7 +538,7 @@ export function IssueList({ issues }: { issues: Issue[] }) {
           tooltip={`@${i.author}${i.labels.length ? ` · ${i.labels.join(", ")}` : ""}`}
           aside={
             i.comments > 0 ? (
-              <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-text-subtle">
+              <span className="flex shrink-0 items-center gap-0.5 text-fs-11 text-text-subtle">
                 <MessageSquare size={11} />
                 {i.comments}
               </span>

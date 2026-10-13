@@ -1,4 +1,5 @@
 import { CircleCheck, CircleDashed, CircleDot } from "lucide-react";
+import { create } from "zustand";
 import type { MessageKey } from "../../i18n";
 import type { PlanAction, PlanItem, PlanStatus } from "../../store/composer";
 
@@ -66,3 +67,14 @@ export function dropIndex(planEl: Element, clientY: number): number {
   });
   return index === -1 ? rows.length : index;
 }
+
+/**
+ * Where a dragged row (or a palette entry) would land: the gap before row
+ * `gap` of plan node `node`, drawn as a line by that node.
+ */
+export const usePlanDrop = create<{ node: string; gap: number } | null>(() => null);
+
+export const setPlanDrop = (drop: { node: string; gap: number } | null) => {
+  const now = usePlanDrop.getState();
+  if (now?.node !== drop?.node || now?.gap !== drop?.gap) usePlanDrop.setState(drop, true);
+};
