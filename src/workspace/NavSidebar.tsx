@@ -70,7 +70,7 @@ export function NavSidebar() {
             className="flex min-w-0 items-center gap-2 rounded-md px-1.5 font-serif text-fs-17 font-semibold tracking-tight"
           >
             <Logo size={20} />
-            <span className="truncate">AI Management</span>
+            <span className="truncate">Encela</span>
           </button>
         )}
         <IconButton

@@ -26,6 +26,7 @@ export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
 export type Target = "instructions" | "rules" | "skills" | "agents" | "custom" | "hooks" | "plans";
 
 export interface Rating {
+  /** -15..15, about one point per 1,000 tokens a session spends (+) or saves (-). */
   tokens: number;
   performance: number;
   quality: number;

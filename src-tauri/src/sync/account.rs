@@ -523,7 +523,7 @@ fn answer(mut stream: TcpStream) -> Option<Result<String, String>> {
         )
     };
     let page = format!(
-        "<!doctype html><meta charset=utf-8><title>AI Management</title><body style=\"font-family:system-ui;padding:3rem;text-align:center\"><p>{message}</p></body>"
+        "<!doctype html><meta charset=utf-8><title>Encela</title><body style=\"font-family:system-ui;padding:3rem;text-align:center\"><p>{message}</p></body>"
     );
     let _ = write!(
         stream,

@@ -69,7 +69,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
-          releaseName: AI Management v__VERSION__
+          releaseName: Encela v__VERSION__
           releaseBody: Windows installer. Installed apps update themselves from this release.
           releaseDraft: false
           prerelease: false

@@ -17,7 +17,10 @@ const goodWhenUp = (axis: Axis) => axis !== "tokens";
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
-/** One line under a palette block: `토큰 ↓ 성능 ↑↑ 품질 ·`. */
+/**
+ * One line under a palette block: `토큰 +4 성능 ↑↑ 품질 ·`. Tokens (-15..15)
+ * as a number, performance and quality (-2..2) as arrows.
+ */
 export function RatingBadges({ rating }: { rating: Rating }) {
   const t = useT();
   return (
@@ -31,7 +34,11 @@ export function RatingBadges({ rating }: { rating: Rating }) {
             <span
               className={`font-semibold ${v === 0 ? "" : good ? "text-success" : "text-danger"}`}
             >
-              {v === 0 ? "·" : (v > 0 ? "↑" : "↓").repeat(Math.abs(v))}
+              {v === 0
+                ? "·"
+                : axis === "tokens"
+                  ? signed(v)
+                  : (v > 0 ? "↑" : "↓").repeat(Math.abs(v))}
             </span>
           </span>
         );
@@ -64,21 +71,30 @@ function useTotals() {
   }, [nodes, blocks]);
 }
 
-/** Top-right of the canvas: performance, quality and value as diverging bars. */
+/** Top-right of the canvas: performance, quality and token use as diverging bars. */
 export function RatingPanel() {
   const t = useT();
   const { sum, rated, unrated } = useTotals();
-  const bars: { label: MessageKey; value: number; hint?: MessageKey }[] = [
-    { label: "composer.rating.performance", value: sum.performance },
-    { label: "composer.rating.quality", value: sum.quality },
+  // Performance and quality share a scale of at least ±6 so a single block
+  // stays short; token use (about 1 point per 1,000 tokens) has its own, ±15.
+  const scale = Math.max(6, Math.abs(sum.performance), Math.abs(sum.quality));
+  const bars: {
+    label: MessageKey;
+    value: number;
+    scale: number;
+    good: boolean;
+    hint?: MessageKey;
+  }[] = [
+    { label: "composer.rating.performance", value: sum.performance, scale, good: true },
+    { label: "composer.rating.quality", value: sum.quality, scale, good: true },
     {
-      label: "composer.rating.value",
-      value: sum.performance + sum.quality - sum.tokens,
-      hint: "composer.rating.valueHint",
+      label: "composer.rating.tokenUse",
+      value: sum.tokens,
+      scale: Math.max(15, Math.abs(sum.tokens)),
+      good: false,
+      hint: "composer.rating.tokenUseHint",
     },
   ];
-  // One scale for all three bars, at least ±6 so a single block stays short.
-  const scale = Math.max(6, ...bars.map((b) => Math.abs(b.value)));
 
   return (
     <Panel position="top-right" className="!m-3">
@@ -86,25 +102,14 @@ export function RatingPanel() {
         <div className="mb-1.5 flex items-center gap-1.5">
           <Gauge size={13} className="text-text-muted" />
           <span className="font-semibold">{t("composer.rating.title")}</span>
-          {rated > 0 && (
-            <span className="ml-auto text-text-subtle" title={t("composer.rating.hint")}>
-              {t("composer.rating.tokens")}{" "}
-              <span
-                className={
-                  sum.tokens > 0 ? "text-danger" : sum.tokens < 0 ? "text-success" : undefined
-                }
-              >
-                {signed(sum.tokens)}
-              </span>
-            </span>
-          )}
         </div>
         {rated === 0 ? (
           <p className="text-text-subtle">{t("composer.rating.empty")}</p>
         ) : (
           <div className="space-y-1">
             {bars.map((bar) => {
-              const width = (Math.abs(bar.value) / scale) * 50;
+              const width = (Math.abs(bar.value) / bar.scale) * 50;
+              const good = bar.value > 0 === bar.good;
               const label = t(bar.label);
               return (
                 <div
@@ -123,10 +128,8 @@ export function RatingPanel() {
                     {bar.value !== 0 && (
                       <div
                         className={`absolute inset-y-0 transition-all duration-300 ${
-                          bar.value > 0
-                            ? "left-1/2 rounded-r-full bg-success"
-                            : "right-1/2 rounded-l-full bg-danger"
-                        }`}
+                          bar.value > 0 ? "left-1/2 rounded-r-full" : "right-1/2 rounded-l-full"
+                        } ${good ? "bg-success" : "bg-danger"}`}
                         style={{ width: `${width}%` }}
                       />
                     )}

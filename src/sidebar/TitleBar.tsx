@@ -31,7 +31,7 @@ export function TitleBar() {
         className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-text-muted"
       >
         <Logo size={15} className="pointer-events-none" />
-        AI Management
+        Encela
       </span>
       <div className="flex h-full">
         <TitleButton label={t("shell.title.toMain")} onClick={() => void switchView("main")}>

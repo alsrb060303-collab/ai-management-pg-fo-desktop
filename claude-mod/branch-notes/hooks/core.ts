@@ -89,7 +89,7 @@ const WORDS = {
     left: (open: number, total: number) => `할 일 ${open}/${total} 남음`,
     allDone: "할 일 모두 완료",
     next: "다음",
-    noApp: "AI Management 앱이 꺼져 있어요. 켜면 반영돼요.",
+    noApp: "Encela 앱이 꺼져 있어요. 켜면 반영돼요.",
     added: (text: string) => `할 일 추가: ${text}`,
     noted: "메모에 추가했어요.",
     done: (text: string) => `완료: ${text}`,
@@ -106,13 +106,13 @@ const WORDS = {
     paneTitle: "브랜치 메모",
     pr: "PR",
     context: (branch: string) =>
-      `사용자가 이 저장소의 '${branch}' 브랜치에 남긴 메모와 할 일이에요 (AI Management 앱). 작업 방향을 정할 때 참고하고, 끝낸 일은 사용자에게 /todo done 번호 로 체크하라고 알려 주세요.`,
+      `사용자가 이 저장소의 '${branch}' 브랜치에 남긴 메모와 할 일이에요 (Encela 앱). 작업 방향을 정할 때 참고하고, 끝낸 일은 사용자에게 /todo done 번호 로 체크하라고 알려 주세요.`,
   },
   en: {
     left: (open: number, total: number) => `${open}/${total} to-dos left`,
     allDone: "All to-dos done",
     next: "Next",
-    noApp: "The AI Management app isn't running. It applies this when it starts.",
+    noApp: "The Encela app isn't running. It applies this when it starts.",
     added: (text: string) => `Added to-do: ${text}`,
     noted: "Added to the note.",
     done: (text: string) => `Done: ${text}`,
@@ -128,7 +128,7 @@ const WORDS = {
     paneTitle: "Branch notes",
     pr: "PR",
     context: (branch: string) =>
-      `The user's note and to-dos for the '${branch}' branch of this repository (from the AI Management app). Use them to steer the work, and tell the user to tick finished items with /todo done <number>.`,
+      `The user's note and to-dos for the '${branch}' branch of this repository (from the Encela app). Use them to steer the work, and tell the user to tick finished items with /todo done <number>.`,
   },
 };
 
