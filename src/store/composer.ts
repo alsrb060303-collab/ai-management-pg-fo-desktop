@@ -14,7 +14,10 @@ import { create } from "zustand";
 import { onLocaleApplied, t, useLocaleStore } from "../i18n";
 import { TOOLS, type ToolId } from "../tools";
 import type { Mode } from "./library";
+import { getPref, setPref } from "./prefs";
 import { useProjectStore } from "./project";
+import rustSample from "./samples/rust-app.json";
+import webSample from "./samples/web-service.json";
 import { useSyncStore } from "./sync";
 
 // Mirrors src-tauri/src/composer.
@@ -142,10 +145,16 @@ export type PlanData = {
   items: PlanItem[];
   disabled?: boolean;
 };
+/** A note on the canvas only: never compiled or written. */
+export type MemoData = { text: string };
+/** A frame its nodes belong to (their `parentId`); canvas-only like memos. */
+export type GroupData = { title: string };
 export type BlockNode = Node<BlockData, "block">;
 export type OutputNode = Node<OutputData, "output">;
 export type PlanNode = Node<PlanData, "plan">;
-export type ComposerNode = BlockNode | OutputNode | PlanNode;
+export type MemoNode = Node<MemoData, "memo">;
+export type GroupNode = Node<GroupData, "group">;
+export type ComposerNode = BlockNode | OutputNode | PlanNode | MemoNode | GroupNode;
 
 /**
  * A detail goal needs a sub-goal above it: one that ends up first becomes a
@@ -335,6 +344,8 @@ interface ComposerState {
    */
   reloadFromDisk: (ids: string[]) => Promise<void>;
   rename: (name: string) => void;
+  /** Renames any document, open or not. */
+  renameDoc: (id: string, name: string) => Promise<void>;
 
   onNodesChange: (changes: NodeChange<ComposerNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -366,6 +377,31 @@ interface ComposerState {
   reorder: (nodeId: string, from: number, to: number) => void;
   undo: () => void;
   redo: () => void;
+
+  addMemo: (position: XYPosition) => void;
+  setMemo: (nodeId: string, text: string) => void;
+  setGroupTitle: (nodeId: string, title: string) => void;
+  /** Frames the nodes in a new group (taking them out of any other); returns its id. */
+  groupNodes: (ids: string[]) => string | null;
+  /** Takes nodes out of their groups; a group id releases all its nodes and goes away. */
+  ungroup: (ids: string[]) => void;
+  /**
+   * Before groups are deleted: their nodes stay on the canvas, except those
+   * in `deleting`. Not recorded (the deletion's checkpoint covers it).
+   */
+  releaseGroups: (groupIds: string[], deleting: Set<string>) => void;
+  /** Deletes nodes, and the nodes inside any group among them. */
+  deleteWithContents: (ids: string[]) => void;
+  /** Copies nodes (a group with its nodes) next to the originals, without connections. */
+  duplicate: (ids: string[]) => void;
+  /** Switches blocks and main goals on or off. */
+  setDisabled: (ids: string[], disabled: boolean) => void;
+  /** Selects exactly these nodes, or all of them. */
+  select: (ids: string[] | "all") => void;
+  /** Bumped to show the block editor for the selected block again. */
+  editTick: number;
+  /** Selects one node and asks the preview panel to edit it. */
+  editNode: (nodeId: string) => void;
 
   /** The node whose file the preview shows (double-clicked on the canvas). */
   focus: string | null;
@@ -417,6 +453,56 @@ export function inputsOf(doc: ComposerDoc, outputId: string): string[] {
   return result;
 }
 
+/** Size before React Flow has measured a node (new or not yet rendered). */
+const FALLBACK_SIZE: Record<ComposerNode["type"], { width: number; height: number }> = {
+  block: { width: 240, height: 100 },
+  output: { width: 288, height: 150 },
+  plan: { width: 416, height: 300 },
+  memo: { width: 224, height: 120 },
+  group: { width: 320, height: 200 },
+};
+
+function sizeOf(node: ComposerNode): { width: number; height: number } {
+  const fallback = FALLBACK_SIZE[node.type];
+  return {
+    width: node.measured?.width ?? node.width ?? fallback.width,
+    height: node.measured?.height ?? node.height ?? fallback.height,
+  };
+}
+
+/** Canvas position; groups are not nested, so a parent's is its own. */
+function absolute(doc: ComposerDoc, node: ComposerNode): XYPosition {
+  const parent = node.parentId ? doc.nodes.find((n) => n.id === node.parentId) : undefined;
+  return parent
+    ? { x: node.position.x + parent.position.x, y: node.position.y + parent.position.y }
+    : node.position;
+}
+
+/** `node` taken out of its group, staying where it is on the canvas. */
+function released(doc: ComposerDoc, node: ComposerNode): ComposerNode {
+  const { parentId: _p, expandParent: _e, ...rest } = node;
+  return { ...rest, position: absolute(doc, node) } as ComposerNode;
+}
+
+/** Removes nodes along with their edges and output order entries. */
+function withoutNodes(doc: ComposerDoc, ids: Set<string>): ComposerDoc {
+  return {
+    ...doc,
+    nodes: doc.nodes
+      .filter((n) => !ids.has(n.id))
+      .map((n) =>
+        n.type === "output"
+          ? { ...n, data: { ...n.data, order: n.data.order.filter((id) => !ids.has(id)) } }
+          : n,
+      ),
+    edges: doc.edges.filter((e) => !ids.has(e.source) && !ids.has(e.target)),
+  };
+}
+
+/** Group padding around its nodes; the top leaves room for the title. */
+const GROUP_PAD = 24;
+const GROUP_HEADER = 32;
+
 function blankDoc(): ComposerDoc {
   return {
     version: 1,
@@ -433,6 +519,20 @@ function blankDoc(): ComposerDoc {
     ],
     edges: [],
   };
+}
+
+/** Set once the sample documents were offered, so deleting them is final. */
+const SAMPLES_SEEDED = "composer.sampleSeeded";
+
+/**
+ * Example documents a first run starts with, exported from the app; the first
+ * opens. Fixed ids keep devices from each adding a copy.
+ */
+function sampleDocs(): ComposerDoc[] {
+  const now = Date.now();
+  return [webSample, rustSample].map((sample, i) =>
+    migrate({ ...(sample as unknown as ComposerDoc), version: 1, updatedAt: now - i }),
+  );
 }
 
 /**
@@ -456,7 +556,9 @@ function migrate(doc: ComposerDoc): ComposerDoc {
 function persistable(doc: ComposerDoc): ComposerDoc {
   return {
     ...doc,
-    nodes: doc.nodes.map(({ selected: _s, dragging: _d, ...node }) => node) as ComposerNode[],
+    nodes: doc.nodes.map(
+      ({ selected: _s, dragging: _d, resizing: _r, ...node }) => node,
+    ) as ComposerNode[],
     edges: doc.edges.map(({ selected: _s, ...edge }) => edge),
   };
 }
@@ -606,8 +708,15 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       await Promise.all([get().loadCatalog(), get().loadDocs()]);
       if (get().doc) return;
       const latest = get().docs[0];
+      const seeded = getPref(SAMPLES_SEEDED) !== null;
+      if (isTauri() && !seeded) setPref(SAMPLES_SEEDED, "1");
       if (latest) await get().openDoc(latest.id);
-      else get().newDoc();
+      else if (isTauri() && !seeded) {
+        const [first, ...rest] = sampleDocs();
+        await Promise.all(rest.map(save));
+        open(first);
+        await save(first);
+      } else get().newDoc();
     },
 
     loadCatalog: async () => {
@@ -734,10 +843,32 @@ export const useComposerStore = create<ComposerState>((set, get) => {
 
     rename: (name) => update((doc) => ({ ...doc, name }), false),
 
+    renameDoc: async (id, name) => {
+      // The list shows the new name right away; saving refreshes it.
+      set({ docs: get().docs.map((d) => (d.id === id ? { ...d, name } : d)) });
+      if (get().doc?.id === id) {
+        get().rename(name);
+        return;
+      }
+      if (!isTauri()) return;
+      try {
+        const doc = await invoke<ComposerDoc>("composer_doc_load", { id });
+        await invoke("composer_doc_save", { doc: { ...doc, name, updatedAt: Date.now() } });
+        await get().loadDocs();
+      } catch (e) {
+        set({ error: String(e) });
+        void get().loadDocs();
+      }
+    },
+
     onNodesChange: (changes) => {
       // History: deletions are recorded once in onBeforeDelete, moves at drag
       // start, so one undo restores a node together with its edges.
-      const meaningful = changes.some((c) => c.type !== "select" && c.type !== "dimensions");
+      // Measured sizes are not edits; a group resized by the user (or growing
+      // around a node, `setAttributes`) is.
+      const meaningful = changes.some(
+        (c) => c.type !== "select" && (c.type !== "dimensions" || !!c.setAttributes),
+      );
       const moveOnly = changes.every(
         (c) => c.type !== "remove" && c.type !== "add" && c.type !== "replace",
       );
@@ -845,13 +976,13 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       set({ focus: nodeId, standalone: null });
       const { doc, compiled, blocks } = get();
       const node = doc?.nodes.find((n) => n.id === nodeId);
-      if (!doc || !node || node.type === "output" || !isTauri()) return;
+      if (!doc || !node || (node.type !== "block" && node.type !== "plan") || !isTauri()) return;
       // Already part of an output's file: the preview shows that one.
       if (compiled?.files.some((f) => f.blocks.includes(node.id))) return;
       const kind = node.type === "plan" ? "plan" : blocks.get(node.data.blockId)?.kind;
       if (!kind) return;
       const tool = composerTool();
-      const { selected: _s, dragging: _d, ...block } = node;
+      const { selected: _s, dragging: _d, parentId: _p, ...block } = node;
       const out = "preview-output";
       const temp: ComposerDoc = {
         ...doc,
@@ -1031,6 +1162,205 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       if (!doc || !next) return;
       set({ past: [...past, { nodes: doc.nodes, edges: doc.edges }], future: future.slice(1) });
       update((d) => ({ ...d, ...next }), false);
+    },
+
+    addMemo: (position) =>
+      update((doc) => ({
+        ...doc,
+        nodes: [
+          ...doc.nodes.map((n) => ({ ...n, selected: false })),
+          { id: newId("m"), type: "memo", position, data: { text: "" }, selected: true },
+        ],
+      })),
+
+    setMemo: (nodeId, text) =>
+      update(
+        (doc) => ({
+          ...doc,
+          nodes: doc.nodes.map((n) =>
+            n.id === nodeId && n.type === "memo" ? { ...n, data: { text } } : n,
+          ),
+        }),
+        true,
+        false,
+      ),
+
+    setGroupTitle: (nodeId, title) =>
+      update(
+        (doc) => ({
+          ...doc,
+          nodes: doc.nodes.map((n) =>
+            n.id === nodeId && n.type === "group" ? { ...n, data: { title } } : n,
+          ),
+        }),
+        true,
+        false,
+      ),
+
+    groupNodes: (ids) => {
+      const { doc } = get();
+      if (!doc) return null;
+      const members = doc.nodes.filter((n) => ids.includes(n.id) && n.type !== "group");
+      if (members.length === 0) return null;
+      const boxes = members.map((n) => ({ at: absolute(doc, n), size: sizeOf(n) }));
+      const left = Math.min(...boxes.map((b) => b.at.x)) - GROUP_PAD;
+      const top = Math.min(...boxes.map((b) => b.at.y)) - GROUP_PAD - GROUP_HEADER;
+      const right = Math.max(...boxes.map((b) => b.at.x + b.size.width)) + GROUP_PAD;
+      const bottom = Math.max(...boxes.map((b) => b.at.y + b.size.height)) + GROUP_PAD;
+      const id = newId("g");
+      const memberIds = new Set(members.map((n) => n.id));
+      update(
+        (d) => {
+          // Groups the members leave empty go away.
+          const emptied = new Set(
+            d.nodes
+              .filter((g) => g.type === "group" && members.some((m) => m.parentId === g.id))
+              .filter((g) => d.nodes.every((n) => n.parentId !== g.id || memberIds.has(n.id)))
+              .map((g) => g.id),
+          );
+          const group: GroupNode = {
+            id,
+            type: "group",
+            position: { x: left, y: top },
+            width: right - left,
+            height: bottom - top,
+            data: { title: t("composer.group.untitled") },
+            selected: true,
+          };
+          // A parent must come before its nodes.
+          return {
+            ...d,
+            nodes: [
+              group,
+              ...d.nodes
+                .filter((n) => !emptied.has(n.id))
+                .map((n) => {
+                  if (!memberIds.has(n.id)) return { ...n, selected: false };
+                  const at = absolute(d, n);
+                  return {
+                    ...n,
+                    parentId: id,
+                    expandParent: true,
+                    position: { x: at.x - left, y: at.y - top },
+                    selected: false,
+                  };
+                }),
+            ],
+          };
+        },
+        true,
+        false,
+      );
+      return id;
+    },
+
+    ungroup: (ids) =>
+      update(
+        (doc) => {
+          const groups = new Set(
+            doc.nodes.filter((n) => n.type === "group" && ids.includes(n.id)).map((n) => n.id),
+          );
+          const out = (n: ComposerNode) =>
+            !!n.parentId && (groups.has(n.parentId) || ids.includes(n.id));
+          const nodes = doc.nodes.map((n) => (out(n) ? released(doc, n) : n));
+          // Groups left empty go away.
+          const empty = nodes.filter(
+            (g) => g.type === "group" && !nodes.some((n) => n.parentId === g.id),
+          );
+          const gone = new Set([...groups, ...empty.map((g) => g.id)]);
+          return { ...doc, nodes: nodes.filter((n) => !gone.has(n.id)) };
+        },
+        true,
+        false,
+      ),
+
+    releaseGroups: (groupIds, deleting) =>
+      update(
+        (doc) => ({
+          ...doc,
+          nodes: doc.nodes.map((n) =>
+            n.parentId && groupIds.includes(n.parentId) && !deleting.has(n.id)
+              ? released(doc, n)
+              : n,
+          ),
+        }),
+        false,
+        false,
+      ),
+
+    deleteWithContents: (ids) =>
+      update((doc) => {
+        const gone = new Set(ids);
+        for (const n of doc.nodes) if (n.parentId && gone.has(n.parentId)) gone.add(n.id);
+        return withoutNodes(doc, gone);
+      }),
+
+    duplicate: (ids) =>
+      update((doc) => {
+        const picked = new Set(ids);
+        // A group comes with its nodes.
+        for (const n of doc.nodes) if (n.parentId && picked.has(n.parentId)) picked.add(n.id);
+        const fresh = new Map<string, string>();
+        for (const n of doc.nodes) if (picked.has(n.id)) fresh.set(n.id, newId(n.id[0] ?? "n"));
+        const offset = 32;
+        const copies = doc.nodes
+          .filter((n) => picked.has(n.id))
+          .map((n) => {
+            const copiedParent = n.parentId ? fresh.get(n.parentId) : undefined;
+            const copy = {
+              ...n,
+              id: fresh.get(n.id) as string,
+              selected: !copiedParent,
+              // Nodes inside a copied group keep their place in it.
+              position: copiedParent
+                ? n.position
+                : { x: n.position.x + offset, y: n.position.y + offset },
+              ...(copiedParent ? { parentId: copiedParent } : {}),
+            } as ComposerNode;
+            // Copies start without connections.
+            return copy.type === "output" ? { ...copy, data: { ...copy.data, order: [] } } : copy;
+          });
+        // Copied groups first: a parent must come before its nodes.
+        const groupsFirst = [
+          ...copies.filter((n) => n.type === "group"),
+          ...copies.filter((n) => n.type !== "group"),
+        ];
+        return {
+          ...doc,
+          nodes: [...doc.nodes.map((n) => ({ ...n, selected: false })), ...groupsFirst],
+        };
+      }),
+
+    setDisabled: (ids, disabled) =>
+      update((doc) => ({
+        ...doc,
+        nodes: doc.nodes.map((n) => {
+          if (!ids.includes(n.id) || (n.type !== "block" && n.type !== "plan")) return n;
+          const { disabled: _d, ...data } = n.data;
+          return { ...n, data: disabled ? { ...data, disabled: true } : data } as ComposerNode;
+        }),
+      })),
+
+    select: (ids) => {
+      const { doc } = get();
+      if (!doc) return;
+      set({
+        doc: {
+          ...doc,
+          nodes: doc.nodes.map((n) => ({ ...n, selected: ids === "all" || ids.includes(n.id) })),
+          edges: doc.edges.map((e) => ({ ...e, selected: false })),
+        },
+      });
+    },
+
+    editTick: 0,
+    editNode: (nodeId) => {
+      const { doc } = get();
+      if (!doc) return;
+      set({
+        doc: { ...doc, nodes: doc.nodes.map((n) => ({ ...n, selected: n.id === nodeId })) },
+        editTick: get().editTick + 1,
+      });
     },
   };
 });

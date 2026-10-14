@@ -42,6 +42,11 @@ export function PreviewPanel({ onWrite }: { onWrite: () => void }) {
   useEffect(() => {
     setTab(selectedId ? "block" : "preview");
   }, [selectedId]);
+  // "Edit" from the canvas menu, also when the block was already selected.
+  const editTick = useComposerStore((s) => s.editTick);
+  useEffect(() => {
+    if (editTick) setTab("block");
+  }, [editTick]);
 
   const files = compiled?.files ?? [];
   const warnings = compiled?.warnings ?? [];

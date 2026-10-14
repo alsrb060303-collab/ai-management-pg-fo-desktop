@@ -43,6 +43,8 @@
   --c-merged: #8250df;
   --c-kind-hook: #9a7a12;
   --c-kind-plan: #1f7f86;
+  --c-memo: #fbf1c7;
+  --c-memo-border: #e2cf86;
   --c-drop: #ea6c0a;
 }
 
@@ -79,6 +81,8 @@
   --c-merged: #b08cf5;
   --c-kind-hook: #d6b74e;
   --c-kind-plan: #5cc0c7;
+  --c-memo: #3b3624;
+  --c-memo-border: #6b5f34;
   --c-drop: #fb923c;
 }
 
@@ -146,6 +150,8 @@
   --color-kind-agent: var(--c-kind-agent);
   --color-kind-hook: var(--c-kind-hook);
   --color-kind-plan: var(--c-kind-plan);
+  --color-memo: var(--c-memo);
+  --color-memo-border: var(--c-memo-border);
   /* Where a dragged row will land. */
   --color-drop: var(--c-drop);
 }
@@ -260,6 +266,15 @@ html[data-theme] .react-flow__node-output {
   border-radius: 0;
   font-size: inherit;
   text-align: inherit;
+}
+
+/* Likewise our "group" type and React Flow's group box (its size comes inline). */
+html[data-theme] .react-flow__node-group {
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  text-align: inherit;
+  background-color: transparent;
 }
 
 .react-flow__attribution a {

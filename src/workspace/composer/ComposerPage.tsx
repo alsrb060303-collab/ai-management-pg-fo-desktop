@@ -7,14 +7,16 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
 } from "@xyflow/react";
 import { Check, CloudOff, Loader2, PanelRight, Redo2, Undo2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { useT } from "../../i18n";
 import { useComposerStore } from "../../store/composer";
 import { getPref, setPref } from "../../store/prefs";
 import { useThemeStore } from "../../store/theme";
+import { CanvasMenu, type MenuAt } from "./CanvasMenu";
 import { nodeTypes } from "./nodes";
 import { Palette } from "./Palette";
 import { PreviewPanel } from "./PreviewPanel";
@@ -47,7 +49,7 @@ export default function ComposerPage() {
     void init();
   }, [init]);
 
-  useUndoShortcuts();
+  useCanvasShortcuts();
 
   if (!doc) {
     return <div className="p-10 text-sm text-text-muted">{t("composer.loading")}</div>;
@@ -59,7 +61,12 @@ export default function ComposerPage() {
         <Palette />
         <div className="flex min-w-0 flex-1 flex-col">
           <Toolbar preview={preview} onTogglePreview={togglePreview} />
-          <Canvas />
+          <Canvas
+            preview={preview}
+            onShowPreview={() => setPreview(true)}
+            onTogglePreview={togglePreview}
+            onWrite={() => setWriting(true)}
+          />
         </div>
         {preview && <PreviewPanel onWrite={() => setWriting(true)} />}
       </div>
@@ -68,7 +75,12 @@ export default function ComposerPage() {
   );
 }
 
-function Canvas() {
+function Canvas(app: {
+  preview: boolean;
+  onShowPreview: () => void;
+  onTogglePreview: () => void;
+  onWrite: () => void;
+}) {
   const doc = useComposerStore((s) => s.doc);
   const onNodesChange = useComposerStore((s) => s.onNodesChange);
   const onEdgesChange = useComposerStore((s) => s.onEdgesChange);
@@ -77,6 +89,15 @@ function Canvas() {
   const checkpoint = useComposerStore((s) => s.checkpoint);
   const blocks = useComposerStore((s) => s.blocks);
   const theme = useThemeStore((s) => s.resolved);
+  const { screenToFlowPosition } = useReactFlow();
+  const [menu, setMenu] = useState<MenuAt | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const openMenu = (e: ReactMouseEvent | MouseEvent, nodeIds: string[]) => {
+    e.preventDefault();
+    const at = { x: e.clientX, y: e.clientY };
+    setMenu({ ...at, flow: screenToFlowPosition(at), nodeIds });
+  };
 
   if (!doc) return null;
   return (
@@ -91,12 +112,49 @@ function Canvas() {
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         onNodeDragStart={checkpoint}
-        onNodeDoubleClick={(_, node) => void useComposerStore.getState().focusNode(node.id)}
+        onNodeDoubleClick={(_, node) => {
+          // Memos and groups are edited in place.
+          if (node.type === "block" || node.type === "plan" || node.type === "output") {
+            void useComposerStore.getState().focusNode(node.id);
+          }
+        }}
+        onPaneContextMenu={(e) => openMenu(e, [])}
+        onNodeContextMenu={(e, node) => {
+          // A node outside the selection becomes the selection.
+          const ids = node.selected
+            ? doc.nodes.filter((n) => n.selected).map((n) => n.id)
+            : [node.id];
+          if (!node.selected) useComposerStore.getState().select(ids);
+          openMenu(e, ids);
+        }}
+        onSelectionContextMenu={(e, nodes) =>
+          openMenu(
+            e,
+            nodes.map((n) => n.id),
+          )
+        }
         zoomOnDoubleClick={false}
         onBeforeDelete={async ({ nodes, edges }) => {
           // React Flow asks on every Delete key press, even with nothing selected.
-          if (nodes.length > 0 || edges.length > 0) checkpoint();
-          return true;
+          if (nodes.length === 0 && edges.length === 0) return true;
+          checkpoint();
+          // React Flow takes a group's nodes along; they stay unless selected too.
+          const groups = nodes.filter((n) => n.type === "group").map((n) => n.id);
+          if (groups.length === 0) return true;
+          const kept = nodes.filter(
+            (n) => n.parentId && groups.includes(n.parentId) && !n.selected,
+          );
+          if (kept.length === 0) return true;
+          const keptIds = new Set(kept.map((n) => n.id));
+          const gone = nodes.filter((n) => !keptIds.has(n.id));
+          const goneIds = new Set(gone.map((n) => n.id));
+          useComposerStore.getState().releaseGroups(groups, goneIds);
+          return {
+            nodes: gone,
+            edges: edges.filter(
+              (e) => e.selected || goneIds.has(e.source) || goneIds.has(e.target),
+            ),
+          };
         }}
         colorMode={theme}
         deleteKeyCode={["Backspace", "Delete"]}
@@ -115,6 +173,8 @@ function Canvas() {
           position="bottom-right"
           nodeColor={(node) => {
             if (node.type === "plan") return "var(--c-kind-plan)";
+            if (node.type === "memo") return "var(--c-memo-border)";
+            if (node.type === "group") return "transparent";
             if (node.type !== "block") return "var(--c-border-strong)";
             const kind = blocks.get((node.data as { blockId: string }).blockId)?.kind;
             return `var(--c-kind-${kind ?? "instruction"})`;
@@ -122,6 +182,7 @@ function Canvas() {
           nodeBorderRadius={8}
         />
       </ReactFlow>
+      {menu && <CanvasMenu at={menu} {...app} onClose={closeMenu} />}
     </div>
   );
 }
@@ -191,25 +252,30 @@ function Toolbar({ preview, onTogglePreview }: { preview: boolean; onTogglePrevi
   );
 }
 
-/** Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, except while typing in a field. */
-function useUndoShortcuts() {
-  const undo = useComposerStore((s) => s.undo);
-  const redo = useComposerStore((s) => s.redo);
+/**
+ * Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y undo and redo, Ctrl+A selects all, Ctrl+D
+ * duplicates, Ctrl+G groups and Ctrl+Shift+G ungroups the selection; not
+ * while typing in a field.
+ */
+function useCanvasShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable=true]")) return;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
       if (!(e.ctrlKey || e.metaKey)) return;
+      const store = useComposerStore.getState();
+      const selected = (store.doc?.nodes ?? []).filter((n) => n.selected).map((n) => n.id);
       const key = e.key.toLowerCase();
-      if (key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((key === "z" && e.shiftKey) || key === "y") {
-        e.preventDefault();
-        redo();
-      }
+      if (key === "z" && !e.shiftKey) store.undo();
+      else if ((key === "z" && e.shiftKey) || key === "y") store.redo();
+      else if (key === "a") store.select("all");
+      else if (key === "d" && selected.length > 0) store.duplicate(selected);
+      else if (key === "g" && !e.shiftKey && selected.length > 0) store.groupNodes(selected);
+      else if (key === "g" && e.shiftKey && selected.length > 0) store.ungroup(selected);
+      else return;
+      e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  }, []);
 }
