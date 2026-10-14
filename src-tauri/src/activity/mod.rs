@@ -13,6 +13,10 @@
 //! prompt text shortened and secrets masked before it is stored (`redact`).
 //! Nothing here writes to a project or to a tool's own files.
 
+pub mod git_log;
+pub mod redact;
+pub mod sessions;
+
 use serde::{Deserialize, Serialize};
 
 use crate::tools::ToolId;
