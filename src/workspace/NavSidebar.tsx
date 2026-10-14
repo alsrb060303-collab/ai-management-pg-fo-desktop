@@ -112,9 +112,21 @@ export function NavSidebar() {
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2">
         {!collapsed && (
           <>
-            <h3 className="px-2 pb-1 text-xs font-medium text-text-subtle">
-              {t("shell.nav.recentDocs")}
-            </h3>
+            <div className="flex items-center pr-1 pb-1 pl-2">
+              <h3 className="flex-1 text-xs font-medium text-text-subtle">
+                {t("shell.nav.recentDocs")}
+              </h3>
+              <IconButton
+                label={t("shell.nav.newDoc")}
+                onClick={() => {
+                  void newDoc();
+                  go("composer");
+                }}
+                className="size-6! rounded-md text-text-subtle"
+              >
+                <Plus size={14} />
+              </IconButton>
+            </div>
             {docs.length === 0 ? (
               <p className="px-2 text-xs text-text-subtle">{t("shell.nav.noDocs")}</p>
             ) : (

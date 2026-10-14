@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "sample-webservice",
+  "name": "Webservice - Sample",
+  "updatedAt": 0,
+  "nodes": [
+    {
+      "id": "o-sample-instructions",
+      "type": "output",
+      "position": { "x": 640, "y": 160 },
+      "data": { "target": "instructions", "scope": "team", "order": [] }
+    }
+  ],
+  "edges": []
+}

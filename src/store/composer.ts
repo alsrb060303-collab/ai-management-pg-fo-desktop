@@ -14,7 +14,9 @@ import { create } from "zustand";
 import { onLocaleApplied, t, useLocaleStore } from "../i18n";
 import { TOOLS, type ToolId } from "../tools";
 import type { Mode } from "./library";
+import { getPref, setPref } from "./prefs";
 import { useProjectStore } from "./project";
+import sample from "./samples/webservice.json";
 import { useSyncStore } from "./sync";
 
 // Mirrors src-tauri/src/composer.
@@ -435,6 +437,23 @@ function blankDoc(): ComposerDoc {
   };
 }
 
+/** Set once the sample document was offered, so deleting it is final. */
+const SAMPLE_SEEDED = "composer.sampleSeeded";
+
+/**
+ * The example document a first run starts with: `samples/webservice.json`, a
+ * document exported from the app. Its fixed id keeps devices from each adding one.
+ */
+function sampleDoc(): ComposerDoc {
+  return migrate({
+    ...(sample as unknown as ComposerDoc),
+    version: 1,
+    id: "sample-webservice",
+    name: "Webservice - Sample",
+    updatedAt: Date.now(),
+  });
+}
+
 /**
  * Brings a document saved by an older version up to date: the CLAUDE.md
  * output (`claudeMd`) is now the tool-neutral `instructions`.
@@ -606,8 +625,13 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       await Promise.all([get().loadCatalog(), get().loadDocs()]);
       if (get().doc) return;
       const latest = get().docs[0];
+      const seeded = getPref(SAMPLE_SEEDED) !== null;
+      if (isTauri() && !seeded) setPref(SAMPLE_SEEDED, "1");
       if (latest) await get().openDoc(latest.id);
-      else get().newDoc();
+      else if (isTauri() && !seeded) {
+        open(sampleDoc());
+        scheduleSave();
+      } else get().newDoc();
     },
 
     loadCatalog: async () => {
