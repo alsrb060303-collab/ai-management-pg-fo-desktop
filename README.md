@@ -1,57 +1,167 @@
-# AI Management (임시 이름)
+<div align="center">
 
-Claude Code로 작업할 때 **터미널 옆에 붙어서** 문서·git 작업·브랜치 메모를 관리하는 데스크탑 앱. 메인 창과, 터미널 옆에 자동으로 붙는 사이드바(둘 중 하나만 표시)로 되어 있다. Windows 우선, Linux는 이후.
+# Encela
 
-> 🚧 개발 중. 계획과 결정은 [`docs/PLAN.md`](docs/PLAN.md), 조사 자료는 [`docs/research.md`](docs/research.md), Windows 테스트 순서는 [`docs/testing/phase4-windows.md`](docs/testing/phase4-windows.md).
+**A desktop companion for AI coding tools: build your Claude Code and Codex setup visually, manage git work, and keep notes per branch, right next to your terminal.**
 
-## 기능
+**English** · [한국어](READMEkr.md) · [中文](READMEzh.md)
 
-**문서**
-- **문서 작성기**: 지침·규칙·skill·subagent 블록을 캔버스에서 이어 붙여 `CLAUDE.md`, `.claude/rules`, `.claude/skills`, `.claude/agents` 파일을 만든다. 블록을 누르면 설명과 실제로 들어갈 내용이 보이고, 블록이나 출력을 더블클릭하면 그 파일을 미리 본다. hook 블록은 `.claude/settings.json`의 hooks에 합쳐 넣고(명령 확인 후), '직접 입력' 출력은 원하는 경로(예: AGENTS.md)에 내 글과 블록을 쓴다. 블록마다 켜기/끄기 스위치가 있고, subagent는 모델(자동·Fable·Opus·Sonnet·Haiku)을 고를 수 있다.
-- **블록 카탈로그**: 내장 블록과, 라이선스를 확인한 공개 저장소 항목(obra/superpowers, mattpocock/skills, anthropics/skills, wshobson/agents, VoltAgent subagents, awesome-cursorrules). 출처·커밋·라이선스가 함께 기록된다([`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
-- **설정 지도**: 프로젝트에서 Claude Code가 실제로 읽는 지침·규칙·skill·subagent·명령·MCP·설정을 범위(개인/프로젝트/로컬)와 상태(사용 중/조건부/꺼짐 등)와 함께 보여준다.
-- **프로젝트 문서**: 폴더를 연결하면 CLAUDE.md(하위 폴더 포함)·AGENTS.md·rules·skills·agents·commands·설정 파일을 자동으로 찾아 앱 안에서 읽고 고친다. 밖에서 파일이 바뀌면 알려준다.
-- **라이브러리**: 자주 쓰는 skill·subagent를 모아 두고 프로젝트에 적용하거나 뺀다.
+[![Latest release](https://img.shields.io/github/v/release/oceanstarlight/ai-management-pg-fo-desktop?label=download)](https://github.com/oceanstarlight/ai-management-pg-fo-desktop/releases/latest)
+![Platform](https://img.shields.io/badge/platform-Windows-0078d4)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-**MCP 서버**
-- 프로젝트(.mcp.json)·로컬·개인 MCP 서버를 한 화면에서 보고 연결 상태를 확인하고, 추가·수정·삭제한다. 개인 서버는 설치된 `claude mcp` 명령으로 다룬다(로그인 정보가 있는 `~/.claude.json`은 열지 않음).
-- 프로젝트 서버를 켜고 끄고, 라이선스를 확인한 추천 서버를 넣거나, README의 JSON·`claude mcp add` 명령을 붙여넣어 가져온다. 비밀값은 가려서 보여주고 `${변수}` 참조로 바꾸도록 안내한다.
+</div>
 
-**작업 (git · GitHub)**
-- 브랜치·worktree 만들기·전환·삭제, 변경 파일과 diff, **커밋·push·pull**.
-- GitHub 로그인(Device Flow): 브랜치의 PR·CI, 열린 PR·이슈, PR 만들기.
-- **내 GitHub 저장소** 목록에서 고르기: clone이 있으면 그 폴더를 열고, 없으면 GitHub에서 바로 브랜치·커밋·PR을 보고 **파일을 고쳐 커밋**하거나 clone한다.
+> [!NOTE]
+> Early development. Windows comes first; Linux and macOS are planned.
 
-**메모**
-- 저장소·브랜치마다 메모와 할 일. 터미널에서 브랜치를 바꾸면 따라 바뀐다.
-- 여러 기기 동기화(Firebase, 허용 목록 계정만): 메모·할 일, 문서 작성기 문서, 내 라이브러리. 두 기기에서 같이 고치면 나중 것을 남기고 다른 것은 사본으로 보관한다. [`docs/sync-setup.md`](docs/sync-setup.md)
+<!-- Screenshot: main window (document composer) — e.g. docs/images/composer.png -->
 
-**Claude Code 연동 (mods, Claude Code 2.1.287+)**
-- 설정에서 **브랜치 메모 mod**를 설치하면 Claude Code 입력창 위에 이 브랜치의 할 일·PR·CI가 한 줄로 보이고, `/todo` · `/memo` · `/notes`를 쓸 수 있고, Claude가 메모와 할 일을 알고 작업한다. 터미널 Claude Code와 데스크탑 앱의 Code 탭에 적용된다.
-- 추천 mods(token-weather, blast-radius, replay-theater, claude-hud)도 설정에서 설치할 수 있다.
+## Why
 
-**사이드바**
-- Windows Terminal · VS Code · Claude 데스크탑 · Codex 중 지금 쓰는 창 옆에 자동으로 붙는다. 전역 단축키로 보이고 숨긴다.
+AI coding tools are configured through a pile of files: `CLAUDE.md`, `AGENTS.md`, rules, skills, subagents, hooks, MCP servers, settings in three different scopes. It is hard to see which ones are actually in effect, and writing them by hand is slow.
 
-## 개발 환경
+Encela puts all of that in one window:
 
-필요한 것
-- Node.js 22+ 와 pnpm 10 (`corepack enable`)
+- **See** what your AI tool reads in a project, and from where.
+- **Build** instruction files by snapping blocks together instead of writing them from scratch.
+- **Work** with git and GitHub without leaving the app, and keep a to-do list for every branch.
+- **Dock** a slim sidebar next to your terminal or editor so it is always one glance away.
+
+## Features at a glance
+
+| Screen | What you can do |
+|---|---|
+| 🧩 **Document composer** | Drag blocks onto a canvas and write `CLAUDE.md` / `AGENTS.md`, rules, skills, subagents, hooks and `PLANS.md` |
+| 🗺️ **Settings map** | See every instruction, rule, skill, subagent, command, MCP server and setting your tool loads, with its scope and status |
+| 📄 **Project docs** | Open a folder and edit its AI config files in the app; get told when they change on disk |
+| 📚 **Library** | Keep your favorite skills and subagents in one place and switch them on or off per project |
+| 🔌 **MCP servers** | List, add, edit, remove and health-check MCP servers; paste a JSON snippet or `claude mcp add` command to import |
+| 🌿 **Work** | Branches, worktrees, diffs, commit / push / pull, pull requests, CI status, merge-conflict helper |
+| 📝 **Notes** | Notes and to-dos for each repository and branch, synced across your devices |
+| 📌 **Sidebar** | A narrow panel that docks next to the window you are using and follows it |
+
+## Supported tools
+
+Each project uses one tool. The app detects it from the files in the project (you can override it), and every screen follows that choice.
+
+| | Claude Code | Codex |
+|---|:---:|:---:|
+| Settings map, library, project docs | ✅ | ✅ |
+| Document composer | ✅ | ✅ (instructions go to `AGENTS.md`; Codex has no rules folder) |
+| MCP servers | ✅ (with connection check) | ✅ (no connection check) |
+| Worktrees, AI commit message draft | ✅ | ✅ |
+| Branch-notes mod inside the tool | ✅ | — |
+
+## Install
+
+1. Download the latest `*-setup.exe` from **[Releases](https://github.com/oceanstarlight/ai-management-pg-fo-desktop/releases/latest)**.
+2. Run it. The installer is not code-signed yet, so Windows SmartScreen may warn you: choose **More info → Run anyway**.
+3. The app checks for updates at launch and every 6 hours and offers **Update and restart**.
+
+**You also need**
+
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) and/or [Codex](https://github.com/openai/codex) installed, if you want the app to work with them. The app runs the `claude` / `codex` command you already have; it never asks for your login.
+- [Git](https://git-scm.com/) for the Work screen.
+
+## Getting started
+
+1. **Pick a project.** Open the **Settings map** and choose a project folder. You now see what your tool currently loads for that project, by scope.
+2. **Open the Document composer**, drag a few blocks onto the canvas, connect them to an output such as `CLAUDE.md`, and check the preview on the right.
+3. **Write to project.** You get a preview of every file change before anything is written.
+4. **Switch to sidebar** when you start coding. Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> to show or hide it, or use the tray icon to get the main window back.
+
+## A closer look
+
+### 🧩 Document composer
+
+<!-- Screenshot: composer canvas with the "Expected effect" panel — e.g. docs/images/composer-ratings.png -->
+
+Build AI instruction files like a node graph.
+
+```mermaid
+flowchart LR
+    A["Blocks<br/>instructions · rules · skills<br/>subagents · hooks · plans"] --> B["Canvas<br/>connect, reorder,<br/>switch on/off"]
+    B --> C["Outputs<br/>CLAUDE.md · AGENTS.md · rules<br/>skills · agents · hooks · PLANS.md"]
+    C --> D["Preview → write to project<br/>or commit to GitHub"]
+```
+
+- **About 100 ready-made blocks**: the app's own, plus license-checked blocks from popular open-source collections (obra/superpowers, mattpocock/skills, anthropics/skills, wshobson/agents, VoltAgent subagents, awesome-cursorrules and more). Source, commit and license are kept with every block; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- **Expected effect**: each block shows whether it tends to raise or lower **tokens**, **performance** and **quality**. The canvas adds up the blocks you placed and shows performance, quality and value (performance + quality − tokens) as bars.
+- **Click a block** to read what it makes the AI do and see its full text. Double-click a block or output to preview the real file.
+- **Subagents**: pick the model (Auto, Fable, Opus, Sonnet, Haiku). **Hooks**: set the event and command, merged into your settings after you confirm.
+- **Plans**: write a `PLANS.md` with goals, sub-goals and steps (write text, hand off to a subagent, use a skill, ask the user), each marked done / in progress / not yet.
+- **Safe writes**: the app only manages its own marked section of `CLAUDE.md` and never silently overwrites a file it did not write.
+- **Write without cloning**: send the result straight to a GitHub repository as a commit on a branch or a new pull request.
+- Undo / redo, team vs personal outputs (`CLAUDE.md` vs `CLAUDE.local.md`), and "Get latest" to refresh third-party blocks from their source.
+
+### 🗺️ Settings map
+
+Shows everything the tool reads in the selected project: instructions, rules, skills, subagents, commands, MCP servers and settings, grouped by **scope** (personal / project / local) with a **status** (in use, conditional, turned off, shadowed, broken JSON…).
+
+### 📄 Project docs · 📚 Library
+
+- **Project docs** finds `CLAUDE.md` (including in subfolders), `AGENTS.md`, rules, skills, agents, commands and settings files in a folder and lets you edit them in the app.
+- **Library** keeps the skills and subagents you reuse. Add one to a project or remove it again with one click.
+
+### 🔌 MCP servers
+
+One screen for project (`.mcp.json`), local and personal servers: check if they connect, add / edit / remove them, toggle project servers, or install a recommended server. Secrets are masked, and the app suggests `${VARIABLE}` references instead of pasting keys into files. Personal Claude Code servers are handled through your own `claude mcp` command.
+
+### 🌿 Work (git · GitHub)
+
+<!-- Screenshot: Work screen with the flow card — e.g. docs/images/work.png -->
+
+- A **flow card** shows where the branch is: commit → push → pull request → CI, with a button for the next step.
+- Changes with per-file staging, history with diffs, branches and worktrees.
+- **Commit message drafts** written by your own `claude` or `codex` CLI.
+- **Sign in to GitHub** to see pull requests, CI and issues, create pull requests, and get desktop notifications when CI finishes or a PR is merged or closed.
+- **Pick from your GitHub repositories**: open the local clone if you have one; otherwise browse branches, commits and PRs, edit files and commit directly on GitHub, or clone.
+- A **conflict helper** walks through each conflicting block (current / incoming / both).
+
+### 📝 Notes & sync
+
+- Notes and to-dos per repository and branch. When you switch branches in the terminal, the notes follow.
+- Optional sync across devices (notes, composer documents, library) with an app account: email, Google or GitHub. Sync is currently open to approved accounts only. If two devices edit the same thing, the newer one wins and the other is kept as a copy.
+
+### 🔗 Inside Claude Code: branch-notes mod
+
+Install the **branch-notes mod** from Settings (Claude Code 2.1.287 or later). Claude Code then shows this branch's to-dos, PR and CI in one line above the prompt, adds `/todo`, `/memo` and `/notes`, and lets Claude read your notes while it works. Recommended community mods (token-weather, blast-radius, replay-theater, claude-hud) can be installed from Settings too.
+
+### 📌 Sidebar
+
+Docks next to the window you are using (Windows Terminal, VS Code, Claude desktop, Codex) and follows it. Settings: magnet on/off, always on top, show/hide shortcut, theme, language (English / Korean), text size.
+
+## Privacy & security
+
+- The app **never reads, copies or stores your Claude login** (`~/.claude/.credentials.json` or tokens). AI features run the `claude` / `codex` command you installed, unchanged.
+- GitHub and account tokens are kept in the OS credential store (Windows Credential Manager). Git gets the GitHub token only as an environment variable for a single command.
+- Settings files are written read-merge-write: keys the app does not know are kept.
+- Nothing is synced unless you sign in and turn sync on.
+
+## For developers
+
+<details>
+<summary><b>Build from source</b></summary>
+
+**Requirements**
+
+- Node.js 22+ and pnpm 10 (`corepack enable`)
 - Rust 1.90+ (`rustup`)
-- Windows: [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)("C++를 사용한 데스크톱 개발") + WebView2 (Windows 11은 기본 포함)
+- Windows: [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) ("Desktop development with C++") and WebView2 (included in Windows 11)
 - Linux: `libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev`
 
-자세한 내용: [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+See also [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 pnpm install
-pnpm tauri dev      # 앱 실행 (개발 모드)
-pnpm lint           # Biome 린트·포맷 검사
-pnpm build          # 타입 검사 + 프론트엔드 빌드
-pnpm tauri build    # 설치 파일 빌드
+pnpm tauri dev      # run the app in development mode
+pnpm lint           # Biome lint + format check
+pnpm build          # type check + frontend build
+pnpm tauri build    # build the installer
 ```
 
-Rust 검사 (`src-tauri/`):
+Rust checks (in `src-tauri/`):
 
 ```bash
 cargo fmt --check
@@ -59,30 +169,43 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-Claude Code mod 검사 (`claude-mod/branch-notes/`):
+Claude Code mod checks (in `claude-mod/branch-notes/`):
 
 ```bash
 claude plugin validate .
 claude plugin test .
 ```
 
-Windows 설치 파일은 GitHub Actions(`.github/workflows/ci.yml`)가 빌드해서 아티팩트로 올린다.
+</details>
 
-## 폴더 구조
+<details>
+<summary><b>Project structure</b></summary>
 
-- `src/`: React 19 + TypeScript 프론트엔드 (`workspace/` 메인 창, `sidebar/` 사이드바, `features/` 공용 패널)
-- `src-tauri/`: Rust 백엔드 (Tauri 2). `catalog/`에 문서 작성기 블록
-- `claude-mod/`: Claude Code mod (앱과 `<앱 데이터>/bridge` 파일로 주고받음)
-- `firebase/`: 메모 동기화 보안 규칙
-- `docs/`: 계획·조사·설정 가이드·테스트 체크리스트
+| Path | What's there |
+|---|---|
+| `src/` | React 19 + TypeScript frontend (`workspace/` main window, `sidebar/` sidebar, `features/` shared panels) |
+| `src-tauri/` | Rust backend (Tauri 2). `tools/` has one adapter per AI tool, `catalog/` the composer blocks |
+| `claude-mod/` | The Claude Code mod (talks to the app through files in `<app data>/bridge`) |
+| `firebase/` | Security rules for sync |
+| `docs/` | Plan, research notes, setup guides, test checklists |
 
-## 개인정보 · 보안
+</details>
 
-- Claude 로그인 정보(`~/.claude/.credentials.json` 등)는 읽거나 복사하지 않는다. Claude Code 관련 작업은 사용자가 설치한 `claude` 명령을 그대로 실행한다.
-- GitHub 토큰은 OS 자격 증명 저장소(Windows 자격 증명 관리자)에 보관하고, git에는 명령 한 번에만 환경 변수로 넘긴다.
+<details>
+<summary><b>Docs</b></summary>
 
-## 라이선스
+- [`docs/PLAN.md`](docs/PLAN.md): decisions and roadmap
+- [`docs/research.md`](docs/research.md): researched facts with sources
+- [`docs/sync-setup.md`](docs/sync-setup.md): setting up sync (Firebase)
+- [`docs/release-setup.md`](docs/release-setup.md): releases and app updates
+- [`docs/testing/`](docs/testing/): manual test checklists
 
-[Apache-2.0](LICENSE). 번들한 서드파티 블록의 라이선스는 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+</details>
 
-이 프로젝트는 Anthropic과 관련이 없으며, Anthropic의 후원이나 보증을 받지 않는다. Claude는 Anthropic, PBC의 상표다.
+CI (`.github/workflows/ci.yml`) lints and builds on Linux and builds the Windows installer. Every version merged to `main` becomes a GitHub Release.
+
+## License
+
+[Apache-2.0](LICENSE). Licenses of bundled third-party blocks are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+This project is not affiliated with, sponsored or endorsed by Anthropic or OpenAI. Claude is a trademark of Anthropic, PBC. Codex and ChatGPT are trademarks of OpenAI.
