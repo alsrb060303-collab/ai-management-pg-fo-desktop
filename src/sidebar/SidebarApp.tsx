@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
+import { WorkTrees } from "../features/activity/WorkTrees";
 import { CommandsPanel } from "../features/commands/CommandsPanel";
 import { DocsTab } from "../features/docs/DocsTab";
 import { MemoPanel } from "../features/memo/MemoPanel";
@@ -59,6 +60,8 @@ export default function SidebarApp() {
           <DocsTab />
         ) : activeTab === "memo" ? (
           <MemoPanel compact />
+        ) : activeTab === "trees" ? (
+          <WorkTrees compact />
         ) : activeTab === "commands" ? (
           <CommandsPanel compact />
         ) : (

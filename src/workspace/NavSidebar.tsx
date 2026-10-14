@@ -4,6 +4,7 @@ import {
   CircleUserRound,
   FileText,
   GitBranch,
+  GitGraph,
   House,
   Library,
   type LucideIcon,
@@ -35,6 +36,7 @@ const NAV: { page: Page; label: MessageKey; icon: LucideIcon; soon?: boolean }[]
   { page: "mcp", label: "shell.nav.mcp", icon: Plug },
   { page: "commands", label: "shell.nav.commands", icon: SquareSlash },
   { page: "work", label: "shell.nav.work", icon: GitBranch },
+  { page: "trees", label: "shell.nav.trees", icon: GitGraph },
   { page: "memo", label: "shell.nav.memo", icon: NotebookPen },
 ];
 
