@@ -34,6 +34,7 @@ version = "0.1.43"
 dependencies = [
  "globset",
  "keyring",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

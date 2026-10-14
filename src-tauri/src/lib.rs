@@ -1,4 +1,3 @@
-#[allow(dead_code)] // Filled in by Phase 14.
 mod activity;
 mod bridge;
 mod claude_mod;
@@ -71,6 +70,11 @@ pub fn run() {
             composer::composer_compile,
             composer::composer_plan,
             composer::composer_write,
+            activity::activity_refresh,
+            activity::activity_git_log,
+            activity::activity_prompt_log,
+            activity::activity_settings,
+            activity::activity_set_settings,
             memo::memo_context,
             memo::memo_get,
             memo::memo_set_note,
@@ -148,6 +152,7 @@ pub fn run() {
             library::Library::manage(handle)?;
             composer::Composer::manage(handle)?;
             memo::Memo::manage(handle)?;
+            activity::Activity::manage(handle)?;
             github::GitHub::manage(handle);
             sync::Sync::manage(handle);
             bridge::manage(handle);

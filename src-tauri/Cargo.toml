@@ -28,6 +28,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
+regex = "1"
 globset = "0.4"
 toml_edit = "0.25"
 ureq = { version = "3", features = ["platform-verifier", "json"] }

@@ -13,9 +13,50 @@
 //! prompt text shortened and secrets masked before it is stored (`redact`).
 //! Nothing here writes to a project or to a tool's own files.
 
+pub mod git_log;
+pub mod redact;
+pub mod sessions;
+pub mod store;
+
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::tools::ToolId;
+
+pub use store::{Event, Settings, Store};
+
+/// Emitted (payload `{ repo }`) when a repository's logs changed here or by sync.
+pub const ACTIVITY_EVENT: &str = "activity-changed";
+/// Commits read per refresh.
+const COLLECT_LIMIT: usize = 500;
+
+/// The store opens lazily, so a broken database never blocks app start.
+pub struct Activity {
+    path: PathBuf,
+    store: OnceLock<Store>,
+}
+
+impl Activity {
+    pub fn manage(app: &AppHandle) -> tauri::Result<()> {
+        let path = app.path().app_data_dir()?.join("activity.db");
+        app.manage(Activity {
+            path,
+            store: OnceLock::new(),
+        });
+        Ok(())
+    }
+
+    pub fn store(&self) -> store::Result<&Store> {
+        if let Some(store) = self.store.get() {
+            return Ok(store);
+        }
+        let store = Store::open(&self.path)?;
+        Ok(self.store.get_or_init(|| store))
+    }
+}
 
 /// What happened in the GitHub log.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,4 +166,316 @@ pub struct SessionInfo {
     pub ended: i64,
     pub branch: Option<String>,
     pub prompts: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshResult {
+    /// GitHub-log events that were new or changed.
+    pub git: usize,
+    /// Prompt events that were new or changed.
+    pub prompts: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Changed {
+    repo: String,
+}
+
+pub(crate) fn notify(app: &AppHandle, repo: String) {
+    crate::sync::changed(app);
+    let _ = app.emit(ACTIVITY_EVENT, Changed { repo });
+}
+
+async fn blocking<T: Send + 'static>(
+    app: AppHandle,
+    f: impl FnOnce(&Store) -> store::Result<T> + Send + 'static,
+) -> store::Result<T> {
+    tauri::async_runtime::spawn_blocking(move || f(app.state::<Activity>().store()?))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Paths in `git worktree list --porcelain [-z]` output (the main worktree first).
+fn parse_worktree_dirs(raw: &[u8]) -> Vec<PathBuf> {
+    let sep = if raw.contains(&0) { 0 } else { b'\n' };
+    raw.split(|b| *b == sep)
+        .filter_map(|field| {
+            let field = String::from_utf8_lossy(field);
+            let field = field.trim_end_matches('\r');
+            field.strip_prefix("worktree ").map(PathBuf::from)
+        })
+        .collect()
+}
+
+/// Every worktree of the repository at `root` (at least `root` itself).
+fn worktree_dirs(root: &Path) -> Vec<PathBuf> {
+    let raw = crate::git::run_raw(root, &["worktree", "list", "--porcelain", "-z"])
+        .or_else(|_| crate::git::run_raw(root, &["worktree", "list", "--porcelain"]))
+        .unwrap_or_default();
+    let mut dirs = parse_worktree_dirs(&raw);
+    if dirs.is_empty() {
+        dirs.push(root.to_path_buf());
+    }
+    dirs
+}
+
+/// Stores freshly collected events: nothing past retention, prompt text
+/// masked again (whatever the reader did). Returns (git, prompts) changed.
+fn ingest(
+    store: &Store,
+    settings: &Settings,
+    now: i64,
+    git: Vec<GitEvent>,
+    prompts: Vec<PromptEvent>,
+) -> store::Result<(usize, usize)> {
+    let cutoff = settings.cutoff(now);
+    let fresh = |at: i64| cutoff.is_none_or(|c| at >= c);
+    let git: Vec<Event> = git
+        .into_iter()
+        .filter(|e| fresh(e.at))
+        .map(Event::Git)
+        .collect();
+    let prompts: Vec<Event> = prompts
+        .into_iter()
+        .filter(|e| fresh(e.at))
+        .map(|mut e| {
+            e.text = redact::prompt_text(&e.text);
+            Event::Prompt(e)
+        })
+        .collect();
+    Ok((store.upsert(&git)?, store.upsert(&prompts)?))
+}
+
+fn refresh(
+    app: &AppHandle,
+    store: &Store,
+    project: &Path,
+    github: bool,
+) -> store::Result<RefreshResult> {
+    let info = crate::memo::repo::inspect(project)?;
+    if !info.is_git {
+        return Ok(RefreshResult::default());
+    }
+    let repo = info.key;
+    let root = PathBuf::from(crate::git::run(project, &["rev-parse", "--show-toplevel"])?);
+    let dirs = worktree_dirs(&root);
+
+    let (mut git_events, tips) = git_log::collect_local(&root, &repo, COLLECT_LIMIT)?;
+    if github {
+        // Offline or signed out: the local log is still worth keeping.
+        if let Ok(more) = git_log::collect_github(app, &root, &repo) {
+            git_events.extend(more);
+        }
+    }
+
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let roots = sessions::Roots::detect(&home);
+    let mut state = store.scan_state(&repo)?;
+    let prompts = sessions::scan(&roots, &dirs, &repo, &mut state);
+
+    let settings = store.settings()?;
+    let (git, prompt_count) = ingest(store, &settings, store::now_ms(), git_events, prompts)?;
+    store.set_scan_state(&repo, &state)?;
+    store.set_tips(&repo, &tips)?;
+    let pruned = match settings.cutoff(store::now_ms()) {
+        Some(cutoff) => store.prune(cutoff)?,
+        None => 0,
+    };
+    if git + prompt_count + pruned > 0 {
+        notify(app, repo);
+    }
+    Ok(RefreshResult {
+        git,
+        prompts: prompt_count,
+    })
+}
+
+/// Reads the project's git history, GitHub (when `github`) and tool session
+/// files into the log. Safe to call often; unchanged events are not rewritten.
+#[tauri::command]
+pub async fn activity_refresh(
+    app: AppHandle,
+    project: String,
+    github: bool,
+) -> Result<RefreshResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let activity = app.state::<Activity>();
+        refresh(&app, activity.store()?, Path::new(&project), github)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn repo_of(project: &str) -> store::Result<String> {
+    Ok(crate::memo::repo::inspect(Path::new(project))?.key)
+}
+
+#[tauri::command]
+pub async fn activity_git_log(
+    app: AppHandle,
+    project: String,
+    limit: usize,
+    before: Option<i64>,
+) -> Result<GitLog, String> {
+    blocking(app, move |store| {
+        let repo = repo_of(&project)?;
+        Ok(GitLog {
+            events: store.git_page(&repo, limit, before)?,
+            branches: store.tips(&repo)?,
+            repo,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn activity_prompt_log(
+    app: AppHandle,
+    project: String,
+    limit: usize,
+    before: Option<i64>,
+) -> Result<PromptLog, String> {
+    blocking(app, move |store| {
+        let repo = repo_of(&project)?;
+        let events = store.prompt_page(&repo, limit, before)?;
+        Ok(PromptLog {
+            sessions: store::sessions(&events),
+            events,
+            repo,
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn activity_settings(app: AppHandle) -> Result<Settings, String> {
+    blocking(app, |store| store.settings()).await
+}
+
+#[tauri::command]
+pub async fn activity_set_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+    let pruned = blocking(app.clone(), move |store| {
+        let before = store.settings()?;
+        store.set_settings(settings)?;
+        if settings.sync_prompts && !before.sync_prompts {
+            // Prompts other devices uploaded meanwhile were skipped: read again.
+            store.set_meta(crate::sync::ACTIVITY_CURSOR_KEY, None)?;
+        }
+        match settings.cutoff(store::now_ms()) {
+            Some(cutoff) => store.prune(cutoff),
+            None => Ok(0),
+        }
+    })
+    .await?;
+    crate::sync::changed(&app);
+    if pruned > 0 {
+        let _ = app.emit(
+            ACTIVITY_EVENT,
+            Changed {
+                repo: String::new(),
+            },
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn commit(id: &str, at: i64) -> GitEvent {
+        GitEvent {
+            id: id.into(),
+            repo: "r".into(),
+            kind: GitKind::Commit,
+            at,
+            branch: None,
+            sha: None,
+            parents: vec![],
+            pr: None,
+            title: id.into(),
+            state: None,
+            url: None,
+            author: None,
+        }
+    }
+
+    fn prompt(id: &str, at: i64, text: &str) -> PromptEvent {
+        PromptEvent {
+            id: id.into(),
+            repo: "r".into(),
+            tool: ToolId::Claude,
+            session: "s".into(),
+            at,
+            branch: None,
+            text: text.into(),
+            files: vec![],
+            commits: vec![],
+            pushed: false,
+        }
+    }
+
+    #[test]
+    fn parses_worktree_list_output() {
+        let z = b"worktree /a/main\0HEAD abc\0branch refs/heads/main\0\0worktree /a/wt one\0HEAD def\0detached\0\0";
+        assert_eq!(
+            parse_worktree_dirs(z),
+            [PathBuf::from("/a/main"), PathBuf::from("/a/wt one")]
+        );
+        let nl = b"worktree /a/main\nHEAD abc\n\nworktree /b\r\nHEAD d\n";
+        assert_eq!(
+            parse_worktree_dirs(nl),
+            [PathBuf::from("/a/main"), PathBuf::from("/b")]
+        );
+        assert!(parse_worktree_dirs(b"").is_empty());
+    }
+
+    #[test]
+    fn ingest_drops_events_past_retention_and_masks_prompts() {
+        let store = Store::in_memory().unwrap();
+        let day = 86_400_000;
+        let settings = Settings {
+            retention_days: Some(90),
+            sync_prompts: true,
+        };
+        let now = 200 * day;
+        let (g, p) = ingest(
+            &store,
+            &settings,
+            now,
+            vec![commit("old", 10 * day), commit("new", 150 * day)],
+            vec![
+                prompt("p-old", 10 * day, "x"),
+                prompt("p-new", 150 * day, "key sk-abcdefghijklmnopqrstuvwx"),
+            ],
+        )
+        .unwrap();
+        assert_eq!((g, p), (1, 1));
+        let prompts = store.prompt_page("r", 10, None).unwrap();
+        assert_eq!(prompts[0].text, format!("key {}", redact::MASK));
+
+        // Forever: everything is kept.
+        let keep = Settings {
+            retention_days: None,
+            ..settings
+        };
+        let (g, _) = ingest(&store, &keep, now, vec![commit("old", 10 * day)], vec![]).unwrap();
+        assert_eq!(g, 1);
+        // The same input again changes nothing.
+        let (g, p) = ingest(
+            &store,
+            &keep,
+            now,
+            vec![commit("old", 10 * day)],
+            vec![prompt(
+                "p-new",
+                150 * day,
+                "key sk-abcdefghijklmnopqrstuvwx",
+            )],
+        )
+        .unwrap();
+        assert_eq!((g, p), (0, 0));
+    }
 }
