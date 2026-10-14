@@ -16,6 +16,9 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/engineering/research/SKILL.md
 license_path: LICENSE
+tokens: 1
+performance: 1
+quality: 1
 ---
 Spin up a **background agent** to do the research, so you keep working while it reads.
 

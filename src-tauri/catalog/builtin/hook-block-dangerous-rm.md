@@ -11,5 +11,8 @@ category_en: Security
 name: block-dangerous-rm
 event: PreToolUse
 matcher: Bash
+tokens: 0
+performance: 0
+quality: 1
 ---
 node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const c=(JSON.parse(s).tool_input||{}).command||'';if(/rm\s+-[a-z]*r[a-z]*f?\s+(\/|~)(\s|$)/.test(c)){console.error('Blocked: rm -rf on / or ~');process.exit(2)}})"

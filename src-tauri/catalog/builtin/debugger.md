@@ -11,6 +11,9 @@ category_en: Debugging
 name: debugger
 description: Investigates errors, failing tests, and unexpected behavior to find the root cause. Use when something fails and the cause is not obvious.
 tools: Read, Grep, Glob, Bash, Edit
+tokens: 1
+performance: 1
+quality: 1
 ---
 You are a debugging specialist.
 

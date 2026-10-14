@@ -40,6 +40,20 @@ export const ko = {
   "composer.palette.noMatch": "찾는 블록이 없어요.",
   "composer.palette.dragHint": "누르면 자세히 보기 · 캔버스로 끌어다 놓아 추가",
   "composer.palette.myLibrary": "내 라이브러리",
+
+  // Ratings: what a block changes (catalog estimates) and the canvas total
+  "composer.rating.tokens": "토큰",
+  "composer.rating.performance": "성능",
+  "composer.rating.quality": "품질",
+  "composer.rating.value": "가성비",
+  "composer.rating.hint":
+    "블록을 넣었을 때 달라지는 정도를 미리 매겨 둔 값이에요 (-2~+2). 토큰은 ↓가 아끼는 쪽이에요",
+  "composer.rating.title": "예상 효과",
+  "composer.rating.empty": "블록을 놓으면 합계가 보여요",
+  "composer.rating.count": "블록 {n}개",
+  "composer.rating.unrated": "평가 없는 블록 {n}개는 빠져요",
+  "composer.rating.valueHint": "가성비 = 성능 + 품질 − 토큰",
+  "composer.rating.bar": "{label} 합계 {value}",
   "composer.palette.add": "{title} 추가",
   "composer.palette.forTool": "{tool}용",
   "composer.palette.toolHint":
@@ -264,6 +278,19 @@ export const en: Messages<typeof ko> = {
   "composer.palette.noMatch": "No matching blocks.",
   "composer.palette.dragHint": "Click for details · drag onto the canvas to add",
   "composer.palette.myLibrary": "My library",
+
+  "composer.rating.tokens": "Tokens",
+  "composer.rating.performance": "Performance",
+  "composer.rating.quality": "Quality",
+  "composer.rating.value": "Value",
+  "composer.rating.hint":
+    "An estimate of what the block changes (-2 to +2). For tokens, ↓ means it saves them",
+  "composer.rating.title": "Expected effect",
+  "composer.rating.empty": "Place blocks to see the total",
+  "composer.rating.count": "{n} blocks",
+  "composer.rating.unrated": "{n} blocks without a rating are left out",
+  "composer.rating.valueHint": "Value = performance + quality − tokens",
+  "composer.rating.bar": "{label} total {value}",
   "composer.palette.add": "Add {title}",
   "composer.palette.forTool": "For {tool}",
   "composer.palette.toolHint":

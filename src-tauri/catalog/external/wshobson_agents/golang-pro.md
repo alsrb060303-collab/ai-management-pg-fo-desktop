@@ -16,6 +16,9 @@ source_repo: wshobson/agents
 source_commit: 46891e7e60da0e52baf1050b7b6391b64e84c6d9
 source_path: plugins/systems-programming/agents/golang-pro.md
 license_path: LICENSE
+tokens: 1
+performance: 1
+quality: 1
 ---
 You are a Go expert specializing in modern Go 1.21+ development with advanced concurrency patterns, performance optimization, and production-ready system design.
 

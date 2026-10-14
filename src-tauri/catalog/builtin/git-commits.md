@@ -8,6 +8,9 @@ detail: 한 커밋에 한 가지 목적만 담고, 이유가 드러나는 메시
 detail_en: One purpose per commit, with a message that says why. Force pushes, rebases and other history rewrites only when you ask. Makes changes easy to trace and revert later.
 category: Git
 category_en: Git
+tokens: 0
+performance: 0
+quality: 1
 ---
 ## Git
 

@@ -11,6 +11,9 @@ category_en: React
 paths:
   - "**/*.tsx"
   - "**/*.jsx"
+tokens: 0
+performance: 0
+quality: 1
 ---
 # React
 

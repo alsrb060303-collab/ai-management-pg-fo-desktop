@@ -17,6 +17,9 @@ source_repo: addyosmani/agent-skills
 source_commit: 1be8e34187e34647bb83adc3a1323b26ae6f6abe
 source_path: skills/incremental-implementation/SKILL.md
 license_path: LICENSE
+tokens: 1
+performance: 1
+quality: 1
 ---
 # Incremental Implementation
 

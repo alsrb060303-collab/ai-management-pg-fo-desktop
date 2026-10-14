@@ -10,6 +10,9 @@ category: Go
 category_en: Go
 paths:
   - "**/*.go"
+tokens: 0
+performance: 0
+quality: 1
 ---
 # Go
 

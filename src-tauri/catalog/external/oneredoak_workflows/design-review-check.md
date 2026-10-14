@@ -17,6 +17,9 @@ source_repo: OneRedOak/claude-code-workflows
 source_commit: 29a34c725313c7621f426f838ed31cf482473fb4
 source_path: design-review/design-review-claude-md-snippet.md
 license_path: LICENSE
+tokens: 1
+performance: 1
+quality: 1
 ---
 ## Visual Development
 

@@ -8,6 +8,9 @@ detail: 대화와 설명은 한국어로 하고, 코드·변수 이름·커밋 �
 detail_en: Talks and explains in Korean, while code, identifiers, commit messages and code comments stay in English. For working in Korean while keeping the repository consistently English.
 category: 소통
 category_en: Communication
+tokens: 0
+performance: 0
+quality: 1
 ---
 ## Language
 

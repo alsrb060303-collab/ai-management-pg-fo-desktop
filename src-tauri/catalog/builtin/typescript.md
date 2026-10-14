@@ -11,6 +11,9 @@ category_en: TypeScript
 paths:
   - "**/*.ts"
   - "**/*.tsx"
+tokens: 0
+performance: 0
+quality: 1
 ---
 # TypeScript
 

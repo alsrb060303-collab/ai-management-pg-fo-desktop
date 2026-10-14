@@ -16,6 +16,9 @@ source_repo: anthropics/skills
 source_commit: dbd4588f9e1033efb41dad4bef2f7947c8993d44
 source_path: skills/frontend-design/SKILL.md
 license_path: skills/frontend-design/LICENSE.txt
+tokens: 1
+performance: 0
+quality: 1
 ---
 # Frontend Design
 

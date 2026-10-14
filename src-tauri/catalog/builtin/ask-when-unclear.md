@@ -8,6 +8,9 @@ detail: 요구가 여러 뜻으로 읽히거나 파일 삭제·히스토리 변�
 detail_en: When a request can be read more than one way, or the change is hard to undo (deleting files, rewriting history), Claude asks one focused question first. When it goes ahead on an assumption, it says which one. Saves long detours in the wrong direction.
 category: 작업 방식
 category_en: Workflow
+tokens: 0
+performance: 1
+quality: 1
 ---
 ## When to ask
 

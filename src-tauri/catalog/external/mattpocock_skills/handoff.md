@@ -17,6 +17,9 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/productivity/handoff/SKILL.md
 license_path: LICENSE
+tokens: 0
+performance: 0
+quality: 0
 ---
 Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS (`$TMPDIR`, else `/tmp`; `%TEMP%` on Windows) - not the current workspace.
 

@@ -8,6 +8,9 @@ detail: 바로 고치지 않고 관련 파일을 먼저 읽은 뒤 짧은 계획
 detail_en: Reads the relevant files and states a short plan before changing anything, makes the smallest fix, then runs build, lint and tests itself before calling it done. If it couldn't run a check, it says so.
 category: 작업 방식
 category_en: Workflow
+tokens: 1
+performance: 1
+quality: 1
 ---
 ## Workflow
 

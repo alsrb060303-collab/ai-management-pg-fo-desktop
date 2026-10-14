@@ -8,6 +8,9 @@ detail: 새 코드를 쓸 때 근처 파일의 이름 짓는 방식, 구조, 주
 detail_en: New code follows nearby files' naming, structure, comment density and libraries. It doesn't bring in new patterns or dependencies on its own, so changes read like the rest of the codebase.
 category: 코드 품질
 category_en: Code quality
+tokens: 0
+performance: 0
+quality: 1
 ---
 ## Code style
 

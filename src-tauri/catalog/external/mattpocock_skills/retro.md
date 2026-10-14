@@ -17,6 +17,9 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/engineering/retro/SKILL.md
 license_path: LICENSE
+tokens: 0
+performance: 1
+quality: 1
 ---
 The user has asked for a **retrospective**. You are suggesting improvements to the coding agent's **environment** to improve future runs.
 

@@ -17,6 +17,9 @@ source_repo: ibelick/ui-skills
 source_commit: f2264c30213a8a55bd0a6a7668d0438e4564e090
 source_path: skills/fixing-accessibility/SKILL.md
 license_path: LICENSE
+tokens: 1
+performance: 0
+quality: 1
 ---
 # fixing-accessibility
 

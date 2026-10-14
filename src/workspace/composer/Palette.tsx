@@ -19,6 +19,7 @@ import { TOOLS, type ToolId } from "../../tools";
 import { hooksFile, instructionsLabel, KIND_ICON, KIND_LABEL, kindColor, TARGETS } from "./kinds";
 import { isLarge, LargeBlockDialog, largeWarningOff } from "./LargeBlockDialog";
 import { dropIndex, PLAN_ENTRIES, type PlanEntry, setPlanDrop } from "./plans";
+import { RatingBadges } from "./ratings";
 
 type Filter = BlockKind | "all" | "plans";
 
@@ -354,6 +355,7 @@ export function Palette() {
                         >
                           {block.summary}
                         </div>
+                        {block.rating && <RatingBadges rating={block.rating} />}
                       </div>
                       <button
                         type="button"

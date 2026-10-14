@@ -17,6 +17,9 @@ source_repo: obra/superpowers
 source_commit: bb92a77741419a4ab5f06e711a283343f1ada0c3
 source_path: skills/writing-skills/SKILL.md
 license_path: LICENSE
+tokens: 0
+performance: 0
+quality: 0
 ---
 
 # Writing Skills

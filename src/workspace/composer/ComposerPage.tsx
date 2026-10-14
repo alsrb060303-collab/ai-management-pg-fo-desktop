@@ -17,6 +17,7 @@ import { useThemeStore } from "../../store/theme";
 import { nodeTypes } from "./nodes";
 import { Palette } from "./Palette";
 import { PreviewPanel } from "./PreviewPanel";
+import { RatingPanel } from "./ratings";
 import { WriteDialog } from "./WriteDialog";
 
 const PREVIEW_KEY = "composer-preview";
@@ -112,6 +113,7 @@ function Canvas() {
         fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.3} />
+        <RatingPanel />
         <Controls showInteractive={false} position="bottom-left" />
         <MiniMap
           pannable

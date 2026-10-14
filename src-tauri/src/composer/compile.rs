@@ -1235,6 +1235,7 @@ mod tests {
             companions: Vec::new(),
             size: 0,
             origin: None,
+            rating: None,
             frontmatter: None,
         }
     }

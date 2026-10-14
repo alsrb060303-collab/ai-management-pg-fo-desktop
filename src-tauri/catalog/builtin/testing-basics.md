@@ -8,6 +8,9 @@ detail: 버그를 고칠 때는 그 버그를 재현하는 테스트를 먼저 �
 detail_en: Writes a test that reproduces a bug before fixing it, and adds tests for the main path of new features. Never deletes or skips tests to get green.
 category: 코드 품질
 category_en: Code quality
+tokens: 1
+performance: 1
+quality: 1
 ---
 ## Testing
 

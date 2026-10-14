@@ -8,6 +8,9 @@ detail: API 키·비밀번호를 코드·로그·커밋에 남기지 않고 환�
 detail_en: Keeps API keys and passwords out of code, logs and commits (env vars or config instead), validates user and external input before use, and passes SQL parameters safely. Guards against accidental leaks.
 category: 보안
 category_en: Security
+tokens: 0
+performance: 0
+quality: 1
 ---
 ## Security
 

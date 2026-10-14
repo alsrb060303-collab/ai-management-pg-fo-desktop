@@ -25,6 +25,12 @@ export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
  */
 export type Target = "instructions" | "rules" | "skills" | "agents" | "custom" | "hooks" | "plans";
 
+export interface Rating {
+  tokens: number;
+  performance: number;
+  quality: number;
+}
+
 export interface Block {
   id: string;
   kind: BlockKind;
@@ -50,6 +56,8 @@ export interface Block {
   size: number;
   /** English title, summary and category, when the block has them. */
   en?: { title: string; summary: string; category: string; detail?: string | null };
+  /** Bundled blocks: estimated change in tokens, performance and quality (-2..2). */
+  rating?: Rating | null;
   /** Third-party blocks: where they come from (kept in written files). */
   origin: {
     repo: string;

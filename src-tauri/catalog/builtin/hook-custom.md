@@ -11,4 +11,7 @@ category_en: Custom
 name: custom-hook
 event: PostToolUse
 matcher: Edit|Write
+tokens: 0
+performance: 0
+quality: 0
 ---
