@@ -18,6 +18,7 @@ import {
   SquareSlash,
   Trash2,
 } from "lucide-react";
+import { useRef, useState } from "react";
 import { Logo } from "../components/Logo";
 import { ResizeHandle, usePanelWidth } from "../components/Resizable";
 import { IconButton } from "../components/ui";
@@ -45,7 +46,8 @@ export function NavSidebar() {
   const { page, collapsed, go, toggleCollapsed } = useWorkspaceStore();
   const docs = useComposerStore((s) => s.docs);
   const openId = useComposerStore((s) => s.doc?.id);
-  const { newDoc, openDoc, deleteDoc } = useComposerStore.getState();
+  const { newDoc, openDoc, deleteDoc, renameDoc } = useComposerStore.getState();
+  const [renaming, setRenaming] = useState<string | null>(null);
   const t = useT();
   const panel = usePanelWidth("nav", 256, 200, 420);
   const account = useAccountStore((s) => s.info);
@@ -133,13 +135,35 @@ export function NavSidebar() {
               <ul className="space-y-px">
                 {docs.slice(0, 20).map((d) => {
                   const active = page === "composer" && d.id === openId;
+                  if (renaming === d.id) {
+                    return (
+                      <li key={d.id}>
+                        <RenameField
+                          name={d.name}
+                          label={t("shell.nav.renameDoc")}
+                          onDone={(name) => {
+                            setRenaming(null);
+                            if (name && name !== d.name) void renameDoc(d.id, name);
+                          }}
+                        />
+                      </li>
+                    );
+                  }
                   return (
                     <li key={d.id} className="group relative">
                       <button
                         type="button"
+                        title={t("shell.nav.renameHint")}
                         onClick={() => {
                           void openDoc(d.id);
                           go("composer");
+                        }}
+                        onDoubleClick={() => setRenaming(d.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "F2") {
+                            e.preventDefault();
+                            setRenaming(d.id);
+                          }
                         }}
                         className={`w-full truncate rounded-lg py-1.5 pr-8 pl-2 text-left text-fs-13 transition-colors ${
                           active
@@ -198,6 +222,42 @@ export function NavSidebar() {
         />
       </div>
     </aside>
+  );
+}
+
+/** The document name being edited in place: Enter or leaving saves, Escape cancels. */
+function RenameField({
+  name,
+  label,
+  onDone,
+}: {
+  name: string;
+  label: string;
+  onDone: (name: string | null) => void;
+}) {
+  const [value, setValue] = useState(name);
+  const done = useRef(false);
+  const finish = (next: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(next);
+  };
+  return (
+    <input
+      // biome-ignore lint/a11y/noAutofocus: opened on purpose by double-click or F2
+      autoFocus
+      aria-label={label}
+      title={label}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={() => finish(value.trim() || null)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") finish(value.trim() || null);
+        else if (e.key === "Escape") finish(null);
+      }}
+      className="w-full rounded-lg border border-accent bg-surface-raised px-2 py-1 text-fs-13 text-text outline-none"
+    />
   );
 }
 

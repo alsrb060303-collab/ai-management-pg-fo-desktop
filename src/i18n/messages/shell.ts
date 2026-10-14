@@ -19,6 +19,8 @@ export const ko = {
   "shell.nav.recentDocs": "최근 문서",
   "shell.nav.noDocs": "아직 만든 문서가 없어요.",
   "shell.nav.delete": "삭제",
+  "shell.nav.renameDoc": "문서 이름 (Enter로 저장, Esc로 취소)",
+  "shell.nav.renameHint": "더블클릭하거나 F2를 눌러 이름 바꾸기",
   "shell.nav.deleteDoc": "{name} 삭제",
   "shell.nav.deleteDocTitle": "문서 삭제",
   "shell.nav.deleteDocConfirm": "'{name}' 문서를 삭제할까요? 프로젝트에 쓴 파일은 그대로 남아요.",
@@ -85,6 +87,8 @@ export const en: Messages<typeof ko> = {
   "shell.nav.recentDocs": "Recent documents",
   "shell.nav.noDocs": "No documents yet.",
   "shell.nav.delete": "Delete",
+  "shell.nav.renameDoc": "Document name (Enter saves, Esc cancels)",
+  "shell.nav.renameHint": "Double-click or press F2 to rename",
   "shell.nav.deleteDoc": "Delete {name}",
   "shell.nav.deleteDocTitle": "Delete document",
   "shell.nav.deleteDocConfirm":

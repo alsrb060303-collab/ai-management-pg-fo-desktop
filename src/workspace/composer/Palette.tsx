@@ -1,7 +1,16 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useReactFlow } from "@xyflow/react";
-import { ChevronDown, ExternalLink, Flag, Loader2, Plus, RefreshCw, Search } from "lucide-react";
+import {
+  ChevronDown,
+  ExternalLink,
+  Flag,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  StickyNote,
+} from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResizeHandle, usePanelWidth } from "../../components/Resizable";
@@ -70,6 +79,7 @@ export function Palette() {
     else addToCanvas(block.id, at);
   };
   const addOutput = useComposerStore((s) => s.addOutput);
+  const addMemo = useComposerStore((s) => s.addMemo);
   const tool = useComposerTool();
   const refreshExternal = useComposerStore((s) => s.refreshExternal);
   const t = useT();
@@ -407,6 +417,15 @@ export function Palette() {
               </button>
             ),
           )}
+          <button
+            type="button"
+            onClick={() => addMemo(place.nearCenter())}
+            title={t("composer.palette.memoHint")}
+            className="flex items-center gap-1.5 rounded-lg border border-dashed border-memo-border bg-memo px-2 py-1.5 text-xs hover:border-border-strong"
+          >
+            <StickyNote size={13} className="text-warning" />
+            {t("composer.palette.memo")}
+          </button>
         </div>
       </div>
 

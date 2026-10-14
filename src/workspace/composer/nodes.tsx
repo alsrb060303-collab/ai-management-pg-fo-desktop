@@ -24,6 +24,7 @@ import {
   utf8Bytes,
 } from "../../store/composer";
 import { TOOLS } from "../../tools";
+import { GroupNodeView, MemoNodeView } from "./canvasNodes";
 import { KIND_ICON, KIND_LABEL, kindColor, TARGETS, targetTitle } from "./kinds";
 import { DeleteNodeButton, useDraft } from "./nodeParts";
 import { PlanNodeView } from "./PlanNode";
@@ -511,4 +512,10 @@ function OrderedInputs({
   );
 }
 
-export const nodeTypes = { block: BlockNodeView, output: OutputNodeView, plan: PlanNodeView };
+export const nodeTypes = {
+  block: BlockNodeView,
+  output: OutputNodeView,
+  plan: PlanNodeView,
+  memo: MemoNodeView,
+  group: GroupNodeView,
+};
