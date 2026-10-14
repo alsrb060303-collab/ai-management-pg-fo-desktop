@@ -94,10 +94,13 @@ export const ko = {
   "update.install": "업데이트하고 다시 시작",
   "update.downloading": "내려받는 중… 끝나면 앱이 다시 시작돼요.",
   "update.later": "나중에",
+  "update.indicator": "업데이트",
+  "update.indicatorTitle": "새 버전 {version} 설치하고 다시 시작",
+  "update.downloadingShort": "내려받는 중…",
+  "update.downloadingPercent": "내려받는 중 {percent}%",
   "update.failed": "업데이트하지 못했어요: {error}",
   "settings.license": "라이선스",
-  "settings.licenseHint":
-    "Apache-2.0 오픈소스. Anthropic 또는 Claude와 관련 없는 독립 프로젝트예요.",
+  "settings.licenseHint": "Apache-2.0 오픈소스",
   "settings.notify": "알림",
   "settings.notifyGitHub": "GitHub 알림",
   "settings.notifyGitHubHint":
@@ -199,10 +202,13 @@ export const en: Messages<typeof ko> = {
   "update.install": "Update and restart",
   "update.downloading": "Downloading… The app restarts when it's done.",
   "update.later": "Later",
+  "update.indicator": "Update",
+  "update.indicatorTitle": "Install version {version} and restart",
+  "update.downloadingShort": "Downloading…",
+  "update.downloadingPercent": "Downloading {percent}%",
   "update.failed": "Couldn't update: {error}",
   "settings.license": "License",
-  "settings.licenseHint":
-    "Apache-2.0 open source. An independent project, not affiliated with Anthropic or Claude.",
+  "settings.licenseHint": "Apache-2.0 open source",
   "settings.notify": "Notifications",
   "settings.notifyGitHub": "GitHub notifications",
   "settings.notifyGitHubHint":

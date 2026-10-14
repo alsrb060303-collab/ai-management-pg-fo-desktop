@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Check, ChevronDown, ChevronRight, Copy, ExternalLink } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { useT } from "../../i18n";
+import { getPref, setPref } from "../../store/prefs";
 
 /** Where the project is in getting set up. */
 export type SetupStage =
@@ -40,7 +41,7 @@ const DISMISS_KEY = "gitSetupDismissed";
 
 function dismissed(root: string): boolean {
   try {
-    return (JSON.parse(localStorage.getItem(DISMISS_KEY) ?? "[]") as string[]).includes(root);
+    return (JSON.parse(getPref(DISMISS_KEY) ?? "[]") as string[]).includes(root);
   } catch {
     return false;
   }
@@ -48,8 +49,8 @@ function dismissed(root: string): boolean {
 
 function dismiss(root: string) {
   try {
-    const list = JSON.parse(localStorage.getItem(DISMISS_KEY) ?? "[]") as string[];
-    localStorage.setItem(DISMISS_KEY, JSON.stringify([...new Set([...list, root])]));
+    const list = JSON.parse(getPref(DISMISS_KEY) ?? "[]") as string[];
+    setPref(DISMISS_KEY, JSON.stringify([...new Set([...list, root])]));
   } catch {
     // Only a convenience; the card just shows again.
   }

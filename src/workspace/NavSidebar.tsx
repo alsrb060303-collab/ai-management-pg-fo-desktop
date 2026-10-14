@@ -21,6 +21,7 @@ import {
 import { Logo } from "../components/Logo";
 import { ResizeHandle, usePanelWidth } from "../components/Resizable";
 import { IconButton } from "../components/ui";
+import { UpdateIndicator } from "../features/update/UpdateIndicator";
 import { type MessageKey, useT } from "../i18n";
 import { useAccountStore } from "../store/account";
 import { useComposerStore } from "../store/composer";
@@ -161,6 +162,7 @@ export function NavSidebar() {
       </div>
 
       <div className="space-y-0.5 border-t border-border p-2">
+        <UpdateIndicator variant="nav" collapsed={collapsed} />
         {account?.configured && (
           <NavButton
             icon={CircleUserRound}

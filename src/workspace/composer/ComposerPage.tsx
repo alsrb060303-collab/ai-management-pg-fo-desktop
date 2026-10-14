@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { IconButton } from "../../components/ui";
 import { useT } from "../../i18n";
 import { useComposerStore } from "../../store/composer";
+import { getPref, setPref } from "../../store/prefs";
 import { useThemeStore } from "../../store/theme";
 import { nodeTypes } from "./nodes";
 import { Palette } from "./Palette";
@@ -23,11 +24,7 @@ import { WriteDialog } from "./WriteDialog";
 const PREVIEW_KEY = "composer-preview";
 
 function readPreviewPref(): boolean {
-  try {
-    return localStorage.getItem(PREVIEW_KEY) !== "0";
-  } catch {
-    return true;
-  }
+  return getPref(PREVIEW_KEY) !== "0";
 }
 
 export default function ComposerPage() {
@@ -43,11 +40,7 @@ export default function ComposerPage() {
   const t = useT();
   const togglePreview = () => {
     setPreview(!preview);
-    try {
-      localStorage.setItem(PREVIEW_KEY, preview ? "0" : "1");
-    } catch {
-      // Only a convenience.
-    }
+    setPref(PREVIEW_KEY, preview ? "0" : "1");
   };
 
   useEffect(() => {
