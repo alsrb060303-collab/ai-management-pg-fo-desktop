@@ -10,6 +10,9 @@ category: Python
 category_en: Python
 paths:
   - "**/*.py"
+tokens: 0
+performance: 0
+quality: 1
 ---
 # Python
 

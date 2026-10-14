@@ -10,5 +10,8 @@ category: 품질
 category_en: Quality
 name: stop-lint
 event: Stop
+tokens: 0
+performance: 0
+quality: 0
 ---
 npm run lint --if-present

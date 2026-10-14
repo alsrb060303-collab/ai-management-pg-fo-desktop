@@ -10,6 +10,9 @@ category: 리뷰
 category_en: Review
 name: review-checklist
 description: Review a diff or a set of changed files for correctness, security, and missing tests. Use when the user asks for a review before merging.
+tokens: 0
+performance: 1
+quality: 1
 ---
 # Review checklist
 

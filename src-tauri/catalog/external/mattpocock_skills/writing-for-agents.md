@@ -17,6 +17,9 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/productivity/writing-for-agents/SKILL.md
 license_path: LICENSE
+tokens: 0
+performance: 0
+quality: 0
 ---
 Reference for writing any document an agent consumes: a skill, an `AGENTS.md` / `CLAUDE.md`, a doc reached by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes the same _process_ every run rather than producing the same output.
 

@@ -17,6 +17,9 @@ source_repo: JuliusBrussee/caveman
 source_commit: 2e08b9177c07bb7249a8a2d1a6758e5db281d002
 source_path: skills/caveman/SKILL.md
 license_path: LICENSE
+tokens: -1
+performance: 0
+quality: -2
 ---
 # caveman
 

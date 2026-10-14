@@ -10,5 +10,8 @@ category: Git
 category_en: Git
 name: session-git-status
 event: SessionStart
+tokens: 1
+performance: 1
+quality: 0
 ---
 git status --short --branch

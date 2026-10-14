@@ -10,6 +10,9 @@ category: Git
 category_en: Git
 name: commit-message
 description: Write a clear git commit message for the currently staged changes. Use when the user asks to commit or to draft a commit message.
+tokens: 0
+performance: 0
+quality: 1
 ---
 # Commit message
 

@@ -10,6 +10,9 @@ category: Rust
 category_en: Rust
 paths:
   - "**/*.rs"
+tokens: 0
+performance: 0
+quality: 1
 ---
 # Rust
 

@@ -17,6 +17,9 @@ source_repo: microsoft/skills
 source_commit: 91ec09549ca16bd6c44e6ccdef26d61eb2082f07
 source_path: .github/plugins/azure-sdk-typescript/skills/zustand-store-ts/SKILL.md
 license_path: LICENSE
+tokens: 0
+performance: 1
+quality: 1
 ---
 # Zustand Store
 

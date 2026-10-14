@@ -17,6 +17,9 @@ source_repo: coreyhaines31/marketingskills
 source_commit: 1efedbc5148b54b2f0f6c6c9fe0be62e151c7fff
 source_path: skills/seo-audit/SKILL.md
 license_path: LICENSE
+tokens: 0
+performance: 0
+quality: 0
 ---
 # SEO Audit
 

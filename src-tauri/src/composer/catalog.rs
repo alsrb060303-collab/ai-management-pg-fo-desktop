@@ -72,6 +72,32 @@ pub struct BlockText {
     pub detail: Option<String>,
 }
 
+/// The app's estimate of what a block changes, from -2 to 2 each (`tokens`,
+/// `performance` and `quality` frontmatter). Tokens: below 0 saves, above 0
+/// costs more. The composer sums them for the blocks on the canvas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct Rating {
+    pub tokens: i8,
+    pub performance: i8,
+    pub quality: i8,
+}
+
+impl Rating {
+    fn parse(fm: &BTreeMap<String, String>) -> Option<Self> {
+        let score = |key: &str| {
+            fm.get(key)?
+                .parse::<i8>()
+                .ok()
+                .filter(|v| (-2..=2).contains(v))
+        };
+        Some(Self {
+            tokens: score("tokens")?,
+            performance: score("performance")?,
+            quality: score("quality")?,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
@@ -122,6 +148,8 @@ pub struct Block {
     /// can warn before a large one is added.
     pub size: usize,
     pub origin: Option<Origin>,
+    /// Bundled blocks only; library items have none.
+    pub rating: Option<Rating>,
     /// Library items: the original frontmatter, written unchanged so fields
     /// the composer does not model (allowed-tools, permissionMode, ...) and the
     /// item's own `name` survive.
@@ -293,6 +321,7 @@ fn parse_bundled(id: &str, stem: &str, text: &str, source: Source) -> Option<Blo
         extra_files: 0,
         companions: Vec::new(),
         origin: None,
+        rating: Rating::parse(&fm),
         frontmatter: None,
     })
 }
@@ -450,6 +479,7 @@ pub fn external(cache: Option<&Path>) -> Vec<Block> {
                     category: bundled.category,
                     detail: bundled.detail,
                     en: bundled.en,
+                    rating: bundled.rating,
                     ..cached
                 },
                 None => bundled,
@@ -530,6 +560,7 @@ fn from_library(item: &LibraryItem) -> Option<Block> {
         extra_files,
         companions: Vec::new(),
         origin: None,
+        rating: None,
         frontmatter: raw_frontmatter(&text),
     })
 }
@@ -547,6 +578,51 @@ mod tests {
 
     /// English title, summary and category, with the same English category
     /// for every use of a Korean one.
+    #[test]
+    fn every_bundled_block_has_a_rating() {
+        for block in builtin().iter().chain(external(None).iter()) {
+            assert!(
+                block.rating.is_some(),
+                "{} needs tokens, performance and quality",
+                block.id
+            );
+        }
+    }
+
+    #[test]
+    fn rating_needs_all_three_scores_in_range() {
+        let fm = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(
+            Rating::parse(&fm(&[
+                ("tokens", "-1"),
+                ("performance", "2"),
+                ("quality", "0")
+            ])),
+            Some(Rating {
+                tokens: -1,
+                performance: 2,
+                quality: 0
+            })
+        );
+        assert_eq!(
+            Rating::parse(&fm(&[("tokens", "1"), ("performance", "1")])),
+            None
+        );
+        assert_eq!(
+            Rating::parse(&fm(&[
+                ("tokens", "3"),
+                ("performance", "1"),
+                ("quality", "1")
+            ])),
+            None
+        );
+    }
+
     fn assert_has_english(block: &Block) {
         let en = block
             .en
