@@ -36,7 +36,7 @@ export function WorkTrees({ compact = false }: { compact?: boolean }) {
     if (!project) return;
     const run = () => {
       if (document.visibilityState === "visible") {
-        void useActivityStore.getState().refresh(useGitHubStore.getState().status?.account != null);
+        void useActivityStore.getState().refresh(signedIn);
       }
     };
     run();
@@ -48,12 +48,8 @@ export function WorkTrees({ compact = false }: { compact?: boolean }) {
       window.removeEventListener("focus", run);
       document.removeEventListener("visibilitychange", run);
     };
-  }, [project]);
-
-  // Signing in to GitHub adds PR and CI events.
-  useEffect(() => {
-    if (project && signedIn) void refresh(true);
-  }, [project, signedIn, refresh]);
+    // Signing in re-runs this, which adds GitHub (PR and CI events).
+  }, [project, signedIn]);
 
   if (!project) {
     return (
@@ -83,6 +79,16 @@ export function WorkTrees({ compact = false }: { compact?: boolean }) {
           ]}
           onChange={setView}
         />
+        <button
+          type="button"
+          aria-label={t("activity.refresh")}
+          title={t("activity.refresh")}
+          disabled={refreshing}
+          onClick={() => void refresh(signedIn, true)}
+          className="rounded-md border border-border bg-surface-raised px-2 py-1 text-xs hover:border-border-strong disabled:opacity-60"
+        >
+          ↻
+        </button>
         {refreshing && !loading && (
           <span role="status" className="text-fs-11 text-text-subtle">
             {t("activity.refreshing")}

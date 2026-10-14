@@ -84,6 +84,15 @@ type LogKind = "git" | "prompts";
 
 const PAGE = 200;
 const VIEW_KEY = "activity.view";
+/** GitHub is polled at most this often, unless the user asks. */
+const GITHUB_MIN_MS = 5 * 60_000;
+
+/** The oldest entry of a newest-first log, as the (at, id) paging cursor. */
+function oldest(events: { at: number; id: string }[]) {
+  let o = events[0];
+  for (const e of events) if (e.at < o.at || (e.at === o.at && e.id < o.id)) o = e;
+  return { before: o.at, beforeId: o.id };
+}
 
 function loadView(): TreeView {
   try {
@@ -116,21 +125,31 @@ interface ActivityState {
   clearFocus: () => void;
   load: (project: string | null) => Promise<void>;
   /** Re-reads the sources (git, and GitHub when signed in), then the logs. */
-  refresh: (github: boolean) => Promise<void>;
+  refresh: (github: boolean, force?: boolean) => Promise<void>;
   reload: () => Promise<void>;
-  loadMore: (kind: LogKind) => Promise<void>;
+  /** Resolves true when the page added entries. */
+  loadMore: (kind: LogKind) => Promise<boolean>;
   loadSettings: () => Promise<void>;
   saveSettings: (patch: Partial<ActivitySettings>) => Promise<void>;
 }
 
 export const useActivityStore = create<ActivityState>((set, get) => {
   let seq = 0;
+  /** Refreshes in flight, by project (value: whether GitHub is included). */
+  const inflight = new Map<string, boolean>();
+  const lastGithub = new Map<string, number>();
+  const pending = new Map<string, Promise<void>>();
 
   /** Fetches the newest `limit` entries of both logs. */
   const fetchLogs = async (project: string, limit: number) => {
     const [git, prompts] = await Promise.all([
-      invoke<GitLog>("activity_git_log", { project, limit, before: null }),
-      invoke<PromptLog>("activity_prompt_log", { project, limit, before: null }),
+      invoke<GitLog>("activity_git_log", { project, limit, before: null, beforeId: null }),
+      invoke<PromptLog>("activity_prompt_log", {
+        project,
+        limit,
+        before: null,
+        beforeId: null,
+      }),
     ]);
     return { git, prompts };
   };
@@ -175,6 +194,8 @@ export const useActivityStore = create<ActivityState>((set, get) => {
           morePrompts: false,
           error: null,
           focusSha: null,
+          loadingMore: null,
+          refreshing: inflight.has(project ?? ""),
         });
       }
       if (!project) return;
@@ -204,33 +225,54 @@ export const useActivityStore = create<ActivityState>((set, get) => {
       }
     },
 
-    refresh: async (github) => {
+    refresh: async (github, force = false) => {
       const { project } = get();
-      if (!project || !isTauri() || get().refreshing) return;
-      set({ refreshing: true });
-      try {
-        await invoke("activity_refresh", { project, github });
-      } catch (e) {
-        // Keep showing what is stored; report it when nothing is.
-        if (get().project === project && !get().git) set({ error: String(e) });
-      } finally {
-        set({ refreshing: false });
+      if (!project || !isTauri()) return;
+      const wantGithub =
+        github && (force || Date.now() - (lastGithub.get(project) ?? 0) >= GITHUB_MIN_MS);
+      const running = inflight.get(project);
+      if (running !== undefined) {
+        // Same project already refreshing: wait, then add GitHub if it lacked it.
+        await pending.get(project);
+        if (wantGithub && !running) await get().refresh(true, true);
+        return;
       }
-      if (get().project === project) await get().reload();
+      inflight.set(project, wantGithub);
+      if (wantGithub) lastGithub.set(project, Date.now());
+      const work = (async () => {
+        set({ refreshing: true });
+        try {
+          await invoke("activity_refresh", { project, github: wantGithub });
+        } catch (e) {
+          // Keep showing what is stored; report it when nothing is.
+          if (get().project === project && !get().git) set({ error: String(e) });
+        } finally {
+          inflight.delete(project);
+          pending.delete(project);
+          if (get().project === project) set({ refreshing: false });
+        }
+        if (get().project === project) await get().reload();
+      })();
+      pending.set(project, work);
+      await work;
     },
 
     loadMore: async (kind) => {
       const { project, git, prompts, loadingMore } = get();
-      if (!project || !isTauri() || loadingMore) return;
+      if (!project || !isTauri() || loadingMore) return false;
       const events = kind === "git" ? git?.events : prompts?.events;
-      if (!events?.length) return;
-      const before = Math.min(...events.map((e) => e.at));
+      if (!events?.length) return false;
+      const cursor = oldest(events);
       set({ loadingMore: kind });
       try {
+        const seen = new Set(events.map((e) => e.id));
         if (kind === "git") {
-          const page = await invoke<GitLog>("activity_git_log", { project, limit: PAGE, before });
-          if (get().project !== project) return;
-          const seen = new Set(events.map((e) => e.id));
+          const page = await invoke<GitLog>("activity_git_log", {
+            project,
+            limit: PAGE,
+            ...cursor,
+          });
+          if (get().project !== project) return false;
           const fresh = page.events.filter((e) => !seen.has(e.id));
           set((s) => ({
             git: s.git && {
@@ -240,26 +282,27 @@ export const useActivityStore = create<ActivityState>((set, get) => {
             },
             moreGit: fresh.length > 0 && page.events.length >= PAGE,
           }));
-        } else {
-          const page = await invoke<PromptLog>("activity_prompt_log", {
-            project,
-            limit: PAGE,
-            before,
-          });
-          if (get().project !== project) return;
-          const seen = new Set(events.map((e) => e.id));
-          const fresh = page.events.filter((e) => !seen.has(e.id));
-          set((s) => ({
-            prompts: s.prompts && {
-              ...s.prompts,
-              events: [...s.prompts.events, ...fresh],
-              sessions: page.sessions,
-            },
-            morePrompts: fresh.length > 0 && page.events.length >= PAGE,
-          }));
+          return fresh.length > 0;
         }
+        const page = await invoke<PromptLog>("activity_prompt_log", {
+          project,
+          limit: PAGE,
+          ...cursor,
+        });
+        if (get().project !== project) return false;
+        const fresh = page.events.filter((e) => !seen.has(e.id));
+        set((s) => ({
+          prompts: s.prompts && {
+            ...s.prompts,
+            events: [...s.prompts.events, ...fresh],
+            sessions: page.sessions,
+          },
+          morePrompts: fresh.length > 0 && page.events.length >= PAGE,
+        }));
+        return fresh.length > 0;
       } catch (e) {
-        set({ error: String(e) });
+        if (get().project === project) set({ error: String(e) });
+        return false;
       } finally {
         set({ loadingMore: null });
       }

@@ -126,11 +126,19 @@ export function GitTree({ compact }: { compact: boolean }) {
       );
       return;
     }
-    if (more && !loadingMore) void loadMore("git");
-    else if (!more && !loadingMore) {
+    if (loadingMore || useActivityStore.getState().loadingMore) return;
+    const giveUp = () => {
       setMissing(true);
       clearFocus();
+    };
+    if (!more) {
+      giveUp();
+      return;
     }
+    // One page per pass; a failed or empty page ends the search (no retry loop).
+    void loadMore("git").then((added) => {
+      if (!added && useActivityStore.getState().focusSha === focusSha) giveUp();
+    });
   }, [focusSha, rows, more, loadingMore, loadMore, clearFocus]);
 
   useEffect(() => {
