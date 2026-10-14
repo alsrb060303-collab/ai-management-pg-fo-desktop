@@ -115,15 +115,15 @@ export const register: Register = (on) => {
   on("session.start", async ($, e, next) => {
     await $.command.register({
       name: "todo",
-      description: "Branch to-dos (AI Management): /todo, /todo <text>, /todo done <n>",
+      description: "Branch to-dos (Encela): /todo, /todo <text>, /todo done <n>",
     });
     await $.command.register({
       name: "memo",
-      description: "Branch note (AI Management): /memo, /memo <text>",
+      description: "Branch note (Encela): /memo, /memo <text>",
     });
     await $.command.register({
       name: "notes",
-      description: "Open the branch notes pane (AI Management)",
+      description: "Open the branch notes pane (Encela)",
     });
     await refresh($);
     $.clock.every(REFRESH_MS, () => void refresh($));

@@ -1,11 +1,11 @@
 {
   "name": "ai-management",
-  "owner": { "name": "AI Management" },
+  "owner": { "name": "Encela" },
   "plugins": [
     {
       "name": "branch-notes",
       "source": "./branch-notes",
-      "description": "Branch notes and to-dos from the AI Management app, inside Claude Code"
+      "description": "Branch notes and to-dos from the Encela app, inside Claude Code"
     }
   ]
 }

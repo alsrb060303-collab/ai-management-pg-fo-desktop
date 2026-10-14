@@ -64,21 +64,32 @@ function useTotals() {
   }, [nodes, blocks]);
 }
 
-/** Top-right of the canvas: performance, quality and value as diverging bars. */
+/** Top-right of the canvas: performance, quality and token use as diverging bars. */
 export function RatingPanel() {
   const t = useT();
   const { sum, rated, unrated } = useTotals();
-  const bars: { label: MessageKey; value: number; hint?: MessageKey }[] = [
-    { label: "composer.rating.performance", value: sum.performance },
-    { label: "composer.rating.quality", value: sum.quality },
+  // One scale for all three bars: ±15, so it takes many blocks to fill one.
+  const scale = Math.max(
+    15,
+    Math.abs(sum.performance),
+    Math.abs(sum.quality),
+    Math.abs(sum.tokens),
+  );
+  const bars: {
+    label: MessageKey;
+    value: number;
+    good: boolean;
+    hint?: MessageKey;
+  }[] = [
+    { label: "composer.rating.performance", value: sum.performance, good: true },
+    { label: "composer.rating.quality", value: sum.quality, good: true },
     {
-      label: "composer.rating.value",
-      value: sum.performance + sum.quality - sum.tokens,
-      hint: "composer.rating.valueHint",
+      label: "composer.rating.tokenUse",
+      value: sum.tokens,
+      good: false,
+      hint: "composer.rating.tokenUseHint",
     },
   ];
-  // One scale for all three bars, at least ±6 so a single block stays short.
-  const scale = Math.max(6, ...bars.map((b) => Math.abs(b.value)));
 
   return (
     <Panel position="top-right" className="!m-3">
@@ -86,18 +97,6 @@ export function RatingPanel() {
         <div className="mb-1.5 flex items-center gap-1.5">
           <Gauge size={13} className="text-text-muted" />
           <span className="font-semibold">{t("composer.rating.title")}</span>
-          {rated > 0 && (
-            <span className="ml-auto text-text-subtle" title={t("composer.rating.hint")}>
-              {t("composer.rating.tokens")}{" "}
-              <span
-                className={
-                  sum.tokens > 0 ? "text-danger" : sum.tokens < 0 ? "text-success" : undefined
-                }
-              >
-                {signed(sum.tokens)}
-              </span>
-            </span>
-          )}
         </div>
         {rated === 0 ? (
           <p className="text-text-subtle">{t("composer.rating.empty")}</p>
@@ -105,6 +104,7 @@ export function RatingPanel() {
           <div className="space-y-1">
             {bars.map((bar) => {
               const width = (Math.abs(bar.value) / scale) * 50;
+              const good = bar.value > 0 === bar.good;
               const label = t(bar.label);
               return (
                 <div
@@ -123,10 +123,8 @@ export function RatingPanel() {
                     {bar.value !== 0 && (
                       <div
                         className={`absolute inset-y-0 transition-all duration-300 ${
-                          bar.value > 0
-                            ? "left-1/2 rounded-r-full bg-success"
-                            : "right-1/2 rounded-l-full bg-danger"
-                        }`}
+                          bar.value > 0 ? "left-1/2 rounded-r-full" : "right-1/2 rounded-l-full"
+                        } ${good ? "bg-success" : "bg-danger"}`}
                         style={{ width: `${width}%` }}
                       />
                     )}

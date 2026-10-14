@@ -16,7 +16,7 @@ export function Logo({ size = 24, className = "" }: { size?: number; className?:
       viewBox="64 64 896 896"
       className={className}
       role="img"
-      aria-label="AI Management"
+      aria-label="Encela"
     >
       <defs>
         <linearGradient id={bg} x1="0.1" y1="0" x2="0.9" y2="1">

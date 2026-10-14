@@ -89,7 +89,7 @@ flowchart LR
 ```
 
 - **约 100 个现成积木块**：既有应用自带的，也有来自热门开源合集并经过许可证核查的（obra/superpowers、mattpocock/skills、anthropics/skills、wshobson/agents、VoltAgent subagents、awesome-cursorrules 等）。每个积木块都记录了来源、提交和许可证，详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
-- **预期效果**：每个积木块用箭头标出它会提高还是降低 **token**、**性能** 和 **质量**。画布会把已放置的积木块相加，用条形图显示性能、质量和性价比（性能 + 质量 − token）。
+- **预期效果**：每个积木块用箭头标出它会提高还是降低 **token**、**性能** 和 **质量**（−2 到 +2）。画布会把已放置的积木块相加，用条形图显示性能、质量和 token 消耗。
 - **点击积木块** 可查看它会让 AI 做什么以及完整内容。双击积木块或输出可预览真实文件。
 - **subagent** 可选择模型（自动、Fable、Opus、Sonnet、Haiku）。**hook** 设置事件和命令，确认后合并进设置文件。
 - **计划**：用主要目标、子目标和步骤（写说明、交给 subagent、使用 skill、向用户提问）生成 `PLANS.md`，并标记为已完成 / 进行中 / 未开始。

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ai-management",
-  "version": "0.1.45",
+  "productName": "Encela",
+  "version": "0.1.46",
   "identifier": "io.github.alsrb060303collab.aimanagement",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "sidebar",
-        "title": "AI Management",
+        "title": "Encela",
         "width": 360,
         "height": 760,
         "decorations": false,
@@ -23,7 +23,7 @@
       },
       {
         "label": "main",
-        "title": "AI Management",
+        "title": "Encela",
         "width": 1400,
         "height": 880,
         "minWidth": 1000,

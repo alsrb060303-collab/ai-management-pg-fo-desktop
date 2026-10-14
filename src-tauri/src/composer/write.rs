@@ -29,7 +29,8 @@ use super::compile::{OutFile, Target, add_hook, import_tokens};
 use crate::library::ops;
 use crate::tools::ToolId;
 
-pub const BEGIN: &str = "<!-- ai-management:begin (managed by AI Management; edits here are replaced on the next write) -->";
+pub const BEGIN: &str =
+    "<!-- ai-management:begin (managed by Encela; edits here are replaced on the next write) -->";
 pub const END: &str = "<!-- ai-management:end -->";
 const BEGIN_PREFIX: &str = "<!-- ai-management:begin";
 

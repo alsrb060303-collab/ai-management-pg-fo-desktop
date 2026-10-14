@@ -1,6 +1,6 @@
 # 개발 계획
 
-> 앱 이름: **Encela (엔셀라)** (2026-10-14 결정). 코드·패키지 이름은 아직 `ai-management`
+> 앱 이름: **Encela (엔셀라)** (2026-10-14 결정). 내부 식별자·패키지 이름은 `ai-management` 유지
 > 최종 갱신: 2026-10-10
 > 근거 자료와 출처: [`docs/research.md`](./research.md)
 
@@ -21,7 +21,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | 프론트엔드 | React 19 + TypeScript + Vite + Tailwind CSS v4 + Zustand | 보편적이고 생태계가 큼 |
 | 린트/포맷 | Biome (TS), rustfmt + clippy (Rust) | |
 | 라이선스 | **Apache-2.0** | OSI 승인 라이선스. 무료 코드 서명(SignPath) 조건도 충족 |
-| 앱 이름 | **Encela (엔셀라)** (2026-10-14). 코드·패키지 이름은 아직 `ai-management` | 이름에 "Claude"·"Anthropic" 사용 금지(Anthropic 정책) |
+| 앱 이름 | **Encela (엔셀라)** (2026-10-14). 내부 식별자·패키지 이름은 `ai-management` 유지 | 이름에 "Claude"·"Anthropic" 사용 금지(Anthropic 정책) |
 | 창 구성 | **메인 창 + 사이드바, 한 번에 하나만 표시** | 실행하면 메인 창. "사이드바로 전환"하면 메인 창을 닫고 사이드바가 터미널 옆에 붙음. 트레이·단축키로 다시 메인 창 |
 | 디자인 | Claude 데스크탑 앱 같은 스타일(따뜻한 무채색, 왼쪽 사이드바, 강조색 하나). 테마는 시스템 따라감 + 설정에서 라이트/다크 | 로고·이름·전용 폰트는 쓰지 않고 무료 폰트(OFL)로 대체 |
 | 도킹 방식 | **지금 쓰는 창 따라가기** | Windows Terminal / VS Code / Claude 데스크탑 / Codex(ChatGPT) 데스크탑 중 활성 창 옆에 자동으로 붙음 |
@@ -253,7 +253,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 | 유료 사용자가 늘면 Firebase Blaze(종량제) 전환 필요. Firestore·Auth에는 지출 상한이 없음 | Phase 8c (보류) |
 | GitHub Device Flow 토큰 → Firebase 로그인 동작 여부 | PoC 필요 |
 | 도킹 PoC: owner 지정, 포커스, DPI, 관리자 권한 터미널 | 실제 Windows에서 테스트 필요 |
-| 정식 앱 이름 | Encela로 결정 (2026-10-14). 앱 안 표시 이름·설치 파일·패키지 이름 변경은 아직 |
+| 정식 앱 이름 | Encela로 결정 (2026-10-14). 창 제목·화면·트레이·설치 파일·바탕화면 바로가기(`productName`)는 Encela. 식별자(identifier)·키링·mod 마켓플레이스 id·파일 표시는 데이터 호환을 위해 `ai-management` 유지. productName이 바뀌어 이전 설치본(`ai-management`)은 따로 남으니 Windows에서 업데이트 후 확인 필요 |
 | UI 다국어(영어) | 오픈소스 공개 전에 추가 |
 | Claude Code "mods"(터미널 안 패널) 연동 | Phase 11에서 구현 |
 | 외부 블록을 사용자 파일에 써넣을 때의 저작자 표시(NOTICE) 의무 | 공개 전 법률 검토 |

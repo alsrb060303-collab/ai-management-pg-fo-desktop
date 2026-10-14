@@ -87,7 +87,7 @@ flowchart LR
 ```
 
 - **About 100 ready-made blocks**: the app's own, plus license-checked blocks from popular open-source collections (obra/superpowers, mattpocock/skills, anthropics/skills, wshobson/agents, VoltAgent subagents, awesome-cursorrules and more). Source, commit and license are kept with every block; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-- **Expected effect**: each block shows whether it tends to raise or lower **tokens**, **performance** and **quality**. The canvas adds up the blocks you placed and shows performance, quality and value (performance + quality − tokens) as bars.
+- **Expected effect**: each block shows whether it tends to raise or lower **tokens**, **performance** and **quality** (−2 to +2). The canvas adds up the blocks you placed and shows performance, quality and token use as bars.
 - **Click a block** to read what it makes the AI do and see its full text. Double-click a block or output to preview the real file.
 - **Subagents**: pick the model (Auto, Fable, Opus, Sonnet, Haiku). **Hooks**: set the event and command, merged into your settings after you confirm.
 - **Plans**: write a `PLANS.md` with goals, sub-goals and steps (write text, hand off to a subagent, use a skill, ask the user), each marked done / in progress / not yet.
