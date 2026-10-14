@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense, useEffect } from "react";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { AccountDialog } from "../features/account/AccountDialog";
 import { SyncNotice } from "../features/sync/SyncNotice";
 import { UpdateNotice } from "../features/update/UpdateNotice";
@@ -84,7 +85,7 @@ export default function MainApp() {
       <main
         className={`min-w-0 flex-1 ${page === "composer" ? "overflow-hidden" : "overflow-y-auto"}`}
       >
-        {PAGES[page]()}
+        <ErrorBoundary resetKey={page}>{PAGES[page]()}</ErrorBoundary>
       </main>
       <SyncNotice />
       <UpdateNotice />
