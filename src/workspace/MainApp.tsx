@@ -22,6 +22,7 @@ import { McpPage } from "./pages/McpPage";
 import { MemoPage } from "./pages/MemoPage";
 import { ProjectDocsPage } from "./pages/ProjectDocsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TreesPage } from "./pages/TreesPage";
 import { WorkPage } from "./pages/WorkPage";
 
 // The graph editor is the heaviest page; load it on first use.
@@ -40,6 +41,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
   mcp: () => <McpPage />,
   commands: () => <CommandsPage />,
   work: () => <WorkPage />,
+  trees: () => <TreesPage />,
   memo: () => <MemoPage />,
   settings: () => <SettingsPage />,
 };
