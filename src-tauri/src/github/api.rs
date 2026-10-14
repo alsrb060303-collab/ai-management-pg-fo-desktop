@@ -844,6 +844,9 @@ pub struct RunRecord {
 pub struct ActivityRemote {
     pub pulls: Vec<PullRecord>,
     pub runs: Vec<RunRecord>,
+    /// Why the runs are missing (rate limit, network, no access to Actions);
+    /// the pull requests are still good.
+    pub runs_warning: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -878,11 +881,16 @@ struct RawRuns {
     workflow_runs: Vec<RawRun>,
 }
 
+/// The most pull requests and runs asked for (GitHub's page size limit).
+const ACTIVITY_PAGE: usize = 100;
+
 /// The repository's most recently updated pull requests (open, closed and
-/// merged) and workflow runs. Runs are best effort: Actions may be off.
+/// merged, up to 100) and workflow runs (up to 100). Runs are best effort:
+/// Actions may be off, and a failure to read them (other than a revoked
+/// sign-in) is reported in `runs_warning` while the pull requests are kept.
 pub fn activity(api: &Api, slug: &str) -> Result<ActivityRemote> {
     let raw: Vec<RawActivityPull> = api.get(&format!(
-        "/repos/{slug}/pulls?state=all&sort=updated&direction=desc&per_page=50"
+        "/repos/{slug}/pulls?state=all&sort=updated&direction=desc&per_page={ACTIVITY_PAGE}"
     ))?;
     let pulls = raw
         .into_iter()
@@ -905,10 +913,18 @@ pub fn activity(api: &Api, slug: &str) -> Result<ActivityRemote> {
         })
         .collect();
 
-    let runs = match api.get_opt::<RawRuns>(&format!("/repos/{slug}/actions/runs?per_page=50")) {
+    let mut runs_warning = None;
+    let runs = match api.get_opt::<RawRuns>(&format!(
+        "/repos/{slug}/actions/runs?per_page={ACTIVITY_PAGE}"
+    )) {
         Ok(runs) => runs.map(|r| r.workflow_runs).unwrap_or_default(),
         Err(super::http::Error::Unauthorized) => return Err(super::http::Error::Unauthorized),
-        Err(_) => Vec::new(),
+        Err(e) => {
+            let message = String::from(e);
+            eprintln!("couldn't read the workflow runs of {slug}: {message}");
+            runs_warning = Some(message);
+            Vec::new()
+        }
     };
     let runs = runs
         .into_iter()
@@ -923,7 +939,11 @@ pub fn activity(api: &Api, slug: &str) -> Result<ActivityRemote> {
             updated_at: r.updated_at,
         })
         .collect();
-    Ok(ActivityRemote { pulls, runs })
+    Ok(ActivityRemote {
+        pulls,
+        runs,
+        runs_warning,
+    })
 }
 
 #[cfg(test)]
@@ -936,6 +956,85 @@ mod tests {
             .http_status_as_error(false)
             .build()
             .into()
+    }
+
+    fn pulls_json() -> &'static str {
+        r#"[{"number":5,"title":"T","state":"open","html_url":"u5","user":{"login":"a"},"head":{"ref":"feat","sha":"s5"},"base":{"ref":"main","sha":"b"},"created_at":"2026-10-14T01:00:00Z","merged_at":null,"closed_at":null}]"#
+    }
+
+    #[test]
+    fn activity_asks_for_a_hundred_pulls_and_runs() {
+        let (base, seen) = serve(vec![
+            (200, pulls_json()),
+            (
+                200,
+                r#"{"workflow_runs":[{"id":1,"name":"CI","head_branch":"feat","head_sha":"s5","status":"completed","conclusion":"success","html_url":"r1","updated_at":"2026-10-14T02:00:00Z"}]}"#,
+            ),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = activity(&api, "o/r").unwrap();
+        assert_eq!((remote.pulls.len(), remote.runs.len()), (1, 1));
+        assert_eq!(remote.runs_warning, None);
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen[0].contains("/pulls?") && seen[0].contains("per_page=100"),
+            "{}",
+            seen[0]
+        );
+        assert!(
+            seen[1].contains("/actions/runs?per_page=100"),
+            "{}",
+            seen[1]
+        );
+    }
+
+    #[test]
+    fn a_failure_reading_runs_is_a_warning_and_keeps_the_pulls() {
+        for status in [403, 429, 500] {
+            let (base, _) = serve(vec![
+                (200, pulls_json()),
+                (status, r#"{"message":"API rate limit exceeded"}"#),
+            ]);
+            let agent = agent();
+            let api = Api {
+                agent: &agent,
+                base: &base,
+                token: "t",
+            };
+            let remote = activity(&api, "o/r").unwrap();
+            assert_eq!(remote.pulls.len(), 1, "{status}");
+            assert!(remote.runs.is_empty());
+            assert!(remote.runs_warning.is_some(), "{status}");
+        }
+    }
+
+    #[test]
+    fn actions_being_off_or_a_revoked_sign_in_are_not_warnings() {
+        let (base, _) = serve(vec![(200, pulls_json()), (404, "{}")]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = activity(&api, "o/r").unwrap();
+        assert!(remote.runs.is_empty() && remote.runs_warning.is_none());
+
+        let (base, _) = serve(vec![(200, pulls_json()), (401, "{}")]);
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        assert!(matches!(
+            activity(&api, "o/r"),
+            Err(super::super::http::Error::Unauthorized)
+        ));
     }
 
     #[test]

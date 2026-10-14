@@ -402,7 +402,8 @@ AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는�
 - 위치: `~/.claude/projects/<작업 폴더 경로의 / 등을 -로 바꾼 이름>/<세션 id>.jsonl` (`CLAUDE_CONFIG_DIR`가 있으면 그 아래). 같은 폴더에 세션 id 이름의 하위 폴더(subagent 기록 등)도 있다.
 - 줄마다 JSON 하나, `type`: `user`, `assistant`, `system`, `attachment`, `last-prompt`, `queue-operation`, `mode`, `cost-state` 등.
 - 공통 필드: `uuid`, `parentUuid`, `sessionId`, `timestamp`(ISO), `cwd`, `gitBranch`, `isSidechain`(subagent면 true), `isMeta`.
-- **사람이 보낸 프롬프트**: `type:"user"`, `isMeta`·`isSidechain`이 아니고, `message.content`가 문자열이며, `origin.kind == "human"`(있을 때. 없으면 `<task-notification>`·`<command-` 등으로 시작하는 자동 메시지를 제외). `promptId`가 있다.
+- **사람이 보낸 프롬프트**: `type:"user"`, `isMeta`·`isSidechain`이 아니고, `message.content`가 문자열이거나(이미지를 붙인 프롬프트는 `text`·`image` 블록 배열 — `text`를 이어 붙이고 이미지는 "[이미지]"로 적는다. `tool_result` 블록이 있으면 프롬프트가 아니다. `[Request interrupted by user…]`는 제외), `origin.kind == "human"`(있을 때. 없으면 `<task-notification>`·`<command-` 등으로 시작하는 자동 메시지를 제외). `promptId`가 있다.
+- 프로젝트 폴더 이름은 작업 폴더에서 영문자·숫자가 아닌 글자를 모두 `-`로 바꾼 것이라(200자가 넘으면 잘림), 저장소 폴더 이름으로 시작하지 않는 폴더는 열지 않는다. 한 줄이 4 MB를 넘으면 읽지 않고 건너뛴다.
 - 도구 사용: `type:"assistant"`의 `message.content[]` 중 `type:"tool_use"` — `Edit`/`Write`/`MultiEdit`/`NotebookEdit`의 `input.file_path`(절대 경로), `Bash`의 `input.command`(`git commit`, `git push` 감지). 커밋 sha는 그 tool_use에 대한 결과(`type:"user"`, `toolUseResult`/`message.content[].type:"tool_result"`)의 출력에서 `[branch abc1234]` 형식으로 얻는다.
 
 **Codex** (`codex-rs/` HEAD 2026-10-14, 소스 기준. 예시는 serde 정의로 만든 것)

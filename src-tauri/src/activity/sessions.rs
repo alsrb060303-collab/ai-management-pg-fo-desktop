@@ -16,11 +16,16 @@
 //! A file seen for the first time whose first working folder is outside the
 //! repository is skipped without reading the rest of it (only what is
 //! appended later is looked at). So worktrees added to `dirs` later do not
-//! bring back sessions that were already skipped.
+//! bring back sessions that were already skipped. Claude Code's project
+//! folders are named after the working folder (every character that is not a
+//! letter or digit becomes `-`), so folders that cannot belong to the
+//! repository are not even listed. A line longer than `MAX_LINE` is skipped
+//! unread, so one huge line (an inlined image, say) cannot stall a file.
+//! Nothing read is kept in `state` unredacted.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -35,6 +40,10 @@ const BUDGET: u64 = 20 * 1024 * 1024;
 const SNIFF: u64 = 64 * 1024;
 /// A compressed Codex session is read up to this many bytes decompressed.
 const MAX_DECOMPRESSED: u64 = 128 * 1024 * 1024;
+/// A line longer than this is skipped without being parsed.
+const MAX_LINE: usize = 4 * 1024 * 1024;
+/// Claude Code cuts long project folder names to this many characters.
+const FOLDER_NAME_MAX: usize = 200;
 /// Distinct files kept per prompt.
 const MAX_FILES: usize = 500;
 /// Tool calls waiting for their result.
@@ -71,7 +80,7 @@ pub fn scan(
     let mut out = Vec::new();
     let mut budget = BUDGET;
 
-    for path in claude_files(&roots.claude_projects) {
+    for path in claude_files(&roots.claude_projects, &dirs) {
         if budget == 0 {
             break;
         }
@@ -141,8 +150,12 @@ struct FileState {
     pending: BTreeMap<String, u8>,
     /// Codex: activity lines since the current prompt (to drop duplicates).
     since: u32,
-    /// Codex: start of the current prompt's text.
+    /// Codex: start of the current prompt's text (redacted, like the prompt).
     last_text: String,
+    /// In the middle of a line longer than `MAX_LINE` (being skipped).
+    skipping: bool,
+    /// Compressed files: read to the end (`offset` counts decompressed bytes).
+    done: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -330,6 +343,17 @@ struct Dirs {
     forms: Vec<String>,
     cache: HashMap<String, Option<String>>,
     ci: bool,
+    /// `forms` as Claude Code names project folders, lowercase.
+    folders: Vec<String>,
+}
+
+/// How Claude Code names a project folder after a working folder: every
+/// character that is not a letter or digit becomes `-`.
+fn folder_name(path: &str) -> String {
+    path.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 impl Dirs {
@@ -348,11 +372,23 @@ impl Dirs {
             }
         }
         forms.sort_by_key(|f| std::cmp::Reverse(f.len()));
+        let folders = forms.iter().map(|f| folder_name(f)).collect();
         Dirs {
             forms,
             cache: HashMap::new(),
             ci: cfg!(windows),
+            folders,
         }
+    }
+
+    /// Whether a Claude Code project folder could hold sessions run inside
+    /// one of the repository's folders (the name starts with that folder's).
+    fn may_hold(&self, project_folder: &str) -> bool {
+        let name = folder_name(project_folder);
+        self.folders.iter().any(|f| {
+            name.starts_with(f.as_str())
+                || (f.len() > FOLDER_NAME_MAX && name.starts_with(&f[..FOLDER_NAME_MAX]))
+        })
     }
 
     /// The (longest) repository folder `cwd` is in.
@@ -381,13 +417,104 @@ impl Dirs {
 
 // ---------------------------------------------------------------- reading
 
-fn process_jsonl(
-    path: &Path,
-    st: &mut State,
+type Handler = fn(&Value, u64, &mut FileState, &mut Ctx);
+
+/// What `pump` got through.
+struct Pumped {
+    /// Bytes taken from the reader (they count against the budget).
+    read: u64,
+    /// Bytes of lines that are done with (the new offset is this further).
+    used: u64,
+    /// The reader ended.
+    eof: bool,
+}
+
+/// Reads lines from `r`, at most `allow` bytes, and hands the parsed ones to
+/// `handler`. A line longer than `MAX_LINE` is dropped unparsed (also across
+/// calls, see `FileState::skipping`). A last line without a newline is only
+/// taken when `partial_ok` (its writer may still be at it otherwise). With
+/// `check_outside`, the first working folder found decides: outside the
+/// repository, the file is marked `skip` and reading stops.
+fn pump<R: BufRead>(
+    r: &mut R,
+    allow: u64,
+    partial_ok: bool,
+    check_outside: bool,
+    f: &mut FileState,
     cx: &mut Ctx,
-    budget: &mut u64,
-    handler: fn(&Value, u64, &mut FileState, &mut Ctx),
-) {
+    handler: Handler,
+) -> Pumped {
+    let mut p = Pumped {
+        read: 0,
+        used: 0,
+        eof: false,
+    };
+    let mut line: Vec<u8> = Vec::new();
+    let mut checked = !check_outside;
+    while p.read < allow && !f.skip {
+        line.clear();
+        let room = (allow - p.read).min(MAX_LINE as u64 + 1);
+        let n = match r.by_ref().take(room).read_until(b'\n', &mut line) {
+            Ok(n) => n,
+            Err(_) => {
+                p.eof = true;
+                break;
+            }
+        };
+        if n == 0 {
+            p.eof = true;
+            break;
+        }
+        p.read += n as u64;
+        if line.last() != Some(&b'\n') {
+            if line.len() > MAX_LINE {
+                // Too long, and still no end of line: drop what came so far.
+                f.skipping = true;
+                p.used = p.read;
+                continue;
+            }
+            if (n as u64) < room {
+                p.eof = true;
+                if partial_ok {
+                    p.used = p.read;
+                    if f.skipping {
+                        f.skipping = false;
+                    } else {
+                        handle_line(&line, &mut checked, f, cx, handler);
+                    }
+                }
+            }
+            break;
+        }
+        p.used = p.read;
+        if f.skipping {
+            f.skipping = false;
+            f.line += 1;
+            continue;
+        }
+        handle_line(&line, &mut checked, f, cx, handler);
+    }
+    p
+}
+
+fn handle_line(line: &[u8], checked: &mut bool, f: &mut FileState, cx: &mut Ctx, handler: Handler) {
+    let idx = f.line;
+    f.line += 1;
+    if line.len() > MAX_LINE {
+        return;
+    }
+    if let Ok(v) = serde_json::from_slice::<Value>(line) {
+        handler(&v, idx, f, cx);
+        if !*checked && !f.cwd.is_empty() {
+            *checked = true;
+            if cx.dirs.find(&f.cwd).is_none() {
+                f.skip = true;
+            }
+        }
+    }
+}
+
+fn process_jsonl(path: &Path, st: &mut State, cx: &mut Ctx, budget: &mut u64, handler: Handler) {
     let Ok(meta) = fs::metadata(path) else { return };
     let (len, mtime) = (meta.len(), mtime_ms(&meta));
     let key = path.to_string_lossy().into_owned();
@@ -407,100 +534,103 @@ fn process_jsonl(
         }
         return;
     }
-    if f.offset == 0 && sniff_outside(path, cx.dirs) {
-        f.len = len;
-        f.mtime = mtime;
-        f.offset = len;
-        st.files.insert(key, f);
-        return;
+    if f.offset == 0 {
+        let (outside, bytes) = sniff_outside(path, cx.dirs);
+        *budget = budget.saturating_sub(bytes);
+        if outside {
+            f.len = len;
+            f.mtime = mtime;
+            f.offset = len;
+            st.files.insert(key, f);
+            return;
+        }
     }
     if f.session.is_empty() {
         f.session = cx.stem_session.clone();
     }
 
-    let want = (len - f.offset).min(*budget);
-    let mut buf = Vec::new();
+    let mut used = 0;
     if let Ok(mut file) = File::open(path)
         && file.seek(SeekFrom::Start(f.offset)).is_ok()
     {
-        let _ = file.take(want).read_to_end(&mut buf);
+        let mut r = BufReader::with_capacity(64 * 1024, file);
+        let p = pump(&mut r, *budget, false, false, &mut f, cx, handler);
+        *budget = budget.saturating_sub(p.read);
+        used = p.used;
     }
-    *budget = budget.saturating_sub(buf.len() as u64);
-    // Only complete lines: the writer may be in the middle of one.
-    let used = buf.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-    for line in buf[..used].split_inclusive(|b| *b == b'\n') {
-        let idx = f.line;
-        f.line += 1;
-        if let Ok(v) = serde_json::from_slice::<Value>(line) {
-            handler(&v, idx, &mut f, cx);
-            if f.skip {
-                break;
-            }
-        }
-    }
-    f.offset = if f.skip { len } else { f.offset + used as u64 };
+    f.offset = if f.skip { len } else { f.offset + used };
     f.len = len;
     f.mtime = mtime;
     flush(&mut f, cx);
     st.files.insert(key, f);
 }
 
+/// A compressed (archived) Codex session, streamed through the decoder. The
+/// file never changes, so when the budget runs out it is continued by
+/// decompressing again and skipping what was read (`offset`, decompressed).
 fn process_zst(path: &Path, st: &mut State, cx: &mut Ctx, budget: &mut u64) {
     let Ok(meta) = fs::metadata(path) else { return };
     let (len, mtime) = (meta.len(), mtime_ms(&meta));
     let key = path.to_string_lossy().into_owned();
-    if let Some(f) = st.files.get(&key)
-        && (f.skip || (f.len == len && f.mtime == mtime))
-    {
-        return;
-    }
-    if *budget == 0 {
-        return;
-    }
-    let Ok(file) = File::open(path) else { return };
-    let Ok(mut dec) = zstd::stream::read::Decoder::new(file) else {
-        return;
-    };
-    let mut buf = Vec::new();
-    let _ = (&mut dec).take(SNIFF).read_to_end(&mut buf);
-    let mut f = FileState {
-        len,
-        mtime,
-        offset: len,
-        ..FileState::default()
-    };
-    if sniff_buf(&buf, cx.dirs) {
+    let mut f = st.files.remove(&key).unwrap_or_default();
+    if f.skip || (f.len == len && f.mtime == mtime && f.done) {
         st.files.insert(key, f);
         return;
     }
-    let _ = (&mut dec)
-        .take(MAX_DECOMPRESSED.saturating_sub(buf.len() as u64))
-        .read_to_end(&mut buf);
-    *budget = budget.saturating_sub(buf.len() as u64);
-    f.session = cx.stem_session.clone();
-    // A whole file again: the same prompts come out with the same ids.
-    for line in buf.split_inclusive(|b| *b == b'\n') {
-        let idx = f.line;
-        f.line += 1;
-        if let Ok(v) = serde_json::from_slice::<Value>(line) {
-            codex_line(&v, idx, &mut f, cx);
-            if f.skip {
-                break;
-            }
+    if f.len != len || f.mtime != mtime {
+        f = FileState::default();
+    }
+    let keep = |st: &mut State, key: String, f: FileState| {
+        if f.len != 0 {
+            st.files.insert(key, f);
+        }
+    };
+    if *budget == 0 {
+        keep(st, key, f);
+        return;
+    }
+    let Ok(file) = File::open(path) else {
+        keep(st, key, f);
+        return;
+    };
+    let Ok(dec) = zstd::stream::read::Decoder::new(file) else {
+        keep(st, key, f);
+        return;
+    };
+    let mut r = BufReader::with_capacity(64 * 1024, dec);
+    f.len = len;
+    f.mtime = mtime;
+    if f.offset > 0 {
+        let skipped =
+            std::io::copy(&mut (&mut r).take(f.offset), &mut std::io::sink()).unwrap_or(0);
+        if skipped < f.offset {
+            f.done = true;
+            st.files.insert(key, f);
+            return;
         }
     }
+    if f.session.is_empty() {
+        f.session = cx.stem_session.clone();
+    }
+    let allow = (*budget).min(MAX_DECOMPRESSED.saturating_sub(f.offset));
+    // The same prompts come out with the same ids when read again.
+    let check_outside = f.cwd.is_empty();
+    let p = pump(&mut r, allow, true, check_outside, &mut f, cx, codex_line);
+    *budget = budget.saturating_sub(p.read);
+    f.offset += p.used;
+    f.done = f.skip || p.eof || f.offset >= MAX_DECOMPRESSED;
     flush(&mut f, cx);
     st.files.insert(key, f);
 }
 
 /// Whether the first working folder in the start of a file is outside the
-/// repository.
-fn sniff_outside(path: &Path, dirs: &mut Dirs) -> bool {
+/// repository, and how many bytes that took to find out.
+fn sniff_outside(path: &Path, dirs: &mut Dirs) -> (bool, u64) {
     let mut buf = Vec::new();
     if let Ok(file) = File::open(path) {
         let _ = file.take(SNIFF).read_to_end(&mut buf);
     }
-    sniff_buf(&buf, dirs)
+    (sniff_buf(&buf, dirs), buf.len() as u64)
 }
 
 fn sniff_buf(buf: &[u8], dirs: &mut Dirs) -> bool {
@@ -528,11 +658,14 @@ fn list_dir(dir: &Path) -> Vec<fs::DirEntry> {
     entries
 }
 
-/// `projects/*/*.jsonl`: top-level files only (subfolders hold sub-agent logs).
-fn claude_files(projects: &Path) -> Vec<PathBuf> {
+/// `projects/*/*.jsonl`: top-level files only (subfolders hold sub-agent logs),
+/// and only in project folders whose name fits one of the repository's folders.
+fn claude_files(projects: &Path, dirs: &Dirs) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for project in list_dir(projects) {
-        if !project.file_type().is_ok_and(|t| t.is_dir()) {
+        if !project.file_type().is_ok_and(|t| t.is_dir())
+            || !dirs.may_hold(&project.file_name().to_string_lossy())
+        {
             continue;
         }
         for e in list_dir(&project.path()) {
@@ -645,25 +778,28 @@ fn is_injected(text: &str) -> bool {
         "Caveat:",
         "<environment_context>",
         "<user_instructions>",
+        "[Request interrupted by user",
     ]
     .iter()
     .any(|p| t.starts_with(p))
 }
 
-/// Starts a new current prompt (after returning the previous one).
-fn start_prompt(f: &mut FileState, cx: &mut Ctx, id: String, at: i64, raw: &str) {
+/// The start of a (redacted) prompt, to tell the same message reported twice.
+fn head_of(text: &str) -> String {
+    text.trim().chars().take(300).collect()
+}
+
+/// Starts a new current prompt (after returning the previous one). `text` is
+/// already redacted: nothing unredacted reaches the stored state.
+fn start_prompt(f: &mut FileState, cx: &mut Ctx, id: String, at: i64, text: String) {
     if f.cur.as_ref().is_some_and(|c| c.id == id) {
         return;
     }
     flush(f, cx);
     f.cur = None;
     f.since = 0;
-    f.last_text = raw.trim().chars().take(300).collect();
-    if cx.dirs.find(&f.cwd).is_none() {
-        return;
-    }
-    let text = super::redact::prompt_text(raw);
-    if text.trim().is_empty() {
+    f.last_text = head_of(&text);
+    if cx.dirs.find(&f.cwd).is_none() || text.trim().is_empty() {
         return;
     }
     f.cur = Some(Cur {
@@ -839,7 +975,10 @@ fn result_text(v: Option<&Value>) -> String {
 
 fn is_human_claude(v: &Value, text: &str) -> bool {
     let flag = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
-    if flag("isMeta")
+    if text
+        .trim_start()
+        .starts_with("[Request interrupted by user")
+        || flag("isMeta")
         || flag("isSidechain")
         || flag("isCompactSummary")
         || flag("isVisibleInTranscriptOnly")
@@ -851,6 +990,23 @@ fn is_human_claude(v: &Value, text: &str) -> bool {
         Some(Value::Null) | None => !is_injected(text),
         Some(origin) => origin.get("kind").and_then(Value::as_str) == Some("human"),
     }
+}
+
+/// The text parts of a prompt given as an array, with a note for each image.
+fn array_prompt_text(blocks: &[Value]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for b in blocks {
+        match b.get("type").and_then(Value::as_str) {
+            Some("text") => {
+                if let Some(t) = str_of(b.get("text")) {
+                    parts.push(t.to_string());
+                }
+            }
+            Some("image") => parts.push("[이미지]".to_string()),
+            _ => {}
+        }
+    }
+    parts.join("\n")
 }
 
 fn claude_line(v: &Value, _idx: u64, f: &mut FileState, cx: &mut Ctx) {
@@ -874,19 +1030,36 @@ fn claude_line(v: &Value, _idx: u64, f: &mut FileState, cx: &mut Ctx) {
                 };
                 let id = format!("prompt:claude:{}:{pid}", f.session);
                 let at = timestamp(v).unwrap_or(cx.mtime);
-                start_prompt(f, cx, id, at, text);
+                start_prompt(f, cx, id, at, super::redact::prompt_text(text));
             }
             Some(Value::Array(blocks)) => {
+                let mut results = false;
                 for b in blocks {
                     if b.get("type").and_then(Value::as_str) != Some("tool_result") {
                         continue;
                     }
+                    results = true;
                     let Some(id) = str_of(b.get("tool_use_id")) else {
                         continue;
                     };
                     let is_error = b.get("is_error").and_then(Value::as_bool).unwrap_or(false);
                     command_result(f, id, &result_text(b.get("content")), is_error);
                 }
+                // A prompt with pasted images is an array of text and image
+                // parts rather than a string.
+                if results {
+                    return;
+                }
+                let text = array_prompt_text(blocks);
+                if !is_human_claude(v, &text) {
+                    return;
+                }
+                let Some(pid) = str_of(v.get("promptId")).or_else(|| str_of(v.get("uuid"))) else {
+                    return;
+                };
+                let id = format!("prompt:claude:{}:{pid}", f.session);
+                let at = timestamp(v).unwrap_or(cx.mtime);
+                start_prompt(f, cx, id, at, super::redact::prompt_text(&text));
             }
             _ => {}
         },
@@ -997,9 +1170,9 @@ fn codex_prompt(f: &mut FileState, cx: &mut Ctx, idx: u64, v: &Value, text: &str
     if is_injected(text) || text.trim().is_empty() {
         return;
     }
-    let head: String = text.trim().chars().take(300).collect();
+    let text = super::redact::prompt_text(text);
     // The same message reported twice (user_message and item_completed).
-    if f.since == 0 && f.last_text == head && f.cur.is_some() {
+    if f.since == 0 && f.last_text == head_of(&text) && f.cur.is_some() {
         return;
     }
     let id = format!("prompt:codex:{}:{idx}", f.session);
@@ -1111,6 +1284,12 @@ mod tests {
         }
     }
 
+    /// Claude Code's project folder for sessions run in `dir`.
+    fn proj(r: &Roots, dir: &Path) -> PathBuf {
+        r.claude_projects
+            .join(folder_name(&norm(&dir.to_string_lossy())))
+    }
+
     fn append(path: &Path, lines: &[Value]) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut f = fs::OpenOptions::new()
@@ -1218,7 +1397,7 @@ mod tests {
         let cwd = repo.to_string_lossy().into_owned();
         let other = tmp.path().join("elsewhere").to_string_lossy().into_owned();
         let r = roots(tmp.path());
-        let file = r.claude_projects.join("-proj").join("S1.jsonl");
+        let file = proj(&r, &repo).join("S1.jsonl");
         let edit_path = repo.join("src/a.rs").to_string_lossy().into_owned();
         let outside = tmp
             .path()
@@ -1370,7 +1549,7 @@ mod tests {
             )],
         );
         append(
-            &r.claude_projects.join("-proj/S1/subagents/agent-1.jsonl"),
+            &proj(&r, &repo).join("S1/subagents/agent-1.jsonl"),
             &[user(
                 &repo.to_string_lossy(),
                 "2026-10-14T01:00:00.000Z",
@@ -1390,7 +1569,7 @@ mod tests {
         fs::create_dir_all(&repo).unwrap();
         let cwd = repo.to_string_lossy().into_owned();
         let r = roots(tmp.path());
-        let file = r.claude_projects.join("-p/S1.jsonl");
+        let file = proj(&r, &repo).join("S1.jsonl");
         let human = json!({"origin": {"kind": "human"}});
         append(
             &file,
@@ -1550,5 +1729,257 @@ mod tests {
         assert!(events[0].pushed);
         // Unchanged: not read again.
         assert!(scan(&r, &[repo], "k", &mut state).is_empty());
+    }
+
+    #[test]
+    fn claude_prompt_with_image_parts_is_a_prompt_and_gets_its_work() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let cwd = repo.to_string_lossy().into_owned();
+        let r = roots(tmp.path());
+        let file = proj(&r, &repo).join("S1.jsonl");
+        let human = json!({"origin": {"kind": "human"}});
+        let mut with_image = user(&cwd, "2026-10-14T01:00:00.000Z", "p1", "", human.clone());
+        with_image["message"]["content"] = json!([
+            {"type": "text", "text": "what is wrong here?"},
+            {"type": "image", "source": {"type": "base64", "data": "AAAA"}},
+        ]);
+        let mut only_image = user(&cwd, "2026-10-14T01:00:10.000Z", "p2", "", human.clone());
+        only_image["message"]["content"] = json!([{"type": "image", "source": {}}]);
+        let mut interrupted = user(&cwd, "2026-10-14T01:00:20.000Z", "p3", "", human);
+        interrupted["message"]["content"] =
+            json!([{"type": "text", "text": "[Request interrupted by user]"}]);
+        append(
+            &file,
+            &[
+                with_image,
+                tool_use(
+                    "t1",
+                    "Edit",
+                    json!({"file_path": repo.join("src/a.rs").to_string_lossy()}),
+                ),
+                only_image,
+                interrupted,
+            ],
+        );
+        let mut state = Value::Null;
+        let events = scan(&r, &[repo], "k", &mut state);
+        let ids: Vec<_> = events.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, ["prompt:claude:S1:p1", "prompt:claude:S1:p2"]);
+        assert_eq!(events[0].text, "what is wrong here?\n[이미지]");
+        assert_eq!(events[0].files, ["src/a.rs"], "the tool use is kept");
+        assert_eq!(events[1].text, "[이미지]");
+    }
+
+    #[test]
+    fn a_line_over_the_cap_is_skipped_and_the_scan_goes_on() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let cwd = repo.to_string_lossy().into_owned();
+        let r = roots(tmp.path());
+        let file = proj(&r, &repo).join("S1.jsonl");
+        let human = json!({"origin": {"kind": "human"}});
+        let mut huge = user(&cwd, "2026-10-14T01:00:00.000Z", "p0", "x", human.clone());
+        huge["blob"] = json!("A".repeat(MAX_LINE + 1000));
+        append(
+            &file,
+            &[
+                user(
+                    &cwd,
+                    "2026-10-14T00:59:00.000Z",
+                    "p-1",
+                    "before",
+                    human.clone(),
+                ),
+                huge,
+                user(&cwd, "2026-10-14T01:00:01.000Z", "p1", "after", human),
+            ],
+        );
+        let len = fs::metadata(&file).unwrap().len();
+        let mut state = Value::Null;
+        let events = scan(&r, &[repo], "k", &mut state);
+        let texts: Vec<_> = events.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(texts, ["before", "after"]);
+        let st: State = serde_json::from_value(state).unwrap();
+        let f = st.files.values().next().unwrap();
+        assert_eq!(f.offset, len, "the offset moved past the long line");
+        assert!(!f.skipping);
+    }
+
+    #[test]
+    fn a_long_line_over_several_calls_is_dropped_across_the_boundary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let cwd = repo.to_string_lossy().into_owned();
+        let r = roots(tmp.path());
+        let file = proj(&r, &repo).join("S1.jsonl");
+        let human = json!({"origin": {"kind": "human"}});
+        let mut huge = user(&cwd, "2026-10-14T01:00:00.000Z", "p0", "x", human.clone());
+        huge["blob"] = json!("A".repeat(MAX_LINE * 2));
+        append(
+            &file,
+            &[
+                huge,
+                user(&cwd, "2026-10-14T01:00:01.000Z", "p1", "after", human),
+            ],
+        );
+        // Read with a budget that ends inside the long line.
+        let mut dirs = Dirs::new(std::slice::from_ref(&repo));
+        let mut st = State::default();
+        let mut out = Vec::new();
+        for _ in 0..8 {
+            let mut budget = MAX_LINE as u64 + 100_000;
+            let mut cx = Ctx::new("k", ToolId::Claude, &mut dirs, &mut out, &file);
+            process_jsonl(&file, &mut st, &mut cx, &mut budget, claude_line);
+        }
+        let texts: Vec<_> = out.iter().map(|e| e.text.as_str()).collect();
+        assert_eq!(texts, ["after"]);
+    }
+
+    #[test]
+    fn state_never_holds_unredacted_prompt_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let cwd = repo.to_string_lossy().into_owned();
+        let r = roots(tmp.path());
+        let secret = "export API_KEY=sk-live-0123456789abcdefghij and password=hunter2";
+        let dir = r.codex_home.join("sessions/2026/10/14");
+        let mut lines = codex_session(&cwd, json!("cli"));
+        lines[3] = json!({"timestamp": "2026-10-14T01:00:03.000Z", "type": "event_msg",
+            "payload": {"type": "user_message", "message": secret}});
+        lines.remove(4);
+        append(
+            &dir.join("rollout-a-11111111-2222-3333-4444-555555555551.jsonl"),
+            &lines,
+        );
+        let human = json!({"origin": {"kind": "human"}});
+        append(
+            &proj(&r, &repo).join("S1.jsonl"),
+            &[user(&cwd, "2026-10-14T01:00:00.000Z", "p1", secret, human)],
+        );
+        let mut state = Value::Null;
+        let events = scan(&r, &[repo], "k", &mut state);
+        assert_eq!(events.len(), 2, "{events:?}");
+        let dump = state.to_string();
+        assert!(!dump.contains("hunter2"), "{dump}");
+        assert!(!dump.contains("sk-live"), "{dump}");
+        assert!(dump.contains("[가림]"), "the redacted head is kept");
+        for e in &events {
+            assert!(!e.text.contains("hunter2"));
+        }
+    }
+
+    #[test]
+    fn claude_project_folders_are_filtered_by_name_before_any_file_is_read() {
+        let dirs = Dirs::new(&[
+            PathBuf::from("/home/me/my.app"),
+            PathBuf::from("/home/me/my.app/.claude/worktrees/x"),
+        ]);
+        assert!(dirs.may_hold("-home-me-my-app"));
+        assert!(dirs.may_hold("-home-me-my-app--claude-worktrees-x"));
+        assert!(dirs.may_hold("-HOME-ME-MY-APP-sub"), "subfolders, any case");
+        assert!(!dirs.may_hold("-home-me-other"));
+        assert!(!dirs.may_hold("-home-me"));
+
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let r = roots(tmp.path());
+        let human = json!({"origin": {"kind": "human"}});
+        let other = tmp.path().join("other");
+        append(
+            &proj(&r, &other).join("S2.jsonl"),
+            &[user(
+                &repo.to_string_lossy(),
+                "2026-10-14T01:00:00.000Z",
+                "p1",
+                "hi",
+                human,
+            )],
+        );
+        let mut state = Value::Null;
+        assert!(scan(&r, &[repo], "k", &mut state).is_empty());
+        let st: State = serde_json::from_value(state).unwrap();
+        assert!(st.files.is_empty(), "never opened or recorded");
+    }
+
+    #[test]
+    fn first_scan_sniffing_counts_against_the_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let r = roots(tmp.path());
+        let other = tmp.path().join("other").to_string_lossy().into_owned();
+        let file = proj(&r, &repo).join("S1.jsonl");
+        append(
+            &file,
+            &[user(
+                &other,
+                "2026-10-14T01:00:00.000Z",
+                "p1",
+                "hi",
+                json!(null),
+            )],
+        );
+        let mut dirs = Dirs::new(std::slice::from_ref(&repo));
+        let mut st = State::default();
+        let mut out = Vec::new();
+        let mut budget = BUDGET;
+        let mut cx = Ctx::new("k", ToolId::Claude, &mut dirs, &mut out, &file);
+        process_jsonl(&file, &mut st, &mut cx, &mut budget, claude_line);
+        let size = fs::metadata(&file).unwrap().len();
+        assert_eq!(BUDGET - budget, size, "the sniffed bytes were charged");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn compressed_sessions_are_streamed_within_the_budget_and_resumed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let cwd = repo.to_string_lossy().into_owned();
+        let text: String = codex_session(&cwd, json!("cli"))
+            .iter()
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let packed = zstd::stream::encode_all(text.as_bytes(), 3).unwrap();
+        let path = tmp
+            .path()
+            .join("rollout-z-11111111-2222-3333-4444-555555555555.jsonl.zst");
+        fs::write(&path, packed).unwrap();
+
+        let mut dirs = Dirs::new(std::slice::from_ref(&repo));
+        let mut st = State::default();
+        let mut out = Vec::new();
+        let mut calls = 0;
+        loop {
+            calls += 1;
+            assert!(calls < 200, "never finishes");
+            // Never more than the budget is taken in one call.
+            let mut budget = 600u64;
+            let mut cx = Ctx::new("k", ToolId::Codex, &mut dirs, &mut out, &path);
+            process_zst(&path, &mut st, &mut cx, &mut budget);
+            if st.files.values().all(|f| f.done) {
+                break;
+            }
+        }
+        assert!(calls > 2, "the budget split the file: {calls}");
+        let events = dedupe(out);
+        assert_eq!(events.len(), 1, "{events:?}");
+        assert_eq!(events[0].files, ["src/log.rs", "src/main.rs"]);
+        assert_eq!(events[0].commits, ["9f8e7d6"]);
+        assert!(events[0].pushed);
+
+        // A finished file is not read again.
+        let mut budget = BUDGET;
+        let mut again = Vec::new();
+        let mut cx = Ctx::new("k", ToolId::Codex, &mut dirs, &mut again, &path);
+        process_zst(&path, &mut st, &mut cx, &mut budget);
+        assert_eq!(budget, BUDGET);
+        assert!(again.is_empty());
     }
 }

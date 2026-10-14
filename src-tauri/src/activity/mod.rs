@@ -175,6 +175,9 @@ pub struct RefreshResult {
     pub git: usize,
     /// Prompt events that were new or changed.
     pub prompts: usize,
+    /// Something was left out but the refresh went on (for example the CI
+    /// results could not be read from GitHub).
+    pub warning: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -263,10 +266,12 @@ fn refresh(
     let dirs = worktree_dirs(&root);
 
     let (mut git_events, tips) = git_log::collect_local(&root, &repo, COLLECT_LIMIT)?;
+    let mut warning = None;
     if github {
         // Offline or signed out: the local log is still worth keeping.
-        if let Ok(more) = git_log::collect_github(app, &root, &repo) {
+        if let Ok((more, soft)) = git_log::collect_github(app, &root, &repo) {
             git_events.extend(more);
+            warning = soft;
         }
     }
 
@@ -289,6 +294,7 @@ fn refresh(
     Ok(RefreshResult {
         git,
         prompts: prompt_count,
+        warning,
     })
 }
 
@@ -318,11 +324,12 @@ pub async fn activity_git_log(
     project: String,
     limit: usize,
     before: Option<i64>,
+    before_id: Option<String>,
 ) -> Result<GitLog, String> {
     blocking(app, move |store| {
         let repo = repo_of(&project)?;
         Ok(GitLog {
-            events: store.git_page(&repo, limit, before)?,
+            events: store.git_page(&repo, limit, before, before_id.as_deref())?,
             branches: store.tips(&repo)?,
             repo,
         })
@@ -336,10 +343,11 @@ pub async fn activity_prompt_log(
     project: String,
     limit: usize,
     before: Option<i64>,
+    before_id: Option<String>,
 ) -> Result<PromptLog, String> {
     blocking(app, move |store| {
         let repo = repo_of(&project)?;
-        let events = store.prompt_page(&repo, limit, before)?;
+        let events = store.prompt_page(&repo, limit, before, before_id.as_deref())?;
         Ok(PromptLog {
             sessions: store::sessions(&events),
             events,
@@ -453,7 +461,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((g, p), (1, 1));
-        let prompts = store.prompt_page("r", 10, None).unwrap();
+        let prompts = store.prompt_page("r", 10, None, None).unwrap();
         assert_eq!(prompts[0].text, format!("key {}", redact::MASK));
 
         // Forever: everything is kept.
