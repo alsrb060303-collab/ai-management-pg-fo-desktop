@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 import { onLocaleApplied, t } from "../i18n";
 import { isToolId, type ToolId, type ToolPref } from "../tools";
+import { getPref, onPrefChanged, setPref } from "./prefs";
 
 // Mirrors `ConfigMap` in src-tauri/src/tools/mod.rs.
 export type ConfigKind =
@@ -47,9 +48,9 @@ export interface Detection {
   mainRoot: string | null;
 }
 
-// Both windows share localStorage; it is the source of truth for the recent
-// list and the selected project, since the main window is recreated on every
-// switch and the sidebar lives on in the background.
+// Prefs are the source of truth for the recent list and the selected project,
+// since the main window is recreated on every switch and the sidebar lives on
+// in the background.
 const RECENT_KEY = "recentProjects";
 const CURRENT_KEY = "currentProject";
 const MAX_RECENT = 8;
@@ -180,11 +181,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   setDefaultTool: async (tool) => {
-    try {
-      localStorage.setItem(DEFAULT_TOOL_KEY, tool);
-    } catch {
-      // Only a convenience.
-    }
+    setPref(DEFAULT_TOOL_KEY, tool);
     set({ defaultTool: tool });
     await get().refresh();
   },
@@ -235,19 +232,11 @@ function isFolderNotFound(error: string): boolean {
 }
 
 function saveCurrent(path: string) {
-  try {
-    localStorage.setItem(CURRENT_KEY, path);
-  } catch {
-    // Only a convenience.
-  }
+  setPref(CURRENT_KEY, path);
 }
 
 function loadCurrent(): string | null {
-  try {
-    return localStorage.getItem(CURRENT_KEY);
-  } catch {
-    return null;
-  }
+  return getPref(CURRENT_KEY);
 }
 
 let restoring = false;
@@ -269,17 +258,15 @@ export function restoreProject() {
   }
 }
 
-window.addEventListener("storage", (event) => {
-  if (event.key === RECENT_KEY) useProjectStore.setState({ recent: loadRecent() });
-  // A tool change in the other window: follow it.
-  if (event.key === TOOL_PREFS_KEY || event.key === DEFAULT_TOOL_KEY) {
-    void useProjectStore.getState().refresh();
-  }
-});
+onPrefChanged(RECENT_KEY, () => useProjectStore.setState({ recent: loadRecent() }));
+// A tool change in the other window or on another device: follow it.
+for (const key of [TOOL_PREFS_KEY, DEFAULT_TOOL_KEY]) {
+  onPrefChanged(key, () => void useProjectStore.getState().refresh());
+}
 
 function loadToolPrefs(): Record<string, ToolPref> {
   try {
-    const value = JSON.parse(localStorage.getItem(TOOL_PREFS_KEY) ?? "{}");
+    const value = JSON.parse(getPref(TOOL_PREFS_KEY) ?? "{}");
     return value && typeof value === "object" ? value : {};
   } catch {
     return {};
@@ -295,26 +282,17 @@ function saveToolPref(path: string, pref: ToolPref) {
   const prefs = loadToolPrefs();
   if (pref === "auto") delete prefs[path];
   else prefs[path] = pref;
-  try {
-    localStorage.setItem(TOOL_PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // The choice just won't persist.
-  }
+  setPref(TOOL_PREFS_KEY, JSON.stringify(prefs));
 }
 
 function loadDefaultTool(): ToolId {
-  try {
-    const value = localStorage.getItem(DEFAULT_TOOL_KEY);
-    if (isToolId(value)) return value;
-  } catch {
-    // Fall through to the default.
-  }
-  return "claude";
+  const value = getPref(DEFAULT_TOOL_KEY);
+  return isToolId(value) ? value : "claude";
 }
 
 function loadRecent(): string[] {
   try {
-    const value = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    const value = JSON.parse(getPref(RECENT_KEY) ?? "[]");
     return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
   } catch {
     return [];
@@ -322,11 +300,7 @@ function loadRecent(): string[] {
 }
 
 function saveRecent(recent: string[]) {
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
-  } catch {
-    // Storage can be unavailable; the list just won't persist.
-  }
+  setPref(RECENT_KEY, JSON.stringify(recent));
 }
 
 // Settings-map notes and errors come from the backend: rescan in the new language.

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getPref, setPref } from "./prefs";
 
 export type Page =
   | "home"
@@ -17,7 +18,7 @@ const COLLAPSED_KEY = "nav-collapsed";
 
 function readCollapsed(): boolean {
   try {
-    return localStorage.getItem(COLLAPSED_KEY) === "1";
+    return getPref(COLLAPSED_KEY) === "1";
   } catch {
     return false;
   }
@@ -37,11 +38,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   go: (page) => set({ page }),
   toggleCollapsed: () => {
     const collapsed = !get().collapsed;
-    try {
-      localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
-    } catch {
-      // Only a convenience.
-    }
+    setPref(COLLAPSED_KEY, collapsed ? "1" : "0");
     set({ collapsed });
   },
 }));

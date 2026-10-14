@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 import { useT } from "../i18n";
+import { getPref, setPref } from "../store/prefs";
 
 const PREFIX = "panel-width:";
 
 function readWidth(key: string, fallback: number, min: number, max: number): number {
   try {
-    const value = Number(localStorage.getItem(PREFIX + key));
+    const value = Number(getPref(PREFIX + key));
     if (Number.isFinite(value) && value > 0) return Math.min(max, Math.max(min, value));
   } catch {
     // Only a convenience.
@@ -23,11 +24,7 @@ export function usePanelWidth(key: string, initial: number, min: number, max: nu
   const clamp = useCallback((w: number) => Math.min(max, Math.max(min, w)), [min, max]);
   const save = useCallback(
     (w: number) => {
-      try {
-        localStorage.setItem(PREFIX + key, String(Math.round(w)));
-      } catch {
-        // Only a convenience.
-      }
+      setPref(PREFIX + key, String(Math.round(w)));
     },
     [key],
   );

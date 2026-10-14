@@ -7,9 +7,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import React, { lazy, Suspense } from "react";
 import ReactDOM from "react-dom/client";
-import { localeReady } from "./i18n";
-import { initFontSize } from "./store/fontSize";
-import { initTheme } from "./store/theme";
+import { loadPrefs } from "./store/prefs";
 
 // One bundle, two windows: the window label picks the UI, and each UI is
 // loaded on its own so the sidebar never pulls in the workspace code.
@@ -23,9 +21,6 @@ const Root =
     ? lazy(() => import("./sidebar/SidebarApp"))
     : lazy(() => import("./workspace/MainApp"));
 
-initTheme();
-initFontSize();
-
 // Dropping a file or folder on the window would make the webview navigate to
 // it and unload the app. Nothing here accepts file drops yet.
 for (const type of ["dragover", "drop"] as const) {
@@ -34,9 +29,20 @@ for (const type of ["dragover", "drop"] as const) {
   });
 }
 
-// Render once the backend knows the language (or after a short wait), so the
-// first scans and errors come back in it.
-void Promise.race([localeReady, new Promise((r) => setTimeout(r, 1000))]).then(() => {
+// The settings load first (cached in memory; a backend failure only costs a
+// short wait), so the stores below read them when they are created. Then render
+// once the backend knows the language (or after a short wait), so the first
+// scans and errors come back in it.
+async function start() {
+  await loadPrefs();
+  const [{ localeReady }, { initFontSize }, { initTheme }] = await Promise.all([
+    import("./i18n"),
+    import("./store/fontSize"),
+    import("./store/theme"),
+  ]);
+  initTheme();
+  initFontSize();
+  await Promise.race([localeReady, new Promise((r) => setTimeout(r, 1000))]);
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <Suspense fallback={null}>
@@ -44,4 +50,6 @@ void Promise.race([localeReady, new Promise((r) => setTimeout(r, 1000))]).then((
       </Suspense>
     </React.StrictMode>,
   );
-});
+}
+
+void start();

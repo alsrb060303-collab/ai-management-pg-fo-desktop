@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { getPref, onPrefChanged, setPref } from "../store/prefs";
 import * as account from "./messages/account";
 import * as activity from "./messages/activity";
 import * as commands from "./messages/commands";
@@ -54,17 +55,13 @@ const MESSAGES: Record<Locale, Record<MessageKey, string>> = { ko: KO, en: EN };
 
 export type Params = Record<string, string | number>;
 
-// Both windows share localStorage; a change in one reaches the other through
-// the `storage` event (see the listener below).
+// Kept in prefs; a change in the other window or on a synced device arrives
+// through `prefs-changed` (see the listener below).
 const KEY = "language";
 
 function readPref(): LocalePref {
-  try {
-    const value = localStorage.getItem(KEY);
-    if (value === "ko" || value === "en" || value === "system") return value;
-  } catch {
-    // Storage can be unavailable; follow the OS.
-  }
+  const value = getPref(KEY);
+  if (value === "ko" || value === "en" || value === "system") return value;
   return "system";
 }
 
@@ -118,11 +115,7 @@ export const useLocaleStore = create<LocaleState>((set) => {
     pref,
     locale,
     setPref: (next) => {
-      try {
-        localStorage.setItem(KEY, next);
-      } catch {
-        // Still applies for this session.
-      }
+      setPref(KEY, next);
       const locale = resolve(next);
       set({ pref: next, locale });
       void apply(locale, true);
@@ -130,8 +123,7 @@ export const useLocaleStore = create<LocaleState>((set) => {
   };
 });
 
-window.addEventListener("storage", (event) => {
-  if (event.key !== KEY) return;
+onPrefChanged(KEY, () => {
   const pref = readPref();
   const locale = resolve(pref);
   useLocaleStore.setState({ pref, locale });

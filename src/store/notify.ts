@@ -7,15 +7,12 @@ import {
 import { create } from "zustand";
 import { type MessageKey, t } from "../i18n";
 import type { RepoView } from "./github";
+import { getPref, onPrefChanged, setPref } from "./prefs";
 
-const KEY = "notify.github";
+const KEY = "notifyEnabled";
 
 function loadOn(): boolean {
-  try {
-    return localStorage.getItem(KEY) !== "0";
-  } catch {
-    return true;
-  }
+  return getPref(KEY) !== "0";
 }
 
 interface NotifyState {
@@ -27,15 +24,13 @@ interface NotifyState {
 export const useNotifyStore = create<NotifyState>((set) => ({
   on: loadOn(),
   setOn: (on) => {
-    try {
-      localStorage.setItem(KEY, on ? "1" : "0");
-    } catch {
-      // Only a convenience.
-    }
+    setPref(KEY, on ? "1" : "0");
     set({ on });
     if (on) void allowed();
   },
 }));
+
+onPrefChanged(KEY, () => useNotifyStore.setState({ on: loadOn() }));
 
 let permission: Promise<boolean> | null = null;
 

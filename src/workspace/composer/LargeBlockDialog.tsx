@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "../../components/ui";
 import { useT } from "../../i18n";
 import { type Block, useComposerTool } from "../../store/composer";
+import { getPref, setPref } from "../../store/prefs";
 import { TOOLS } from "../../tools";
 
 /**
@@ -19,19 +20,11 @@ export function isLarge(block: Block): boolean {
 }
 
 export function largeWarningOff(): boolean {
-  try {
-    return localStorage.getItem(OFF_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return getPref(OFF_KEY) === "1";
 }
 
 function turnWarningOff() {
-  try {
-    localStorage.setItem(OFF_KEY, "1");
-  } catch {
-    // Only a convenience: the warning shows again next time.
-  }
+  setPref(OFF_KEY, "1");
 }
 
 const kb = (bytes: number) => Math.max(1, Math.round(bytes / 1024));
