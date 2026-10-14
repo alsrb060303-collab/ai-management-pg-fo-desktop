@@ -19,7 +19,7 @@ source_path: skills/caveman/SKILL.md
 license_path: LICENSE
 tokens: -1
 performance: 0
-quality: -1
+quality: -2
 ---
 # caveman
 
