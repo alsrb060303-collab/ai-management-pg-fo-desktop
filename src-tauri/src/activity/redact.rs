@@ -14,6 +14,8 @@ struct Patterns {
     jwt: Regex,
     token: Regex,
     bearer: Regex,
+    authorization: Regex,
+    userinfo: Regex,
     assignment: Regex,
     long_run: Regex,
 }
@@ -37,8 +39,16 @@ fn patterns() -> &'static Patterns {
                 r"|xox[baprs]-[A-Za-z0-9-]{10,}",
             )),
             bearer: re(r"(?i)(\bBearer[ \t]+)[A-Za-z0-9._~+/=-]{8,}"),
+            // `Authorization: Basic ...`, `"authorization": "Token ..."`.
+            authorization: re(
+                r#"(?i)(\bAuthorization["']?[ \t]*[:=][ \t]*(?:(?:Basic|Bearer|Digest|Token)[ \t]+)?)(["']?)[A-Za-z0-9._~+/=-]{4,}"#,
+            ),
+            // `scheme://user:password@host`: the password is masked.
+            userinfo: re(r"(?i)(\b[a-z][a-z0-9+.-]*://[^\s/:@]+:)[^\s/@]+@"),
+            // A key word with any name around it (`SECRET_KEY`,
+            // `AWS_SECRET_ACCESS_KEY`, `"password"`), then `=` or `:`.
             assignment: re(
-                r#"(?i)((?:password|passwd|token|secret|api[_-]?key)[ \t]*=[ \t]*|api[_-]?key[ \t]*:[ \t]*)(["']?)[^\s"',;]+"#,
+                r#"(?i)(?P<pre>(?:password|passwd|token|secret|api[_-]?key|private[_-]?key|access[_-]?key|credentials?)[A-Za-z0-9_]*(?P<kq>["']?)[ \t]*(?P<sep>[=:])[ \t]*)(?P<q>["']?)(?P<val>[^\s"',;]+)"#,
             ),
             long_run: re(r"[A-Za-z0-9_\-+/=]{32,}"),
         }
@@ -54,11 +64,21 @@ pub fn prompt_text(raw: &str) -> String {
     let text = p.jwt.replace_all(&text, MASK);
     let text = p.token.replace_all(&text, MASK);
     let text = p
+        .authorization
+        .replace_all(&text, |c: &Captures| format!("{}{}{MASK}", &c[1], &c[2]));
+    let text = p
         .bearer
         .replace_all(&text, |c: &Captures| format!("{}{MASK}", &c[1]));
     let text = p
-        .assignment
-        .replace_all(&text, |c: &Captures| format!("{}{}{MASK}", &c[1], &c[2]));
+        .userinfo
+        .replace_all(&text, |c: &Captures| format!("{}{MASK}@", &c[1]));
+    let text = p.assignment.replace_all(&text, |c: &Captures| {
+        if is_prose(c) {
+            c[0].to_string()
+        } else {
+            format!("{}{}{MASK}", &c["pre"], &c["q"])
+        }
+    });
     let text = p.long_run.replace_all(&text, |c: &Captures| {
         let run = &c[0];
         if run.chars().any(|ch| ch.is_ascii_alphabetic())
@@ -70,6 +90,17 @@ pub fn prompt_text(raw: &str) -> String {
         }
     });
     cut(&text)
+}
+
+/// `the token: how it works`: an unquoted `:` followed by a short lowercase
+/// word reads as a sentence, not a setting. `=`, quoted and `*key` forms never do.
+fn is_prose(c: &Captures) -> bool {
+    &c["sep"] == ":"
+        && c["kq"].is_empty()
+        && !c["pre"].to_ascii_lowercase().contains("key")
+        && c["q"].is_empty()
+        && c["val"].len() <= 10
+        && c["val"].chars().all(|ch| ch.is_ascii_lowercase())
 }
 
 fn tidy(raw: &str) -> String {
@@ -228,5 +259,70 @@ mod tests {
         assert!(out.ends_with('…'));
         let exact = "나".repeat(500);
         assert_eq!(prompt_text(&exact), exact);
+    }
+
+    #[test]
+    fn masks_keys_with_prefixes_suffixes_and_colons() {
+        for (input, want) in [
+            ("SECRET_KEY=abc", format!("SECRET_KEY={MASK}")),
+            (
+                "AWS_SECRET_ACCESS_KEY=wJalr/XUtnFEMI",
+                format!("AWS_SECRET_ACCESS_KEY={MASK}"),
+            ),
+            ("PRIVATE_KEY=zz", format!("PRIVATE_KEY={MASK}")),
+            ("token: abc123", format!("token: {MASK}")),
+            ("password: hunter2", format!("password: {MASK}")),
+            ("auth_token_v2: 9f8e", format!("auth_token_v2: {MASK}")),
+        ] {
+            assert_eq!(prompt_text(input), want, "{input}");
+        }
+    }
+
+    #[test]
+    fn masks_quoted_json_and_yaml_keys() {
+        assert_eq!(
+            prompt_text(r#"{"password": "hunter2", "user": "bob"}"#),
+            format!(r#"{{"password": "{MASK}", "user": "bob"}}"#)
+        );
+        assert_eq!(
+            prompt_text("{'api_key':'k-1'}"),
+            format!("{{'api_key':'{MASK}'}}")
+        );
+        assert_eq!(
+            prompt_text("client_secret: \"s3\""),
+            format!("client_secret: \"{MASK}\"")
+        );
+    }
+
+    #[test]
+    fn masks_url_userinfo_passwords() {
+        assert_eq!(
+            prompt_text("DATABASE_URL=postgres://user:pass@host/db"),
+            format!("DATABASE_URL=postgres://user:{MASK}@host/db")
+        );
+        assert_eq!(
+            prompt_text("git clone https://bob:ghs3cret@github.com/o/r.git"),
+            format!("git clone https://bob:{MASK}@github.com/o/r.git")
+        );
+        assert_eq!(
+            prompt_text("see https://example.com:8080/path"),
+            "see https://example.com:8080/path"
+        );
+    }
+
+    #[test]
+    fn masks_authorization_headers() {
+        assert_eq!(
+            prompt_text("Authorization: Basic dXNlcjpwYXNz"),
+            format!("Authorization: Basic {MASK}")
+        );
+        assert_eq!(
+            prompt_text("-H \"Authorization: Bearer abc.def-123_xyz\""),
+            format!("-H \"Authorization: Bearer {MASK}\"")
+        );
+        assert_eq!(
+            prompt_text("authorization: token ghx12345"),
+            format!("authorization: token {MASK}")
+        );
     }
 }

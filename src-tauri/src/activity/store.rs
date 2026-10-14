@@ -153,6 +153,27 @@ fn tool_text(e: &PromptEvent) -> String {
         .unwrap_or_default()
 }
 
+/// The event with its content fields emptied (what a tombstone keeps).
+pub fn tombstone(event: &Event) -> Event {
+    match event {
+        Event::Git(e) => Event::Git(GitEvent {
+            title: String::new(),
+            branch: None,
+            parents: Vec::new(),
+            url: None,
+            author: None,
+            ..e.clone()
+        }),
+        Event::Prompt(e) => Event::Prompt(PromptEvent {
+            text: String::new(),
+            branch: None,
+            files: Vec::new(),
+            commits: Vec::new(),
+            ..e.clone()
+        }),
+    }
+}
+
 /// Writes (inserts or replaces) one event row with the given bookkeeping.
 fn write_event(
     conn: &Connection,
@@ -162,6 +183,13 @@ fn write_event(
     synced_at: Option<i64>,
     deleted: bool,
 ) -> rusqlite::Result<()> {
+    let blanked;
+    let event = if deleted {
+        blanked = tombstone(event);
+        &blanked
+    } else {
+        event
+    };
     match event {
         Event::Git(e) => conn.execute(
             "INSERT INTO git_events (id, repo, kind, at, branch, sha, parents, pr, title,
@@ -415,12 +443,23 @@ impl Store {
         let conn = self.conn();
         let now = now_ms();
         let mut n = 0;
-        for table in ["git_events", "prompt_events"] {
+        // A tombstone keeps no content: only the ids and times that make it
+        // win (and stay deleted) on every device.
+        for (table, blank) in [
+            (
+                "git_events",
+                "title = '', branch = NULL, parents = '[]', url = NULL, author = NULL",
+            ),
+            (
+                "prompt_events",
+                "text = '', branch = NULL, files = '[]', commits = '[]'",
+            ),
+        ] {
             n += conn
                 .execute(
                     &format!(
                         "UPDATE {table} SET deleted = 1, updated_at = MAX(?1, updated_at + 1),
-                                device_id = ?2
+                                device_id = ?2, {blank}
                          WHERE deleted = 0 AND at < ?3"
                     ),
                     params![now, self.device, cutoff],
@@ -433,17 +472,27 @@ impl Store {
     // ---- reading ----
 
     /// Live commits and other GitHub events of a repository, newest first.
-    pub fn git_page(&self, repo: &str, limit: usize, before: Option<i64>) -> Result<Vec<GitEvent>> {
+    /// The cursor is `(before, before_id)`: events strictly older, or at the
+    /// same time with a smaller id (commit times tie often); with only
+    /// `before`, events strictly older.
+    pub fn git_page(
+        &self,
+        repo: &str,
+        limit: usize,
+        before: Option<i64>,
+        before_id: Option<&str>,
+    ) -> Result<Vec<GitEvent>> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM git_events
-                 WHERE repo = ?1 AND deleted = 0 AND at < ?2
+                 WHERE repo = ?1 AND deleted = 0
+                   AND (at < ?2 OR (at = ?2 AND ?4 IS NOT NULL AND id < ?4))
                  ORDER BY at DESC, id DESC LIMIT ?3",
             )
             .map_err(db_err)?;
         stmt.query_map(
-            params![repo, before.unwrap_or(i64::MAX), limit as i64],
+            params![repo, before.unwrap_or(i64::MAX), limit as i64, before_id],
             git_from,
         )
         .map_err(db_err)?
@@ -456,17 +505,19 @@ impl Store {
         repo: &str,
         limit: usize,
         before: Option<i64>,
+        before_id: Option<&str>,
     ) -> Result<Vec<PromptEvent>> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM prompt_events
-                 WHERE repo = ?1 AND deleted = 0 AND at < ?2
+                 WHERE repo = ?1 AND deleted = 0
+                   AND (at < ?2 OR (at = ?2 AND ?4 IS NOT NULL AND id < ?4))
                  ORDER BY at DESC, id DESC LIMIT ?3",
             )
             .map_err(db_err)?;
         stmt.query_map(
-            params![repo, before.unwrap_or(i64::MAX), limit as i64],
+            params![repo, before.unwrap_or(i64::MAX), limit as i64, before_id],
             prompt_from,
         )
         .map_err(db_err)?
@@ -761,7 +812,7 @@ mod tests {
         let after = s.pending(10, true).unwrap();
         let a = after.iter().find(|r| r.event.id() == "a").unwrap();
         assert!(a.updated_at > stamp);
-        assert_eq!(s.git_page("r", 10, None).unwrap().len(), 2);
+        assert_eq!(s.git_page("r", 10, None, None).unwrap().len(), 2);
     }
 
     #[test]
@@ -774,8 +825,8 @@ mod tests {
         e.url = Some("https://x".into());
         let p = prompt("p1", "s1", 5);
         s.upsert(&[g(e.clone()), Event::Prompt(p.clone())]).unwrap();
-        assert_eq!(s.git_page("r", 10, None).unwrap(), [e]);
-        assert_eq!(s.prompt_page("r", 10, None).unwrap(), [p]);
+        assert_eq!(s.git_page("r", 10, None, None).unwrap(), [e]);
+        assert_eq!(s.prompt_page("r", 10, None, None).unwrap(), [p]);
     }
 
     #[test]
@@ -787,13 +838,101 @@ mod tests {
         s.upsert(&events).unwrap();
         s.upsert(&[g(git("other", "x", 100))]).unwrap();
 
-        let first = s.git_page("r", 2, None).unwrap();
+        let first = s.git_page("r", 2, None, None).unwrap();
         assert_eq!(first.iter().map(|e| e.at).collect::<Vec<_>>(), [50, 40]);
-        let second = s.git_page("r", 2, Some(40)).unwrap();
+        let second = s.git_page("r", 2, Some(40), None).unwrap();
         assert_eq!(second.iter().map(|e| e.at).collect::<Vec<_>>(), [30, 20]);
-        let last = s.git_page("r", 2, Some(20)).unwrap();
+        let last = s.git_page("r", 2, Some(20), None).unwrap();
         assert_eq!(last.len(), 1);
-        assert!(s.git_page("none", 10, None).unwrap().is_empty());
+        assert!(s.git_page("none", 10, None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn paging_by_time_and_id_keeps_events_that_share_a_time() {
+        let s = Store::in_memory().unwrap();
+        let events: Vec<Event> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .map(|id| g(git(id, "r", 100)))
+            .chain([g(git("old", "r", 50))])
+            .collect();
+        s.upsert(&events).unwrap();
+        s.upsert(&[Event::Prompt(prompt("pa", "s", 100))]).unwrap();
+        s.upsert(&[Event::Prompt(prompt("pb", "s", 100))]).unwrap();
+
+        let first = s.git_page("r", 2, None, None).unwrap();
+        assert_eq!(
+            first.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["e", "d"]
+        );
+        let last = first.last().unwrap();
+        let second = s.git_page("r", 2, Some(last.at), Some(&last.id)).unwrap();
+        assert_eq!(
+            second.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["c", "b"]
+        );
+        let third = s.git_page("r", 2, Some(100), Some("b")).unwrap();
+        assert_eq!(
+            third.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["a", "old"]
+        );
+        // Only `before`: strictly older, as before.
+        let older = s.git_page("r", 10, Some(100), None).unwrap();
+        assert_eq!(
+            older.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["old"]
+        );
+
+        let p = s.prompt_page("r", 1, None, None).unwrap();
+        assert_eq!(p[0].id, "pb");
+        let p = s.prompt_page("r", 1, Some(100), Some("pb")).unwrap();
+        assert_eq!(p[0].id, "pa");
+    }
+
+    #[test]
+    fn pruned_and_remote_tombstones_keep_no_content() {
+        let s = Store::in_memory().unwrap();
+        s.upsert(&[g(git("old", "r", 100))]).unwrap();
+        s.upsert(&[Event::Prompt(prompt("p-old", "s", 100))])
+            .unwrap();
+        assert_eq!(s.prune(1000).unwrap(), 2);
+        let rows = s.pending(10, true).unwrap();
+        assert_eq!(rows.len(), 2);
+        for r in &rows {
+            assert!(r.deleted);
+            assert_eq!(r.event, tombstone(&r.event), "already blank");
+            match &r.event {
+                Event::Git(e) => {
+                    assert!(e.title.is_empty() && e.author.is_none() && e.parents.is_empty());
+                    assert!(e.branch.is_none() && e.url.is_none());
+                }
+                Event::Prompt(e) => {
+                    assert!(e.text.is_empty() && e.files.is_empty() && e.commits.is_empty());
+                    assert!(e.branch.is_none());
+                }
+            }
+        }
+
+        // A deleted row arriving from another device is stored blank too.
+        let remote = SyncRow {
+            updated_at: i64::MAX / 2,
+            deleted: true,
+            device_id: "other".into(),
+            event: g(git("x", "r", 5)),
+        };
+        s.apply_remote(&[remote], true).unwrap();
+        let x = s
+            .pending(10, true)
+            .unwrap()
+            .into_iter()
+            .find(|r| r.event.id() == "x");
+        assert!(x.is_none(), "applied rows are synced");
+        let conn = s.conn();
+        let title: String = conn
+            .query_row("SELECT title FROM git_events WHERE id = 'x'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(title, "");
     }
 
     #[test]
@@ -815,10 +954,10 @@ mod tests {
 
         assert_eq!(s.prune(1000).unwrap(), 2);
         assert_eq!(s.prune(1000).unwrap(), 0, "already tombstoned");
-        let live = s.git_page("r", 10, None).unwrap();
+        let live = s.git_page("r", 10, None, None).unwrap();
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].id, "new");
-        assert!(s.prompt_page("r", 10, None).unwrap().is_empty());
+        assert!(s.prompt_page("r", 10, None, None).unwrap().is_empty());
 
         // The tombstones wait to be uploaded.
         let pending = s.pending(10, true).unwrap();
@@ -827,7 +966,7 @@ mod tests {
 
         // Collecting the old event again does not bring it back.
         assert_eq!(s.upsert(&[g(git("old", "r", 100))]).unwrap(), 0);
-        assert_eq!(s.git_page("r", 10, None).unwrap().len(), 1);
+        assert_eq!(s.git_page("r", 10, None, None).unwrap().len(), 1);
     }
 
     #[test]
@@ -867,7 +1006,10 @@ mod tests {
             e.title = "from laptop".into();
         }
         assert_eq!(s.apply_remote(&[theirs.clone()], true).unwrap(), ["r"]);
-        assert_eq!(s.git_page("r", 10, None).unwrap()[0].title, "from laptop");
+        assert_eq!(
+            s.git_page("r", 10, None, None).unwrap()[0].title,
+            "from laptop"
+        );
         assert!(
             s.pending(10, true).unwrap().is_empty(),
             "applied rows are not re-uploaded"
@@ -877,7 +1019,7 @@ mod tests {
         theirs.updated_at += 1;
         theirs.deleted = true;
         s.apply_remote(&[theirs], true).unwrap();
-        assert!(s.git_page("r", 10, None).unwrap().is_empty());
+        assert!(s.git_page("r", 10, None, None).unwrap().is_empty());
     }
 
     #[test]
@@ -894,9 +1036,9 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        assert!(s.prompt_page("r", 10, None).unwrap().is_empty());
+        assert!(s.prompt_page("r", 10, None, None).unwrap().is_empty());
         assert_eq!(s.apply_remote(&[row], true).unwrap(), ["r"]);
-        assert_eq!(s.prompt_page("r", 10, None).unwrap().len(), 1);
+        assert_eq!(s.prompt_page("r", 10, None, None).unwrap().len(), 1);
     }
 
     #[test]

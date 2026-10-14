@@ -7,7 +7,8 @@
 //! `prMerged`, `prClosed`, `ci`), so collecting again gives the same ids.
 //! They do not contain the repository key; the store keys events by repo too.
 
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap};
 use std::path::Path;
 
 use tauri::AppHandle;
@@ -294,6 +295,33 @@ fn local_events(
     (events, index)
 }
 
+/// Subject and time (ms) of commits, in one git call per chunk instead of
+/// one per commit. Commits git does not know are left out.
+fn commit_times(root: &Path, shas: &[&str]) -> HashMap<String, (i64, String)> {
+    let mut out = HashMap::new();
+    for chunk in shas.chunks(200) {
+        let mut args: Vec<&str> = vec!["log", "--no-walk=unsorted", "--format=%H%x1f%ct%x1f%s%x1e"];
+        args.extend_from_slice(chunk);
+        let Ok(raw) = git::run_raw(root, &args) else {
+            continue;
+        };
+        for record in String::from_utf8_lossy(&raw).split(RECORD) {
+            let mut f = record.trim_start_matches('\n').split(FIELD);
+            let (Some(sha), Some(ct)) = (f.next().filter(|h| !h.is_empty()), f.next()) else {
+                continue;
+            };
+            let Ok(secs) = ct.trim().parse::<i64>() else {
+                continue;
+            };
+            out.insert(
+                sha.to_string(),
+                (secs * 1000, f.next().unwrap_or_default().to_string()),
+            );
+        }
+    }
+    out
+}
+
 /// A push per branch whose remote-tracking tip is a commit we know. Git keeps
 /// no record of when a push happened, so the event carries the time of the
 /// commit that is now the remote tip.
@@ -304,22 +332,29 @@ fn push_events(
     events: &[GitEvent],
     index: &HashMap<String, usize>,
 ) -> Vec<GitEvent> {
+    // Tips older than the commits read: ask git for their times, all at once.
+    let mut older: Vec<&str> = tips
+        .iter()
+        .filter_map(|t| t.remote.as_deref())
+        .filter(|sha| !index.contains_key(*sha))
+        .collect();
+    older.sort_unstable();
+    older.dedup();
+    let known = if older.is_empty() {
+        HashMap::new()
+    } else {
+        commit_times(root, &older)
+    };
+
     let mut out = Vec::new();
     for tip in tips {
         let Some(sha) = &tip.remote else { continue };
         let (at, title) = match index.get(sha) {
             Some(&i) => (events[i].at, events[i].title.clone()),
-            None => {
-                // Older than the commits read: ask git for its time.
-                let Ok(t) = git::run(root, &["show", "-s", "--format=%ct%x1f%s", sha]) else {
-                    continue;
-                };
-                let (ct, subject) = t.split_once(FIELD).unwrap_or((&t, ""));
-                let Ok(secs) = ct.trim().parse::<i64>() else {
-                    continue;
-                };
-                (secs * 1000, subject.to_string())
-            }
+            None => match known.get(sha) {
+                Some((at, subject)) => (*at, subject.clone()),
+                None => continue,
+            },
         };
         let mut e = event(
             repo,
@@ -333,6 +368,54 @@ fn push_events(
         out.push(e);
     }
     out
+}
+
+/// Children before their parents, newest first otherwise. `git log` without
+/// `--date-order`/`--topo-order` stops after `-n` commits (those two have to
+/// walk the whole history first), but then a commit can come before its
+/// child when clocks disagree or commits share a second.
+fn children_first(commits: Vec<LogCommit>) -> Vec<LogCommit> {
+    let at: HashMap<&str, usize> = commits
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (c.sha.as_str(), i))
+        .collect();
+    let mut waiting = vec![0usize; commits.len()];
+    for (i, c) in commits.iter().enumerate() {
+        for parent in &c.parents {
+            if let Some(&p) = at.get(parent.as_str())
+                && p != i
+            {
+                waiting[p] += 1;
+            }
+        }
+    }
+    let mut ready: BinaryHeap<Reverse<usize>> = waiting
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| **n == 0)
+        .map(|(i, _)| Reverse(i))
+        .collect();
+    let mut order: Vec<usize> = Vec::with_capacity(commits.len());
+    let mut placed = vec![false; commits.len()];
+    while let Some(Reverse(i)) = ready.pop() {
+        placed[i] = true;
+        order.push(i);
+        for parent in &commits[i].parents {
+            if let Some(&p) = at.get(parent.as_str())
+                && p != i
+            {
+                waiting[p] -= 1;
+                if waiting[p] == 0 {
+                    ready.push(Reverse(p));
+                }
+            }
+        }
+    }
+    // Duplicated parents or a cycle (neither happens): keep what is left.
+    order.extend((0..commits.len()).filter(|i| !placed[*i]));
+    let mut slots: Vec<Option<LogCommit>> = commits.into_iter().map(Some).collect();
+    order.into_iter().filter_map(|i| slots[i].take()).collect()
 }
 
 /// Commits (newest first, at most `limit`), merges and pushes of every
@@ -359,14 +442,13 @@ pub fn collect_local(
         &[
             "log",
             "--all",
-            "--date-order",
             "--decorate=full",
             "--source",
             &n,
             LOG_FORMAT,
         ],
     )?;
-    let commits = parse_log(&String::from_utf8_lossy(&log));
+    let commits = children_first(parse_log(&String::from_utf8_lossy(&log)));
     let (mut events, index) = local_events(repo, &commits, &tips);
     let pushes = push_events(root, repo, &tips, &events, &index);
     events.extend(pushes);
@@ -377,14 +459,20 @@ pub fn collect_local(
 
 /// Pull requests (opened, merged, closed) and CI results from GitHub. Empty
 /// when not signed in to GitHub or when the repository is not on github.com.
-pub fn collect_github(app: &AppHandle, _root: &Path, repo: &str) -> Result<Vec<GitEvent>, String> {
+/// The second value is a soft warning (CI results could not be read; the
+/// pull requests are still there).
+pub fn collect_github(
+    app: &AppHandle,
+    _root: &Path,
+    repo: &str,
+) -> Result<(Vec<GitEvent>, Option<String>), String> {
     let Some(slug) = github_slug(repo) else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     };
     let Some(remote) = crate::github::activity(app, &slug)? else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     };
-    Ok(github_events(repo, &remote))
+    Ok((github_events(repo, &remote), remote.runs_warning))
 }
 
 fn ci_state(conclusion: &str) -> Option<&'static str> {
@@ -633,6 +721,7 @@ mod tests {
                 run(12, "completed", Some("skipped")),
                 run(13, "in_progress", None),
             ],
+            runs_warning: None,
         };
         let events = github_events("github.com/o/r", &remote);
         let ids: Vec<_> = events.iter().map(|e| e.id.as_str()).collect();
@@ -769,5 +858,77 @@ mod tests {
         // The limit counts commits.
         let (events, _) = collect_local(&root, "k", 2).unwrap();
         assert_eq!(events.iter().filter(|e| e.kind != GitKind::Push).count(), 2);
+    }
+
+    #[test]
+    fn children_come_before_parents_whatever_the_clocks_say() {
+        let c = |sha: &str, parents: &[&str], time: i64| LogCommit {
+            sha: sha.into(),
+            parents: parents.iter().map(|p| p.to_string()).collect(),
+            author: String::new(),
+            time,
+            heads: Decoration::default(),
+            source: None,
+            subject: String::new(),
+        };
+        // `old` has a later date than its child `kid` (clock skew), `m` merges.
+        let out = children_first(vec![
+            c("old", &["root"], 500),
+            c("m", &["kid", "side"], 400),
+            c("kid", &["old"], 300),
+            c("side", &["root"], 200),
+            c("root", &[], 100),
+            c("far", &["gone"], 50),
+        ]);
+        let order: Vec<_> = out.iter().map(|c| c.sha.as_str()).collect();
+        let pos = |s: &str| order.iter().position(|x| *x == s).unwrap();
+        assert_eq!(order.len(), 6);
+        assert!(pos("m") < pos("kid") && pos("kid") < pos("old") && pos("old") < pos("root"));
+        assert!(pos("m") < pos("side") && pos("side") < pos("root"));
+        // Otherwise the original (newest first) order is kept.
+        assert_eq!(order[0], "m");
+        assert_eq!(order, ["m", "kid", "old", "side", "root", "far"]);
+    }
+
+    #[test]
+    fn old_remote_tips_are_looked_up_in_one_batch() {
+        let (_tmp, root) = repo_dir();
+        for i in 1..=4 {
+            commit(&root, &format!("f{i}.txt"), &format!("commit {i}"));
+        }
+        let shas: Vec<String> = ["HEAD~3", "HEAD~2", "HEAD~1"]
+            .iter()
+            .map(|r| git::run(&root, &["rev-parse", r]).unwrap())
+            .collect();
+        let refs: Vec<&str> = shas.iter().map(String::as_str).collect();
+        let got = commit_times(&root, &refs);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[&shas[0]].1, "commit 1");
+        assert_eq!(got[&shas[2]].1, "commit 3");
+        assert!(got[&shas[0]].0 > 0);
+        // Unknown commits are left out, the rest still answered.
+        let mut with_bad = refs.clone();
+        with_bad.push("0123456789012345678901234567890123456789");
+        assert!(
+            commit_times(&root, &with_bad).is_empty(),
+            "a bad sha fails its chunk only"
+        );
+        assert_eq!(commit_times(&root, &[]).len(), 0);
+
+        // Tips beyond the commits read (limit 1) still become pushes.
+        for (i, sha) in shas.iter().enumerate() {
+            git_in(
+                &root,
+                &["update-ref", &format!("refs/remotes/origin/b{i}"), sha],
+            );
+        }
+        let (events, _) = collect_local(&root, "k", 1).unwrap();
+        let mut titles: Vec<_> = events
+            .iter()
+            .filter(|e| e.kind == GitKind::Push)
+            .map(|e| e.title.clone())
+            .collect();
+        titles.sort();
+        assert_eq!(titles, ["commit 1", "commit 2", "commit 3"]);
     }
 }

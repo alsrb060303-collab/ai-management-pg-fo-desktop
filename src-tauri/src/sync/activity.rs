@@ -21,6 +21,19 @@ const PAGE: usize = 100;
 /// The security rules allow `text` up to 600 characters and lists up to 200.
 const MAX_TEXT: usize = 500;
 const MAX_LIST: usize = 200;
+/// Per-field string limits of the security rules (`eventId` is left alone:
+/// the document id is derived from it).
+const MAX_REPO: usize = 1000;
+const MAX_DEVICE: usize = 100;
+const MAX_BRANCH: usize = 500;
+const MAX_SHA: usize = 100;
+const MAX_STATE: usize = 200;
+const MAX_URL: usize = 1000;
+const MAX_AUTHOR: usize = 300;
+const MAX_SESSION: usize = 200;
+const MAX_KIND: usize = 30;
+/// Rules cap list sizes, not their items; keep those sane too.
+const MAX_ITEM: usize = 500;
 
 /// The document id for an event: its id contains `:` and branch names, which
 /// documents can't hold, so it is hashed. The event id travels in `eventId`.
@@ -38,8 +51,8 @@ fn string(s: &str) -> Value {
     json!({ "stringValue": s })
 }
 
-fn opt(s: &Option<String>) -> Value {
-    string(s.as_deref().unwrap_or(""))
+fn opt(s: &Option<String>, max: usize) -> Value {
+    string(&cut(s.as_deref().unwrap_or(""), max))
 }
 
 fn int(n: i64) -> Value {
@@ -47,7 +60,11 @@ fn int(n: i64) -> Value {
 }
 
 fn list(items: &[String]) -> Value {
-    let values: Vec<Value> = items.iter().take(MAX_LIST).map(|s| string(s)).collect();
+    let values: Vec<Value> = items
+        .iter()
+        .take(MAX_LIST)
+        .map(|s| string(&cut(s, MAX_ITEM)))
+        .collect();
     if values.is_empty() {
         json!({ "arrayValue": {} })
     } else {
@@ -65,6 +82,17 @@ fn kind_name(kind: GitKind) -> String {
 /// Every field is always present (empty string / 0 / empty list for "none"),
 /// which keeps the security rules simple.
 pub fn to_fields(row: &SyncRow) -> Value {
+    // A deleted row travels without its content, whatever the caller holds.
+    let blanked;
+    let row = if row.deleted {
+        blanked = SyncRow {
+            event: crate::activity::store::tombstone(&row.event),
+            ..row.clone()
+        };
+        &blanked
+    } else {
+        row
+    };
     let (kind, id, repo, at) = match &row.event {
         Event::Git(e) => ("git", &e.id, &e.repo, e.at),
         Event::Prompt(e) => ("prompt", &e.id, &e.repo, e.at),
@@ -72,23 +100,23 @@ pub fn to_fields(row: &SyncRow) -> Value {
     let mut f = json!({
         "kind": string(kind),
         "eventId": string(id),
-        "repo": string(repo),
+        "repo": string(&cut(repo, MAX_REPO)),
         "at": int(at),
         "updatedAt": int(row.updated_at),
         "deleted": { "booleanValue": row.deleted },
-        "deviceId": string(&row.device_id),
+        "deviceId": string(&cut(&row.device_id, MAX_DEVICE)),
     });
     let extra = match &row.event {
         Event::Git(e) => json!({
-            "evKind": string(&kind_name(e.kind)),
-            "branch": opt(&e.branch),
-            "sha": opt(&e.sha),
+            "evKind": string(&cut(&kind_name(e.kind), MAX_KIND)),
+            "branch": opt(&e.branch, MAX_BRANCH),
+            "sha": opt(&e.sha, MAX_SHA),
             "parents": list(&e.parents),
             "pr": int(e.pr.unwrap_or(0) as i64),
             "text": string(&cut(&e.title, MAX_TEXT)),
-            "state": opt(&e.state),
-            "url": opt(&e.url),
-            "author": opt(&e.author),
+            "state": opt(&e.state, MAX_STATE),
+            "url": opt(&e.url, MAX_URL),
+            "author": opt(&e.author, MAX_AUTHOR),
             "tool": string(""),
             "session": string(""),
             "files": list(&[]),
@@ -97,7 +125,7 @@ pub fn to_fields(row: &SyncRow) -> Value {
         }),
         Event::Prompt(e) => json!({
             "evKind": string(""),
-            "branch": opt(&e.branch),
+            "branch": opt(&e.branch, MAX_BRANCH),
             "sha": string(""),
             "parents": list(&[]),
             "pr": int(0),
@@ -105,8 +133,8 @@ pub fn to_fields(row: &SyncRow) -> Value {
             "state": string(""),
             "url": string(""),
             "author": string(""),
-            "tool": string(&tool_name(e)),
-            "session": string(&e.session),
+            "tool": string(&cut(&tool_name(e), MAX_KIND)),
+            "session": string(&cut(&e.session, MAX_SESSION)),
             "files": list(&e.files),
             "commits": list(&e.commits),
             "pushed": { "booleanValue": e.pushed },
@@ -312,13 +340,69 @@ mod tests {
         for row in [git_row(), prompt_row()] {
             let fields = to_fields(&row);
             let doc = doc_id(row.event.id());
-            assert_eq!(from_fields(&doc, &fields), Some(row));
+            // A deleted row comes back without its content.
+            let want = if row.deleted {
+                SyncRow {
+                    event: crate::activity::store::tombstone(&row.event),
+                    ..row.clone()
+                }
+            } else {
+                row
+            };
+            assert_eq!(from_fields(&doc, &fields), Some(want));
         }
+    }
+
+    #[test]
+    fn deleted_rows_upload_without_content() {
+        for mut row in [git_row(), prompt_row()] {
+            row.deleted = true;
+            let f = to_fields(&row);
+            assert_eq!(f["deleted"]["booleanValue"], true);
+            for k in ["text", "url", "author", "branch"] {
+                assert_eq!(f[k]["stringValue"], "", "{k}");
+            }
+            for k in ["parents", "files", "commits"] {
+                assert!(f[k]["arrayValue"]["values"].is_null(), "{k}");
+            }
+            assert_eq!(f["eventId"]["stringValue"], row.event.id());
+        }
+    }
+
+    #[test]
+    fn every_string_field_is_clamped_to_the_rule_limits() {
+        let long = "x".repeat(5000);
+        let mut row = git_row();
+        row.device_id = long.clone();
+        if let Event::Git(e) = &mut row.event {
+            e.repo = long.clone();
+            e.branch = Some(long.clone());
+            e.sha = Some(long.clone());
+            e.state = Some(long.clone());
+            e.url = Some(long.clone());
+            e.author = Some(long.clone());
+            e.parents = vec![long.clone(); 300];
+            e.title = long.clone();
+        }
+        let f = to_fields(&row);
+        let len = |k: &str| f[k]["stringValue"].as_str().unwrap().chars().count();
+        assert!(len("repo") <= 1000 && len("deviceId") <= 100);
+        assert!(len("branch") <= 500 && len("sha") <= 100 && len("state") <= 200);
+        assert!(len("url") <= 1000 && len("author") <= 300 && len("text") <= 600);
+        assert!(len("evKind") <= 30 && len("tool") <= 30 && len("session") <= 200);
+        assert_eq!(
+            f["parents"]["arrayValue"]["values"]
+                .as_array()
+                .unwrap()
+                .len(),
+            200
+        );
     }
 
     #[test]
     fn documents_are_small_and_match_the_rules_allow_list() {
         let mut row = prompt_row();
+        row.deleted = false;
         if let Event::Prompt(e) = &mut row.event {
             e.text = "가".repeat(900);
             e.files = (0..500).map(|i| format!("f{i}")).collect();
@@ -439,7 +523,7 @@ mod tests {
 
         assert_eq!(changed, ["github.com/o/r"]);
         assert!(store.pending(10, true).unwrap().is_empty());
-        let log = store.git_page("github.com/o/r", 10, None).unwrap();
+        let log = store.git_page("github.com/o/r", 10, None, None).unwrap();
         assert!(log.iter().any(|e| e.title == "from laptop"));
         assert_eq!(store.meta(UID_KEY).unwrap().as_deref(), Some("u1"));
         assert!(store.meta(CURSOR_KEY).unwrap().is_some());
