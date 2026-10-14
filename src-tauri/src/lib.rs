@@ -1,3 +1,5 @@
+#[allow(dead_code)] // Filled in by Phase 14.
+mod activity;
 mod bridge;
 mod claude_mod;
 mod composer;
