@@ -236,7 +236,7 @@ Claude Code 같은 AI 코딩 도구로 작업할 때, 터미널 옆에 붙어서
 - [x] **Phase 9g. 앱 계정** (2026-10-13, Firebase 콘솔 설정 후 Windows 테스트: `docs/sync-setup.md` 2-1): 이메일·비밀번호(가입·로그인·재설정·인증 메일), Google(브라우저 + localhost 리디렉션, 비밀 값 없음), GitHub(작업 탭 Device Flow 그대로, 로그인하면 브랜치·PR도 바로 불러옴). 모두 한 Firebase 계정에 연결해 어느 방법으로든 같은 데이터. 갱신 토큰은 OS 자격 증명 저장소. 예전 GitHub 동기화 기기는 같은 계정으로 자동 전환, 허용 목록 유지
 - [x] **Phase 12. PLANS.md** (2026-10-13): 문서 작성기에 계획 블록. 주요 목표(큰 블록) 안에 보조 목표·세부 목표를 끌어 놓고, 그 사이에 단계 지침(지침 글 / subagent에게 맡기기 / skill 쓰기 / 확인 질문)을 넣는다. 상태 `[y]` 완료 · `[p]` 진행 중 · `[n]` 예정. PLANS 출력이 `PLANS.md`(관리 구역)로 쓰고 CLAUDE.md에 "계획은 PLANS.md" 안내 한 줄. 출력·블록 이름은 대문자(RULES, SKILLS, SUBAGENTS, HOOKS, PLANS)
 - [x] **Phase 13. 여러 AI 도구 지원 (Codex)** (구현·리뷰 완료, Windows + Codex 테스트 대기: `docs/testing/phase4-windows.md` Q): 도구 어댑터, 자동 감지·선택, Codex 설정 지도·라이브러리·작성기·프로젝트 문서·MCP·worktree·도킹·커밋 초안
-- [~] **Phase 14. 작업 트리** (진행 중): GitHub 트리·프롬프트 트리, 로그 저장·동기화, 사이드바 탭·메인 페이지
+- [x] **Phase 14. 작업 트리** (구현·리뷰 완료, Windows 테스트 대기: `docs/testing/phase4-windows.md` R, 보안 규칙 다시 게시 필요): GitHub 트리·프롬프트 트리, 로그 저장·동기화, 사이드바 탭·메인 페이지
 - [ ] **Phase 10. 배포**: 자동 업데이트, 코드 서명, winget
 
 ## 5. 열린 질문 / 리스크
