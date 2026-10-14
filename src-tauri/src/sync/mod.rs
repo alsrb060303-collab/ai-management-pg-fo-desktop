@@ -7,6 +7,7 @@
 //! sync in the same round (`files`).
 
 pub mod account;
+pub(crate) mod activity;
 mod auth;
 mod files;
 mod firebase;
@@ -16,6 +17,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::memo::{MEMO_EVENT, Memo, Store};
@@ -100,6 +102,8 @@ pub struct Sync {
 const ENABLED_KEY: &str = "sync_enabled";
 pub(crate) const UID_KEY: &str = "sync_uid";
 const CURSOR_KEY: &str = "sync_cursor";
+/// The work-tree logs' pull cursor (in `activity.db`), reset when prompt sync is turned on.
+pub(crate) const ACTIVITY_CURSOR_KEY: &str = activity::CURSOR_KEY;
 
 impl Sync {
     pub fn manage(app: &AppHandle) {
@@ -277,6 +281,34 @@ fn cycle(app: &AppHandle, sync: &Sync, last_sync: Option<i64>) -> firebase::Resu
     };
     // Every round, so the app always shows the current partial/held lists.
     let _ = app.emit(FILES_EVENT, &outcome);
+
+    // The work-tree logs, in the same way: their error is reported, the
+    // memos, documents and library above are synced either way.
+    if let Some(log) = app.try_state::<crate::activity::Activity>() {
+        let round = log
+            .store()
+            .map_err(Error::Other)
+            .and_then(|log| activity::exchange(log, &client, &session));
+        match round {
+            Ok(repos) => {
+                for repo in repos {
+                    let _ = app.emit(crate::activity::ACTIVITY_EVENT, json!({ "repo": repo }));
+                }
+            }
+            Err(e) => {
+                return Ok(Status {
+                    state: State::Error,
+                    uid,
+                    last_sync: Some(now_ms()),
+                    message: Some(crate::tr!(
+                        "메모·문서는 동기화했지만 작업 트리 기록은 못 했어요: {}",
+                        "Notes and documents synced, but the work tree logs didn't: {}",
+                        String::from(e)
+                    )),
+                });
+            }
+        }
+    }
 
     Ok(Status {
         state: State::Idle,
