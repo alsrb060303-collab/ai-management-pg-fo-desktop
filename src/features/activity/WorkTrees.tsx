@@ -20,8 +20,19 @@ export function WorkTrees({ compact = false }: { compact?: boolean }) {
   const project = useProjectStore((s) => s.current);
   const choose = useProjectStore((s) => s.choose);
   const signedIn = useGitHubStore((s) => !!s.status?.account);
-  const { view, setView, load, refresh, reload, git, prompts, loading, refreshing, error } =
-    useActivityStore();
+  const {
+    view,
+    setView,
+    load,
+    refresh,
+    reload,
+    git,
+    prompts,
+    loading,
+    refreshing,
+    error,
+    warning,
+  } = useActivityStore();
 
   useEffect(() => {
     listenActivityChanges();
@@ -95,6 +106,11 @@ export function WorkTrees({ compact = false }: { compact?: boolean }) {
           </span>
         )}
       </div>
+      {warning && !error && (
+        <p className="selectable rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-warning">
+          {t("activity.warning", { warning })}
+        </p>
+      )}
       {error && (
         <div className="flex items-start gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
           <p className="selectable min-w-0 flex-1 break-words whitespace-pre-wrap">

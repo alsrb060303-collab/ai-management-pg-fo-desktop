@@ -113,6 +113,8 @@ interface ActivityState {
   refreshing: boolean;
   loadingMore: LogKind | null;
   error: string | null;
+  /** A soft problem from the last refresh (e.g. GitHub CI runs couldn't be read). */
+  warning: string | null;
   view: TreeView;
   /** A commit (sha or prefix) the GitHub tree should scroll to and highlight. */
   focusSha: string | null;
@@ -164,6 +166,7 @@ export const useActivityStore = create<ActivityState>((set, get) => {
     refreshing: false,
     loadingMore: null,
     error: null,
+    warning: null,
     view: loadView(),
     focusSha: null,
     settings: null,
@@ -242,7 +245,12 @@ export const useActivityStore = create<ActivityState>((set, get) => {
       const work = (async () => {
         set({ refreshing: true });
         try {
-          await invoke("activity_refresh", { project, github: wantGithub });
+          const res = await invoke<{ warning?: string | null }>("activity_refresh", {
+            project,
+            github: wantGithub,
+          });
+          // Only a GitHub refresh can report or clear a GitHub warning.
+          if (wantGithub && get().project === project) set({ warning: res?.warning ?? null });
         } catch (e) {
           // Keep showing what is stored; report it when nothing is.
           if (get().project === project && !get().git) set({ error: String(e) });
