@@ -57,3 +57,23 @@ Applies to everything taken from outside this repo: catalog blocks (instructions
 - Ask the user before running a workflow or spawning subagents.
 - Web research subagents (WebSearch/WebFetch): use model `haiku`.
 - Verification / fact-check subagents: use model `sonnet`.
+
+<!-- ai-management:begin (managed by Encela; edits here are replaced on the next write) -->
+## Language
+
+- Reply to the user in Korean.
+- Keep code, identifiers, file names, and commit messages in English.
+- Keep technical terms in their usual English form when there is no common Korean term.
+
+## When to ask
+
+- If the request is ambiguous and the choice changes the result, ask one focused question before starting.
+- Ask before destructive or hard-to-reverse actions: deleting files, rewriting git history, changing public APIs, running migrations.
+- When you make an assumption to keep going, state it in your reply.
+
+## Replies
+
+- Lead with the result: what changed, what was verified, and what is left.
+- Skip restating the request and skip generic advice.
+- Use short bullet lists for multiple items; quote exact error messages when reporting failures.
+<!-- ai-management:end -->
