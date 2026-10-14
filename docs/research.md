@@ -393,3 +393,23 @@ AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는�
 
 - 공통: `AGENTS.md`와 `.agents/skills/<이름>/SKILL.md`는 Codex·Copilot·Antigravity가 함께 읽는다. 앱이 Codex용 skill을 `.agents/skills`에 넣으면 다른 도구에서도 보인다.
 - Gemini CLI는 2026-06에 Antigravity CLI로 대체됐다.
+
+## 15. 세션 기록 파일 (작업 트리용, 2026-10-14: Claude Code는 실제 파일 확인, Codex는 sonnet이 소스로 검증)
+
+둘 다 **공개 규격이 아니다**. 버전 필드가 없고 필드가 자주 늘어나므로 모르는 줄·필드·종류는 건너뛴다. 읽기만 하고 로그인 정보 파일은 열지 않는다.
+
+**Claude Code** (claude 2.1.x 실제 파일)
+- 위치: `~/.claude/projects/<작업 폴더 경로의 / 등을 -로 바꾼 이름>/<세션 id>.jsonl` (`CLAUDE_CONFIG_DIR`가 있으면 그 아래). 같은 폴더에 세션 id 이름의 하위 폴더(subagent 기록 등)도 있다.
+- 줄마다 JSON 하나, `type`: `user`, `assistant`, `system`, `attachment`, `last-prompt`, `queue-operation`, `mode`, `cost-state` 등.
+- 공통 필드: `uuid`, `parentUuid`, `sessionId`, `timestamp`(ISO), `cwd`, `gitBranch`, `isSidechain`(subagent면 true), `isMeta`.
+- **사람이 보낸 프롬프트**: `type:"user"`, `isMeta`·`isSidechain`이 아니고, `message.content`가 문자열이며, `origin.kind == "human"`(있을 때. 없으면 `<task-notification>`·`<command-` 등으로 시작하는 자동 메시지를 제외). `promptId`가 있다.
+- 도구 사용: `type:"assistant"`의 `message.content[]` 중 `type:"tool_use"` — `Edit`/`Write`/`MultiEdit`/`NotebookEdit`의 `input.file_path`(절대 경로), `Bash`의 `input.command`(`git commit`, `git push` 감지). 커밋 sha는 그 tool_use에 대한 결과(`type:"user"`, `toolUseResult`/`message.content[].type:"tool_result"`)의 출력에서 `[branch abc1234]` 형식으로 얻는다.
+
+**Codex** (`codex-rs/` HEAD 2026-10-14, 소스 기준. 예시는 serde 정의로 만든 것)
+- 위치: `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<로컬시각>-<thread id>.jsonl`, 보관된 것은 `archived_sessions/`. **오래된 파일은 `.jsonl.zst`(zstd)로 압축될 수 있다.** `codex exec --ephemeral`은 기록을 남기지 않는다.
+- 줄: `{"timestamp", "type", "payload"}`(새 파일은 `ordinal`도). `type`: `session_meta`, `turn_context`, `response_item`, `event_msg`, `compacted` 등.
+- `session_meta.payload`: `id`, `cwd`, `source`(`cli`·`vscode`·`exec`·`{sub_agent}` 등 — subagent 세션은 건너뜀), `git.branch`·`git.commit_hash`(세션 시작 시점만). 턴마다 `turn_context.payload.cwd`.
+- **사람이 보낸 프롬프트**: 가장 확실한 신호는 `event_msg`의 `user_message`(`payload.message`). paginated 기록 방식에서는 `event_msg`의 `item_completed`(TurnItem `user_message`)로 바뀐다 — 둘 다 지원. `response_item`의 `role:"user"` 메시지는 `<environment_context>`, `<user_instructions>`(AGENTS.md) 등 주입된 내용이 섞여 있어 그대로 쓰지 않는다.
+- 파일 수정: `response_item`의 `custom_tool_call`(`name:"apply_patch"`, `input`=패치 글) 또는 `function_call`. 경로는 `^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$`. 명령: `function_call` `exec_command`의 `arguments`(JSON 글)의 `cmd`, 또는 `local_shell_call.action.command`.
+- `history.jsonl`(`{session_id, ts, text}`)은 프롬프트 기록이지만 저장소 정보가 없어 쓰지 않는다.
+- 인증 토큰은 구조에 없지만 명령 출력·파일 내용이 들어 있으니 민감 자료로 다룬다.
