@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { onLocaleApplied } from "../i18n";
 import { type Pull, type RepoView, useGitHubStore } from "./github";
+import { getPref, setPref } from "./prefs";
 import { isRestoringProject, useProjectStore } from "./project";
 
 // Mirrors src-tauri/src/github (api.rs).
@@ -126,7 +127,7 @@ const SAVED_KEY = "work.remoteRepo";
 
 function loadSaved(): { slug: string; branch: string | null } | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(SAVED_KEY) ?? "null");
+    const saved = JSON.parse(getPref(SAVED_KEY) ?? "null");
     return typeof saved?.slug === "string"
       ? { slug: saved.slug, branch: typeof saved.branch === "string" ? saved.branch : null }
       : null;
@@ -136,12 +137,7 @@ function loadSaved(): { slug: string; branch: string | null } | null {
 }
 
 function save(slug: string | null, branch: string | null = null) {
-  try {
-    if (slug) localStorage.setItem(SAVED_KEY, JSON.stringify({ slug, branch }));
-    else localStorage.removeItem(SAVED_KEY);
-  } catch {
-    // Only a convenience: the repository has to be picked again.
-  }
+  setPref(SAVED_KEY, slug ? JSON.stringify({ slug, branch }) : null);
 }
 
 export const useRemoteStore = create<RemoteState>((set, get) => {

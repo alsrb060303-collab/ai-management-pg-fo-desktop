@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import type { ToolId } from "../tools";
+import { getPref, setPref } from "./prefs";
 
 // Mirrors src-tauri/src/activity/mod.rs.
 export type GitEventKind =
@@ -96,7 +97,7 @@ function oldest(events: { at: number; id: string }[]) {
 
 function loadView(): TreeView {
   try {
-    return localStorage.getItem(VIEW_KEY) === "prompts" ? "prompts" : "git";
+    return getPref(VIEW_KEY) === "prompts" ? "prompts" : "git";
   } catch {
     return "git";
   }
@@ -173,11 +174,7 @@ export const useActivityStore = create<ActivityState>((set, get) => {
     settingsError: null,
 
     setView: (view) => {
-      try {
-        localStorage.setItem(VIEW_KEY, view);
-      } catch {
-        // Only a convenience.
-      }
+      setPref(VIEW_KEY, view);
       set({ view });
     },
     showCommit: (sha) => {

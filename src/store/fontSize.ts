@@ -1,20 +1,16 @@
 import { create } from "zustand";
+import { getPref, onPrefChanged, setPref } from "./prefs";
 
 /** Text size for the whole app; `md` is the default size. */
 export type FontSize = "sm" | "md" | "lg" | "xl";
 export const FONT_SIZES: FontSize[] = ["sm", "md", "lg", "xl"];
 
-// Shared by both windows through localStorage, like the theme.
+// Kept in prefs, like the theme.
 const KEY = "fontSize";
 
 function read(): FontSize {
-  try {
-    const value = localStorage.getItem(KEY);
-    if (FONT_SIZES.includes(value as FontSize)) return value as FontSize;
-  } catch {
-    // Storage can be unavailable; use the default.
-  }
-  return "md";
+  const value = getPref(KEY);
+  return FONT_SIZES.includes(value as FontSize) ? (value as FontSize) : "md";
 }
 
 /** Sets `data-font-size` on <html>; index.css scales `--fs` from it. */
@@ -31,21 +27,16 @@ interface FontSizeState {
 export const useFontSizeStore = create<FontSizeState>((set) => ({
   size: read(),
   setSize: (size) => {
-    try {
-      localStorage.setItem(KEY, size);
-    } catch {
-      // Still applies for this session.
-    }
+    setPref(KEY, size);
     apply(size);
     set({ size });
   },
 }));
 
-/** Applies the saved size before the first render and follows the other window. */
+/** Applies the saved size before the first render and follows synced changes. */
 export function initFontSize() {
   apply(useFontSizeStore.getState().size);
-  window.addEventListener("storage", (event) => {
-    if (event.key !== KEY) return;
+  onPrefChanged(KEY, () => {
     const size = read();
     apply(size);
     useFontSizeStore.setState({ size });

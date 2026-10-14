@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from "react";
 import { timeAgo, useT } from "../../i18n";
 import { useGitHubStore } from "../../store/github";
+import { getPref, setPref } from "../../store/prefs";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, type RepoSummary, useRemoteStore } from "../../store/remote";
 import {
@@ -276,7 +277,7 @@ const REMOTE_TAB_KEY = "work.remote.tab";
 
 function loadRemoteTab(): RemoteTab {
   try {
-    const tab = localStorage.getItem(REMOTE_TAB_KEY);
+    const tab = getPref(REMOTE_TAB_KEY);
     return tab === "history" || tab === "branches" || tab === "github" ? tab : "files";
   } catch {
     return "files";
@@ -300,11 +301,7 @@ function RemoteBody({
   const [tab, setTabState] = useState<RemoteTab>(loadRemoteTab);
   const [creating, setCreating] = useState(false);
   const setTab = (next: RemoteTab) => {
-    try {
-      localStorage.setItem(REMOTE_TAB_KEY, next);
-    } catch {
-      // Only a convenience.
-    }
+    setPref(REMOTE_TAB_KEY, next);
     setTabState(next);
   };
   const { view, branch, base } = data;

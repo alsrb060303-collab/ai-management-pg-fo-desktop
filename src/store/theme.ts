@@ -1,22 +1,19 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { create } from "zustand";
+import { getPref, onPrefChanged, setPref } from "./prefs";
 
 export type ThemePref = "system" | "light" | "dark";
 type Resolved = "light" | "dark";
 
-// Both windows share this origin's localStorage, so a change in one reaches the
-// other through the `storage` event.
+// Kept in prefs: both windows (and synced devices) follow a change through
+// `prefs-changed`.
 const KEY = "theme";
 const dark = window.matchMedia("(prefers-color-scheme: dark)");
 
 function readPref(): ThemePref {
-  try {
-    const value = localStorage.getItem(KEY);
-    if (value === "light" || value === "dark" || value === "system") return value;
-  } catch {
-    // Storage can be unavailable; fall back to the OS setting.
-  }
+  const value = getPref(KEY);
+  if (value === "light" || value === "dark" || value === "system") return value;
   return "system";
 }
 
@@ -49,11 +46,7 @@ export const useThemeStore = create<ThemeState>((set) => {
     pref,
     resolved: resolve(pref),
     setPref: (next) => {
-      try {
-        localStorage.setItem(KEY, next);
-      } catch {
-        // Still applies for this session.
-      }
+      setPref(KEY, next);
       set({ pref: next, resolved: apply(next) });
     },
   };
@@ -66,8 +59,7 @@ export function initTheme() {
     const { pref } = useThemeStore.getState();
     if (pref === "system") useThemeStore.setState({ resolved: apply(pref) });
   });
-  window.addEventListener("storage", (event) => {
-    if (event.key !== KEY) return;
+  onPrefChanged(KEY, () => {
     const pref = readPref();
     useThemeStore.setState({ pref, resolved: apply(pref) });
   });

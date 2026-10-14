@@ -7,6 +7,7 @@ import { Button, IconButton, Segmented } from "../../components/ui";
 import { type MessageKey, useT } from "../../i18n";
 import { type ComposerDoc, useComposerTool, useComposerToolReady } from "../../store/composer";
 import { type Pull, useGitHubStore } from "../../store/github";
+import { getPref, setPref } from "../../store/prefs";
 import { useProjectStore } from "../../store/project";
 import { type RemoteView, useRemoteStore } from "../../store/remote";
 import { TOOL_IDS, TOOLS, type ToolId } from "../../tools";
@@ -55,19 +56,11 @@ const MODE_KEY = "composer.write.mode";
 const REPO_KEY = "composer.write.repo";
 
 function remembered(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
+  return getPref(key);
 }
 
 function remember(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Only a convenience.
-  }
+  setPref(key, value);
 }
 
 /** A branch name from the document's name, e.g. `ai-management/my-rules`. */

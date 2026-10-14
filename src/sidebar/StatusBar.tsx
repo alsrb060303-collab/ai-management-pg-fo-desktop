@@ -1,3 +1,4 @@
+import { UpdateIndicator } from "../features/update/UpdateIndicator";
 import { type MessageKey, useT } from "../i18n";
 import { type DockSide, type DockStatus, type TargetApp, useDockStore } from "../store/dock";
 
@@ -52,7 +53,10 @@ export function StatusBar() {
         />
         {describe(status, t)}
       </span>
-      <span>Ctrl+Alt+Space</span>
+      <span className="flex items-center gap-2">
+        <UpdateIndicator variant="bar" />
+        Ctrl+Alt+Space
+      </span>
     </footer>
   );
 }

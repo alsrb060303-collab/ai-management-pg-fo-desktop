@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { getPref, setPref } from "../../store/prefs";
 
 export type WorkTab = "changes" | "history" | "branches" | "worktrees" | "github";
 
@@ -7,7 +8,7 @@ const TABS: WorkTab[] = ["changes", "history", "branches", "worktrees", "github"
 
 function loadTab(): WorkTab {
   try {
-    const tab = localStorage.getItem(TAB_KEY) as WorkTab | null;
+    const tab = getPref(TAB_KEY) as WorkTab | null;
     return tab && TABS.includes(tab) ? tab : "changes";
   } catch {
     return "changes";
@@ -32,11 +33,7 @@ export const useWorkUi = create<WorkUi>((set) => ({
   creatingPull: false,
   commitFocus: 0,
   setTab: (tab) => {
-    try {
-      localStorage.setItem(TAB_KEY, tab);
-    } catch {
-      // Only a convenience.
-    }
+    setPref(TAB_KEY, tab);
     set({ tab });
   },
   setCreatingPull: (creatingPull) => set({ creatingPull }),
