@@ -105,6 +105,24 @@ impl GitHub {
     }
 }
 
+pub(crate) use api::ActivityRemote;
+#[cfg(test)]
+pub(crate) use api::{PullRecord, RunRecord};
+
+/// Pull requests and workflow runs of `owner/repo` for the activity log;
+/// `None` when not signed in to GitHub.
+pub(crate) fn activity(app: &AppHandle, slug: &str) -> Result<Option<ActivityRemote>, String> {
+    let Some(gh) = app.try_state::<GitHub>() else {
+        return Ok(None);
+    };
+    if gh.token().ok().flatten().is_none() {
+        return Ok(None);
+    }
+    gh.call(app, |api| api::activity(api, slug))
+        .map(Some)
+        .map_err(String::from)
+}
+
 /// The signed-in GitHub token, for sync to sign in to Firebase with.
 pub(crate) fn current_token(app: &AppHandle) -> Option<String> {
     app.try_state::<GitHub>()?.token().ok().flatten()

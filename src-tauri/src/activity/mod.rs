@@ -81,7 +81,7 @@ pub enum GitKind {
 #[serde(rename_all = "camelCase")]
 pub struct GitEvent {
     /// Stable across devices: derived from the repo key, kind and ref
-    /// (`git:<kind>:<sha or pr number>[:<extra>]`), so re-collecting is idempotent.
+    /// (`git:<repo>:<kind>:<sha or pr number>[:<extra>]`), so re-collecting is idempotent.
     pub id: String,
     pub repo: String,
     pub kind: GitKind,

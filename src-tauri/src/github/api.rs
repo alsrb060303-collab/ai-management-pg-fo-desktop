@@ -806,6 +806,126 @@ impl From<RawCommitDetailTree> for RawCommitTree {
     }
 }
 
+// ---- activity log (work trees): pull request and workflow run history
+
+/// A pull request with the times the activity log draws.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PullRecord {
+    pub number: u64,
+    pub title: String,
+    /// "open", "closed" or "merged".
+    pub state: String,
+    pub url: String,
+    pub author: String,
+    pub head: String,
+    pub base: String,
+    pub head_sha: String,
+    pub created_at: String,
+    pub merged_at: Option<String>,
+    pub closed_at: Option<String>,
+}
+
+/// A GitHub Actions workflow run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunRecord {
+    pub id: u64,
+    pub name: String,
+    pub branch: Option<String>,
+    pub sha: String,
+    /// "queued", "in_progress" or "completed".
+    pub status: String,
+    /// "success", "failure", "cancelled", ... once completed.
+    pub conclusion: Option<String>,
+    pub url: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ActivityRemote {
+    pub pulls: Vec<PullRecord>,
+    pub runs: Vec<RunRecord>,
+}
+
+#[derive(Deserialize)]
+struct RawActivityPull {
+    number: u64,
+    title: String,
+    state: String,
+    html_url: String,
+    user: Option<RawUser>,
+    head: RawRef,
+    base: RawRef,
+    created_at: String,
+    merged_at: Option<String>,
+    closed_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawRun {
+    id: u64,
+    name: Option<String>,
+    display_title: Option<String>,
+    head_branch: Option<String>,
+    head_sha: String,
+    status: Option<String>,
+    conclusion: Option<String>,
+    html_url: String,
+    updated_at: String,
+}
+
+#[derive(Deserialize)]
+struct RawRuns {
+    workflow_runs: Vec<RawRun>,
+}
+
+/// The repository's most recently updated pull requests (open, closed and
+/// merged) and workflow runs. Runs are best effort: Actions may be off.
+pub fn activity(api: &Api, slug: &str) -> Result<ActivityRemote> {
+    let raw: Vec<RawActivityPull> = api.get(&format!(
+        "/repos/{slug}/pulls?state=all&sort=updated&direction=desc&per_page=50"
+    ))?;
+    let pulls = raw
+        .into_iter()
+        .map(|p| PullRecord {
+            number: p.number,
+            title: p.title,
+            state: if p.merged_at.is_some() {
+                "merged".into()
+            } else {
+                p.state
+            },
+            url: p.html_url,
+            author: p.user.map(|u| u.login).unwrap_or_default(),
+            head: p.head.name,
+            base: p.base.name,
+            head_sha: p.head.sha,
+            created_at: p.created_at,
+            merged_at: p.merged_at,
+            closed_at: p.closed_at,
+        })
+        .collect();
+
+    let runs = match api.get_opt::<RawRuns>(&format!("/repos/{slug}/actions/runs?per_page=50")) {
+        Ok(runs) => runs.map(|r| r.workflow_runs).unwrap_or_default(),
+        Err(super::http::Error::Unauthorized) => return Err(super::http::Error::Unauthorized),
+        Err(_) => Vec::new(),
+    };
+    let runs = runs
+        .into_iter()
+        .map(|r| RunRecord {
+            id: r.id,
+            name: r.name.or(r.display_title).unwrap_or_default(),
+            branch: r.head_branch,
+            sha: r.head_sha,
+            status: r.status.unwrap_or_default(),
+            conclusion: r.conclusion,
+            url: r.html_url,
+            updated_at: r.updated_at,
+        })
+        .collect();
+    Ok(ActivityRemote { pulls, runs })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
