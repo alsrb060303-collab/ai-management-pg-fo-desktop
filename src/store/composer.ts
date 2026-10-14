@@ -16,7 +16,8 @@ import { TOOLS, type ToolId } from "../tools";
 import type { Mode } from "./library";
 import { getPref, setPref } from "./prefs";
 import { useProjectStore } from "./project";
-import sample from "./samples/webservice.json";
+import rustSample from "./samples/rust-app.json";
+import webSample from "./samples/web-service.json";
 import { useSyncStore } from "./sync";
 
 // Mirrors src-tauri/src/composer.
@@ -437,21 +438,18 @@ function blankDoc(): ComposerDoc {
   };
 }
 
-/** Set once the sample document was offered, so deleting it is final. */
-const SAMPLE_SEEDED = "composer.sampleSeeded";
+/** Set once the sample documents were offered, so deleting them is final. */
+const SAMPLES_SEEDED = "composer.sampleSeeded";
 
 /**
- * The example document a first run starts with: `samples/webservice.json`, a
- * document exported from the app. Its fixed id keeps devices from each adding one.
+ * Example documents a first run starts with, exported from the app; the first
+ * opens. Fixed ids keep devices from each adding a copy.
  */
-function sampleDoc(): ComposerDoc {
-  return migrate({
-    ...(sample as unknown as ComposerDoc),
-    version: 1,
-    id: "sample-webservice",
-    name: "Webservice - Sample",
-    updatedAt: Date.now(),
-  });
+function sampleDocs(): ComposerDoc[] {
+  const now = Date.now();
+  return [webSample, rustSample].map((sample, i) =>
+    migrate({ ...(sample as unknown as ComposerDoc), version: 1, updatedAt: now - i }),
+  );
 }
 
 /**
@@ -625,12 +623,14 @@ export const useComposerStore = create<ComposerState>((set, get) => {
       await Promise.all([get().loadCatalog(), get().loadDocs()]);
       if (get().doc) return;
       const latest = get().docs[0];
-      const seeded = getPref(SAMPLE_SEEDED) !== null;
-      if (isTauri() && !seeded) setPref(SAMPLE_SEEDED, "1");
+      const seeded = getPref(SAMPLES_SEEDED) !== null;
+      if (isTauri() && !seeded) setPref(SAMPLES_SEEDED, "1");
       if (latest) await get().openDoc(latest.id);
       else if (isTauri() && !seeded) {
-        open(sampleDoc());
-        scheduleSave();
+        const [first, ...rest] = sampleDocs();
+        await Promise.all(rest.map(save));
+        open(first);
+        await save(first);
       } else get().newDoc();
     },
 

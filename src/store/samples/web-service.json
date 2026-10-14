@@ -1,0 +1,509 @@
+{
+  "version": 1,
+  "id": "sample-web-service",
+  "name": "Web service - HIGH - Sample",
+  "updatedAt": 0,
+  "nodes": [
+    {
+      "id": "omv3r6hvaj9v4h",
+      "type": "output",
+      "position": {
+        "x": 1117.714621608748,
+        "y": 178.49919947004264
+      },
+      "data": {
+        "target": "instructions",
+        "scope": "team",
+        "order": ["bmv3r7zohj09p6", "bmv568e70mjkm1", "bmv569cd8b39sb", "bmv8gpwd26685x"]
+      }
+    },
+    {
+      "id": "bmv3r7zohj09p6",
+      "type": "block",
+      "position": {
+        "x": 824.7656700258026,
+        "y": 43.55988809468809
+      },
+      "data": {
+        "blockId": "builtin:reply-in-korean"
+      }
+    },
+    {
+      "id": "bmv568e70mjkm1",
+      "type": "block",
+      "position": {
+        "x": 825.4019351423894,
+        "y": -77.83329814849196
+      },
+      "data": {
+        "blockId": "builtin:ask-when-unclear"
+      }
+    },
+    {
+      "id": "bmv569cd8b39sb",
+      "type": "block",
+      "position": {
+        "x": 823.5647059264178,
+        "y": 174.36359772911274
+      },
+      "data": {
+        "blockId": "builtin:security-basics"
+      }
+    },
+    {
+      "id": "omv569wtxff5ha",
+      "type": "output",
+      "position": {
+        "x": 1118.318740089753,
+        "y": -16.171036039095345
+      },
+      "data": {
+        "target": "rules",
+        "scope": "team",
+        "order": ["bmv8ioy70kbia6", "bmv8ipagvczs3l", "bmv8iq3erazwuf"]
+      }
+    },
+    {
+      "id": "omv56hw37atl7b",
+      "type": "output",
+      "position": {
+        "x": 1755.2436748385323,
+        "y": -100.78154074574744
+      },
+      "data": {
+        "target": "skills",
+        "scope": "team",
+        "order": [
+          "bmv56kco0ru6g4",
+          "bmv56m3lerf94w",
+          "bmv56nr0bovrub",
+          "bmv56k1p4r5vmh",
+          "bmv56ox0gmamdk",
+          "bmv56rge7it3ap"
+        ]
+      }
+    },
+    {
+      "id": "bmv56k1p4r5vmh",
+      "type": "block",
+      "position": {
+        "x": 1461.6923311480664,
+        "y": -12.493572621275575
+      },
+      "data": {
+        "blockId": "builtin:review-checklist"
+      }
+    },
+    {
+      "id": "bmv56kco0ru6g4",
+      "type": "block",
+      "position": {
+        "x": 1471.6638066162643,
+        "y": 662.404841700285
+      },
+      "data": {
+        "blockId": "external:anthropics_skills/frontend-design"
+      }
+    },
+    {
+      "id": "bmv56m3lerf94w",
+      "type": "block",
+      "position": {
+        "x": 1467.2191752023148,
+        "y": 216.08964047375883
+      },
+      "data": {
+        "blockId": "external:mattpocock_skills/handoff"
+      }
+    },
+    {
+      "id": "bmv56nr0bovrub",
+      "type": "block",
+      "position": {
+        "x": 1468.3548997686414,
+        "y": 328.30573120436736
+      },
+      "data": {
+        "blockId": "external:mattpocock_skills/writing-for-agents"
+      }
+    },
+    {
+      "id": "bmv56ox0gmamdk",
+      "type": "block",
+      "position": {
+        "x": 1466.3212851080948,
+        "y": 455.6949481341187
+      },
+      "data": {
+        "blockId": "external:obra_superpowers/finishing-a-development-branch"
+      }
+    },
+    {
+      "id": "bmv56rge7it3ap",
+      "type": "block",
+      "position": {
+        "x": 1465.134237865914,
+        "y": 102.44082939370809
+      },
+      "data": {
+        "blockId": "external:obra_superpowers/writing-plans"
+      }
+    },
+    {
+      "id": "omv56ur5mz7ejb",
+      "type": "output",
+      "position": {
+        "x": 1113.6673082110922,
+        "y": 683.9956625797087
+      },
+      "data": {
+        "target": "agents",
+        "scope": "team",
+        "order": ["bmv56y3eybeauw", "bmv8h2zqcy2y3o", "bmv8is51ygo4t4", "bmv8ismgnt3ijb"]
+      }
+    },
+    {
+      "id": "omv56weupjed5z",
+      "type": "output",
+      "position": {
+        "x": 1115.3851805089748,
+        "y": 429.1866296581807
+      },
+      "data": {
+        "target": "hooks",
+        "scope": "team",
+        "order": ["bmv56wyzs6z01t"]
+      }
+    },
+    {
+      "id": "bmv56wyzs6z01t",
+      "type": "block",
+      "position": {
+        "x": 822.4639102579509,
+        "y": 395.866364041929
+      },
+      "data": {
+        "blockId": "builtin:hook-session-git-status"
+      }
+    },
+    {
+      "id": "bmv56y3eybeauw",
+      "type": "block",
+      "position": {
+        "x": 820.8066568820093,
+        "y": 684.7935932965645
+      },
+      "data": {
+        "blockId": "external:voltagent_subagents/documentation-engineer"
+      }
+    },
+    {
+      "id": "bmv8gpwd26685x",
+      "type": "block",
+      "position": {
+        "x": 828.8886506827306,
+        "y": -199.9345000260734
+      },
+      "data": {
+        "blockId": "builtin:concise-replies"
+      }
+    },
+    {
+      "id": "bmv8h2zqcy2y3o",
+      "type": "block",
+      "position": {
+        "x": 1471.3842933762935,
+        "y": 751.5512390354814
+      },
+      "data": {
+        "blockId": "external:wshobson_agents/frontend-developer"
+      }
+    },
+    {
+      "id": "pmv8hoelinkfzo",
+      "type": "plan",
+      "position": {
+        "x": 17.90619873185969,
+        "y": 112.25994630357329
+      },
+      "data": {
+        "title": "Your key GOAL",
+        "status": "n",
+        "items": [
+          {
+            "text": "Your sub GOAL",
+            "status": "n",
+            "kind": "sub",
+            "id": "imv8hoh62tc82t"
+          },
+          {
+            "text": "Project direction, Subagent, Skill, and check.",
+            "action": "text",
+            "kind": "step",
+            "id": "imv8hok5jh7zqu"
+          },
+          {
+            "text": "Specific objectives.",
+            "status": "n",
+            "kind": "detail",
+            "id": "imv8hoiuomrhg1"
+          },
+          {
+            "text": "Specific objectives.",
+            "status": "n",
+            "kind": "detail",
+            "id": "imv8hu1grgjvww"
+          },
+          {
+            "text": "Another sub GOAL",
+            "status": "n",
+            "kind": "sub",
+            "id": "imv8hty6zt83a2"
+          }
+        ],
+        "note": "write something..."
+      }
+    },
+    {
+      "id": "omv8huy214rzka",
+      "type": "output",
+      "position": {
+        "x": 444.6896267418489,
+        "y": 112.05258697369774
+      },
+      "data": {
+        "target": "plans",
+        "scope": "team",
+        "order": ["pmv8hoelinkfzo"]
+      }
+    },
+    {
+      "id": "bmv8ioy70kbia6",
+      "type": "block",
+      "position": {
+        "x": 1136.8311461196306,
+        "y": -317.4956898734408
+      },
+      "data": {
+        "blockId": "builtin:react"
+      }
+    },
+    {
+      "id": "bmv8ipagvczs3l",
+      "type": "block",
+      "position": {
+        "x": 1135.2738528992863,
+        "y": -208.77703217810367
+      },
+      "data": {
+        "blockId": "builtin:typescript"
+      }
+    },
+    {
+      "id": "bmv8iq3erazwuf",
+      "type": "block",
+      "position": {
+        "x": 1137.0352501826924,
+        "y": -121.58786664950634
+      },
+      "data": {
+        "blockId": "external:patrickjs_cursorrules/nextjs-app-router"
+      }
+    },
+    {
+      "id": "bmv8is51ygo4t4",
+      "type": "block",
+      "position": {
+        "x": 821.1391159526563,
+        "y": 825.2201304584223
+      },
+      "data": {
+        "blockId": "external:wshobson_agents/performance-engineer"
+      }
+    },
+    {
+      "id": "bmv8ismgnt3ijb",
+      "type": "block",
+      "position": {
+        "x": 821.6452335351239,
+        "y": 949.5315202747828
+      },
+      "data": {
+        "blockId": "builtin:debugger"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "bmv3r7zohj09p6",
+      "target": "omv3r6hvaj9v4h",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv3r7zohj09p6-omv3r6hvaj9v4h"
+    },
+    {
+      "source": "bmv568e70mjkm1",
+      "target": "omv3r6hvaj9v4h",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv568e70mjkm1-omv3r6hvaj9v4h"
+    },
+    {
+      "source": "bmv569cd8b39sb",
+      "target": "omv3r6hvaj9v4h",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv569cd8b39sb-omv3r6hvaj9v4h"
+    },
+    {
+      "source": "bmv56kco0ru6g4",
+      "target": "omv56hw37atl7b",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56kco0ru6g4-omv56hw37atl7b"
+    },
+    {
+      "source": "bmv56m3lerf94w",
+      "target": "omv56hw37atl7b",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56m3lerf94w-omv56hw37atl7b"
+    },
+    {
+      "source": "bmv56nr0bovrub",
+      "target": "omv56hw37atl7b",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56nr0bovrub-omv56hw37atl7b"
+    },
+    {
+      "source": "bmv56k1p4r5vmh",
+      "target": "omv56hw37atl7b",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56k1p4r5vmh-omv56hw37atl7b"
+    },
+    {
+      "source": "bmv56ox0gmamdk",
+      "target": "omv56hw37atl7b",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56ox0gmamdk-omv56hw37atl7b"
+    },
+    {
+      "source": "bmv56rge7it3ap",
+      "target": "omv56hw37atl7b",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56rge7it3ap-omv56hw37atl7b"
+    },
+    {
+      "source": "bmv56wyzs6z01t",
+      "target": "omv56weupjed5z",
+      "style": {
+        "stroke": "var(--c-kind-hook)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56wyzs6z01t-omv56weupjed5z"
+    },
+    {
+      "source": "bmv56y3eybeauw",
+      "target": "omv56ur5mz7ejb",
+      "style": {
+        "stroke": "var(--c-kind-agent)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv56y3eybeauw-omv56ur5mz7ejb"
+    },
+    {
+      "source": "bmv8gpwd26685x",
+      "target": "omv3r6hvaj9v4h",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8gpwd26685x-omv3r6hvaj9v4h"
+    },
+    {
+      "source": "bmv8h2zqcy2y3o",
+      "target": "omv56ur5mz7ejb",
+      "style": {
+        "stroke": "var(--c-kind-agent)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8h2zqcy2y3o-omv56ur5mz7ejb"
+    },
+    {
+      "source": "pmv8hoelinkfzo",
+      "target": "omv8huy214rzka",
+      "style": {
+        "stroke": "var(--c-kind-plan)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__pmv8hoelinkfzo-omv8huy214rzka"
+    },
+    {
+      "source": "bmv8ioy70kbia6",
+      "target": "omv569wtxff5ha",
+      "style": {
+        "stroke": "var(--c-kind-rule)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8ioy70kbia6-omv569wtxff5ha"
+    },
+    {
+      "source": "bmv8ipagvczs3l",
+      "target": "omv569wtxff5ha",
+      "style": {
+        "stroke": "var(--c-kind-rule)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8ipagvczs3l-omv569wtxff5ha"
+    },
+    {
+      "source": "bmv8is51ygo4t4",
+      "target": "omv56ur5mz7ejb",
+      "style": {
+        "stroke": "var(--c-kind-agent)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8is51ygo4t4-omv56ur5mz7ejb"
+    },
+    {
+      "source": "bmv8ismgnt3ijb",
+      "target": "omv56ur5mz7ejb",
+      "style": {
+        "stroke": "var(--c-kind-agent)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8ismgnt3ijb-omv56ur5mz7ejb"
+    },
+    {
+      "source": "bmv8iq3erazwuf",
+      "target": "omv569wtxff5ha",
+      "style": {
+        "stroke": "var(--c-kind-rule)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8iq3erazwuf-omv569wtxff5ha"
+    }
+  ]
+}

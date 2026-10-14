@@ -1,0 +1,262 @@
+{
+  "version": 1,
+  "id": "sample-rust-app",
+  "name": "Rust App - MEDIUM - Sample",
+  "updatedAt": 0,
+  "nodes": [
+    {
+      "id": "omv8hzswf79od7",
+      "type": "output",
+      "position": {
+        "x": 799.4545843050006,
+        "y": -171.34577077479264
+      },
+      "data": {
+        "target": "instructions",
+        "scope": "team",
+        "order": ["bmv8i85ooyvam5", "bmv8i8au1ssjmr", "bmv8i8mjwmptel"]
+      }
+    },
+    {
+      "id": "bmv8i6d1o2ef5t",
+      "type": "block",
+      "position": {
+        "x": 677.7669329272658,
+        "y": 158.437165892447
+      },
+      "data": {
+        "blockId": "builtin:rust"
+      }
+    },
+    {
+      "id": "bmv8i6drx9socb",
+      "type": "block",
+      "position": {
+        "x": 676.0537562125904,
+        "y": 269.01650384641437
+      },
+      "data": {
+        "blockId": "external:wshobson_agents/rust-pro"
+      }
+    },
+    {
+      "id": "bmv8i7gt3o680a",
+      "type": "block",
+      "position": {
+        "x": 934.4999999999995,
+        "y": 369.99999999999966
+      },
+      "data": {
+        "blockId": "external:microsoft_skills/zustand-store-ts"
+      }
+    },
+    {
+      "id": "bmv8i7hf5k7bmp",
+      "type": "block",
+      "position": {
+        "x": 935.6058995835124,
+        "y": 159.29306423985346
+      },
+      "data": {
+        "blockId": "builtin:typescript"
+      }
+    },
+    {
+      "id": "bmv8i7im3i5l4e",
+      "type": "block",
+      "position": {
+        "x": 935.3646861544308,
+        "y": 248.5896962201582
+      },
+      "data": {
+        "blockId": "external:wshobson_agents/typescript-pro"
+      }
+    },
+    {
+      "id": "omv8i7ptu69gfn",
+      "type": "output",
+      "position": {
+        "x": 1174.0643810398806,
+        "y": 287.16895736272437
+      },
+      "data": {
+        "target": "agents",
+        "scope": "team",
+        "order": ["bmv8i6drx9socb", "bmv8i7im3i5l4e"]
+      }
+    },
+    {
+      "id": "omv8i7r5awdy8v",
+      "type": "output",
+      "position": {
+        "x": 1174.1773565395604,
+        "y": -90.723018359312
+      },
+      "data": {
+        "target": "skills",
+        "scope": "team",
+        "order": ["bmv8i7gt3o680a", "bmv8iccjmxrbjc", "bmv8ie40iq1w65"]
+      }
+    },
+    {
+      "id": "omv8i7stg91i4l",
+      "type": "output",
+      "position": {
+        "x": 1174.6474518478476,
+        "y": 125.91178623047114
+      },
+      "data": {
+        "target": "rules",
+        "scope": "team",
+        "order": ["bmv8i6d1o2ef5t", "bmv8i7hf5k7bmp"]
+      }
+    },
+    {
+      "id": "bmv8i85ooyvam5",
+      "type": "block",
+      "position": {
+        "x": 530.7586685197022,
+        "y": -32.12342733624906
+      },
+      "data": {
+        "blockId": "builtin:ask-when-unclear"
+      }
+    },
+    {
+      "id": "bmv8i8au1ssjmr",
+      "type": "block",
+      "position": {
+        "x": 532.0435261817944,
+        "y": -207.83403048120545
+      },
+      "data": {
+        "blockId": "builtin:concise-replies"
+      }
+    },
+    {
+      "id": "bmv8i8mjwmptel",
+      "type": "block",
+      "position": {
+        "x": 531.3921212753603,
+        "y": -120.14756991193414
+      },
+      "data": {
+        "blockId": "builtin:reply-in-korean"
+      }
+    },
+    {
+      "id": "bmv8iccjmxrbjc",
+      "type": "block",
+      "position": {
+        "x": 412.0355135861057,
+        "y": 163.32342961005335
+      },
+      "data": {
+        "blockId": "external:anthropics_skills/frontend-design"
+      }
+    },
+    {
+      "id": "bmv8ie40iq1w65",
+      "type": "block",
+      "position": {
+        "x": 1176.7209284122691,
+        "y": -177.87955873334877
+      },
+      "data": {
+        "blockId": "external:mattpocock_skills/handoff"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "bmv8i85ooyvam5",
+      "target": "omv8hzswf79od7",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i85ooyvam5-omv8hzswf79od7"
+    },
+    {
+      "source": "bmv8i8au1ssjmr",
+      "target": "omv8hzswf79od7",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i8au1ssjmr-omv8hzswf79od7"
+    },
+    {
+      "source": "bmv8i8mjwmptel",
+      "target": "omv8hzswf79od7",
+      "style": {
+        "stroke": "var(--c-kind-instruction)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i8mjwmptel-omv8hzswf79od7"
+    },
+    {
+      "source": "bmv8i6d1o2ef5t",
+      "target": "omv8i7stg91i4l",
+      "style": {
+        "stroke": "var(--c-kind-rule)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i6d1o2ef5t-omv8i7stg91i4l"
+    },
+    {
+      "source": "bmv8i7hf5k7bmp",
+      "target": "omv8i7stg91i4l",
+      "style": {
+        "stroke": "var(--c-kind-rule)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i7hf5k7bmp-omv8i7stg91i4l"
+    },
+    {
+      "source": "bmv8i7gt3o680a",
+      "target": "omv8i7r5awdy8v",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i7gt3o680a-omv8i7r5awdy8v"
+    },
+    {
+      "source": "bmv8iccjmxrbjc",
+      "target": "omv8i7r5awdy8v",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8iccjmxrbjc-omv8i7r5awdy8v"
+    },
+    {
+      "source": "bmv8ie40iq1w65",
+      "target": "omv8i7r5awdy8v",
+      "style": {
+        "stroke": "var(--c-kind-skill)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8ie40iq1w65-omv8i7r5awdy8v"
+    },
+    {
+      "source": "bmv8i6drx9socb",
+      "target": "omv8i7ptu69gfn",
+      "style": {
+        "stroke": "var(--c-kind-agent)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i6drx9socb-omv8i7ptu69gfn"
+    },
+    {
+      "source": "bmv8i7im3i5l4e",
+      "target": "omv8i7ptu69gfn",
+      "style": {
+        "stroke": "var(--c-kind-agent)",
+        "strokeWidth": 2
+      },
+      "id": "xy-edge__bmv8i7im3i5l4e-omv8i7ptu69gfn"
+    }
+  ]
+}
