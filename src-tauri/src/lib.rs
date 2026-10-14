@@ -9,6 +9,7 @@ mod i18n;
 mod library;
 mod mcp;
 mod memo;
+mod prefs;
 mod project_docs;
 mod shell;
 mod sync;
@@ -110,6 +111,8 @@ pub fn run() {
             claude_mod::claude_mod_install,
             claude_mod::claude_mod_install_recommended,
             claude_mod::claude_mod_uninstall,
+            prefs::prefs_all,
+            prefs::prefs_set,
             sync::sync_status,
             sync::sync_now,
             sync::sync_set_enabled,
@@ -153,6 +156,7 @@ pub fn run() {
             composer::Composer::manage(handle)?;
             memo::Memo::manage(handle)?;
             activity::Activity::manage(handle)?;
+            prefs::Prefs::manage(handle)?;
             github::GitHub::manage(handle);
             sync::Sync::manage(handle);
             bridge::manage(handle);

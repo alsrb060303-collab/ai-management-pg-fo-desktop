@@ -11,6 +11,7 @@ pub(crate) mod activity;
 mod auth;
 mod files;
 mod firebase;
+pub(crate) mod prefs;
 
 use std::sync::atomic::AtomicU64;
 use std::sync::{Condvar, Mutex};
@@ -303,6 +304,33 @@ fn cycle(app: &AppHandle, sync: &Sync, last_sync: Option<i64>) -> firebase::Resu
                     message: Some(crate::tr!(
                         "메모·문서는 동기화했지만 작업 트리 기록은 못 했어요: {}",
                         "Notes and documents synced, but the work tree logs didn't: {}",
+                        String::from(e)
+                    )),
+                });
+            }
+        }
+    }
+
+    // Portable preferences last, the same way.
+    if let Some(prefs) = app.try_state::<crate::prefs::Prefs>() {
+        let round = prefs
+            .store()
+            .map_err(Error::Other)
+            .and_then(|prefs| self::prefs::exchange(prefs, &client, &session));
+        match round {
+            Ok(changes) => {
+                for (key, value) in changes {
+                    crate::prefs::announce(app, &key, value.as_deref());
+                }
+            }
+            Err(e) => {
+                return Ok(Status {
+                    state: State::Error,
+                    uid,
+                    last_sync: Some(now_ms()),
+                    message: Some(crate::tr!(
+                        "나머지는 동기화했지만 설정은 못 했어요: {}",
+                        "Everything else synced, but preferences didn't: {}",
                         String::from(e)
                     )),
                 });
