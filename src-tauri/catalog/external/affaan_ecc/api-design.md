@@ -17,7 +17,7 @@ source_repo: affaan-m/everything-claude-code
 source_commit: b92f181b3b748d1abbc2afd94af6aa7d8c8fca29
 source_path: skills/api-design/SKILL.md
 license_path: LICENSE
-tokens: 4
+tokens: 1
 performance: 1
 quality: 1
 ---

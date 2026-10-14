@@ -11,7 +11,7 @@ category_en: Review
 name: code-reviewer
 description: Reviews recent code changes for bugs, security issues, and missing tests. Use after making non-trivial changes.
 tools: Read, Grep, Glob, Bash
-tokens: 4
+tokens: 1
 performance: 1
 quality: 1
 ---

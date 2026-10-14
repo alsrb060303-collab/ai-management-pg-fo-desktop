@@ -18,7 +18,7 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/engineering/improve-codebase-architecture/SKILL.md
 license_path: LICENSE
-tokens: 8
+tokens: 1
 performance: 1
 quality: 1
 ---

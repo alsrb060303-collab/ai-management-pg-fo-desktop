@@ -17,10 +17,7 @@ const goodWhenUp = (axis: Axis) => axis !== "tokens";
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
-/**
- * One line under a palette block: `토큰 +4 성능 ↑↑ 품질 ·`. Tokens (-15..15)
- * as a number, performance and quality (-2..2) as arrows.
- */
+/** One line under a palette block: `토큰 ↓ 성능 ↑↑ 품질 ·`. */
 export function RatingBadges({ rating }: { rating: Rating }) {
   const t = useT();
   return (
@@ -34,11 +31,7 @@ export function RatingBadges({ rating }: { rating: Rating }) {
             <span
               className={`font-semibold ${v === 0 ? "" : good ? "text-success" : "text-danger"}`}
             >
-              {v === 0
-                ? "·"
-                : axis === "tokens"
-                  ? signed(v)
-                  : (v > 0 ? "↑" : "↓").repeat(Math.abs(v))}
+              {v === 0 ? "·" : (v > 0 ? "↑" : "↓").repeat(Math.abs(v))}
             </span>
           </span>
         );
@@ -75,22 +68,24 @@ function useTotals() {
 export function RatingPanel() {
   const t = useT();
   const { sum, rated, unrated } = useTotals();
-  // Performance and quality share a scale of at least ±6 so a single block
-  // stays short; token use (about 1 point per 1,000 tokens) has its own, ±15.
-  const scale = Math.max(6, Math.abs(sum.performance), Math.abs(sum.quality));
+  // One scale for all three bars: ±15, so it takes many blocks to fill one.
+  const scale = Math.max(
+    15,
+    Math.abs(sum.performance),
+    Math.abs(sum.quality),
+    Math.abs(sum.tokens),
+  );
   const bars: {
     label: MessageKey;
     value: number;
-    scale: number;
     good: boolean;
     hint?: MessageKey;
   }[] = [
-    { label: "composer.rating.performance", value: sum.performance, scale, good: true },
-    { label: "composer.rating.quality", value: sum.quality, scale, good: true },
+    { label: "composer.rating.performance", value: sum.performance, good: true },
+    { label: "composer.rating.quality", value: sum.quality, good: true },
     {
       label: "composer.rating.tokenUse",
       value: sum.tokens,
-      scale: Math.max(15, Math.abs(sum.tokens)),
       good: false,
       hint: "composer.rating.tokenUseHint",
     },
@@ -108,7 +103,7 @@ export function RatingPanel() {
         ) : (
           <div className="space-y-1">
             {bars.map((bar) => {
-              const width = (Math.abs(bar.value) / bar.scale) * 50;
+              const width = (Math.abs(bar.value) / scale) * 50;
               const good = bar.value > 0 === bar.good;
               const label = t(bar.label);
               return (

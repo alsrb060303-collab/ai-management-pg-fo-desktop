@@ -17,7 +17,7 @@ source_repo: mhattingpete/claude-skills-marketplace
 source_commit: b5b34bcf4c920bb72cee1c391b54a33cb5353c12
 source_path: engineering-workflow-plugin/skills/test-fixing/SKILL.md
 license_path: LICENSE
-tokens: 4
+tokens: 1
 performance: 1
 quality: 1
 ---

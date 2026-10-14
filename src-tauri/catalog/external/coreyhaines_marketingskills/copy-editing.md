@@ -17,7 +17,7 @@ source_repo: coreyhaines31/marketingskills
 source_commit: 1efedbc5148b54b2f0f6c6c9fe0be62e151c7fff
 source_path: skills/copy-editing/SKILL.md
 license_path: LICENSE
-tokens: 5
+tokens: 0
 performance: 1
 quality: 1
 ---

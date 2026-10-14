@@ -19,7 +19,7 @@ source_repo: PatrickJS/awesome-cursorrules
 source_commit: b044f956f021b6e8877f16781bcfc466a6a120e9
 source_path: rules/fastapi.mdc
 license_path: LICENSE
-tokens: 1
+tokens: 0
 performance: 0
 quality: 0
 ---

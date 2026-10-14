@@ -17,7 +17,7 @@ source_repo: obra/superpowers
 source_commit: bb92a77741419a4ab5f06e711a283343f1ada0c3
 source_path: skills/test-driven-development/SKILL.md
 license_path: LICENSE
-tokens: 7
+tokens: 1
 performance: 1
 quality: 1
 ---

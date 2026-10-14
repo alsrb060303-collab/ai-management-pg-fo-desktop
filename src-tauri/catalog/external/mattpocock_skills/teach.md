@@ -18,7 +18,7 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/productivity/teach/SKILL.md
 license_path: LICENSE
-tokens: 5
+tokens: 0
 performance: 0
 quality: 0
 ---

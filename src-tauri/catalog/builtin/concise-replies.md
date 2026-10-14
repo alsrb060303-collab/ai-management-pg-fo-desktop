@@ -8,7 +8,7 @@ detail: 인사말·장황한 설명 없이 무엇을 했는지, 무엇이 남았
 detail_en: No preamble or long explanations: just what was done and what's left. Shows the relevant lines instead of pasting whole logs or files. Good when you want to skim replies quickly.
 category: 소통
 category_en: Communication
-tokens: -3
+tokens: -1
 performance: 0
 quality: 0
 ---

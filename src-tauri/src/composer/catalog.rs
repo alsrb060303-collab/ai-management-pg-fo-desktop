@@ -72,10 +72,9 @@ pub struct BlockText {
     pub detail: Option<String>,
 }
 
-/// The app's estimate of what a block changes (`tokens`, `performance` and
-/// `quality` frontmatter). Tokens run from -15 to 15, about one point per
-/// thousand tokens a session saves (below 0) or spends (above 0); performance
-/// and quality from -2 to 2. The composer sums them for the blocks on the canvas.
+/// The app's estimate of what a block changes, from -2 to 2 each (`tokens`,
+/// `performance` and `quality` frontmatter). Tokens: below 0 saves, above 0
+/// costs more. The composer sums them for the blocks on the canvas.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct Rating {
     pub tokens: i8,
@@ -85,16 +84,16 @@ pub struct Rating {
 
 impl Rating {
     fn parse(fm: &BTreeMap<String, String>) -> Option<Self> {
-        let score = |key: &str, max: i8| {
+        let score = |key: &str| {
             fm.get(key)?
                 .parse::<i8>()
                 .ok()
-                .filter(|v| (-max..=max).contains(v))
+                .filter(|v| (-2..=2).contains(v))
         };
         Some(Self {
-            tokens: score("tokens", 15)?,
-            performance: score("performance", 2)?,
-            quality: score("quality", 2)?,
+            tokens: score("tokens")?,
+            performance: score("performance")?,
+            quality: score("quality")?,
         })
     }
 }
@@ -616,28 +615,8 @@ mod tests {
         );
         assert_eq!(
             Rating::parse(&fm(&[
-                ("tokens", "12"),
+                ("tokens", "3"),
                 ("performance", "1"),
-                ("quality", "1")
-            ])),
-            Some(Rating {
-                tokens: 12,
-                performance: 1,
-                quality: 1
-            })
-        );
-        assert_eq!(
-            Rating::parse(&fm(&[
-                ("tokens", "16"),
-                ("performance", "1"),
-                ("quality", "1")
-            ])),
-            None
-        );
-        assert_eq!(
-            Rating::parse(&fm(&[
-                ("tokens", "1"),
-                ("performance", "3"),
                 ("quality", "1")
             ])),
             None
