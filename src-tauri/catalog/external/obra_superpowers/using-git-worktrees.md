@@ -16,7 +16,7 @@ source_repo: obra/superpowers
 source_commit: bb92a77741419a4ab5f06e711a283343f1ada0c3
 source_path: skills/using-git-worktrees/SKILL.md
 license_path: LICENSE
-tokens: 1
+tokens: 2
 performance: 0
 quality: 1
 ---

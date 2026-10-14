@@ -17,7 +17,7 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/productivity/grill-me/SKILL.md
 license_path: LICENSE
-tokens: 0
+tokens: 1
 performance: 0
 quality: 0
 ---

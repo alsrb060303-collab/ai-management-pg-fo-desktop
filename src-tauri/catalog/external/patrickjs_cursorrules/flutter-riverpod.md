@@ -19,7 +19,7 @@ source_repo: PatrickJS/awesome-cursorrules
 source_commit: b044f956f021b6e8877f16781bcfc466a6a120e9
 source_path: rules/flutter-riverpod-cursorrules-prompt-file.mdc
 license_path: LICENSE
-tokens: 1
+tokens: 2
 performance: -1
 quality: 0
 ---

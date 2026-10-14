@@ -17,7 +17,7 @@ source_repo: addyosmani/agent-skills
 source_commit: 1be8e34187e34647bb83adc3a1323b26ae6f6abe
 source_path: skills/api-and-interface-design/SKILL.md
 license_path: LICENSE
-tokens: 1
+tokens: 4
 performance: 1
 quality: 1
 ---

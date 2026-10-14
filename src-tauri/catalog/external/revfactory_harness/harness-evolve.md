@@ -17,7 +17,7 @@ source_repo: revfactory/harness
 source_commit: 92d9f1b29e7af81acebf51a9fcd1832e739a1414
 source_path: skills/evolve/SKILL.md
 license_path: LICENSE
-tokens: 0
+tokens: 3
 performance: 0
 quality: 0
 ---

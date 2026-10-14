@@ -16,7 +16,7 @@ source_repo: wshobson/agents
 source_commit: 46891e7e60da0e52baf1050b7b6391b64e84c6d9
 source_path: plugins/frontend-mobile-development/agents/frontend-developer.md
 license_path: LICENSE
-tokens: 1
+tokens: 5
 performance: 0
 quality: 1
 ---

@@ -18,7 +18,7 @@ source_repo: OneRedOak/claude-code-workflows
 source_commit: 29a34c725313c7621f426f838ed31cf482473fb4
 source_path: design-review/design-review-agent.md
 license_path: LICENSE
-tokens: 1
+tokens: 6
 performance: 0
 quality: 0
 ---

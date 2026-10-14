@@ -17,7 +17,7 @@ source_repo: supabase/agent-skills
 source_commit: c9be0e931b7930f7d02126d04774d904c381e7d7
 source_path: skills/supabase-postgres-best-practices/SKILL.md
 license_path: LICENSE
-tokens: 1
+tokens: 4
 performance: 2
 quality: 2
 ---

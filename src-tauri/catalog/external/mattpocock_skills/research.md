@@ -16,7 +16,7 @@ source_repo: mattpocock/skills
 source_commit: 49dd158d1076134a641b33efb035946536778336
 source_path: skills/engineering/research/SKILL.md
 license_path: LICENSE
-tokens: 1
+tokens: 4
 performance: 1
 quality: 1
 ---

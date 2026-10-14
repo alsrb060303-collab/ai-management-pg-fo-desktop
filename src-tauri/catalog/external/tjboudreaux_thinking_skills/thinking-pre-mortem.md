@@ -18,7 +18,7 @@ source_repo: tjboudreaux/cc-thinking-skills
 source_commit: 7b8fece345dfaa11773be7152ccd194589cb5437
 source_path: skills/thinking-pre-mortem/SKILL.md
 license_path: LICENSE
-tokens: 0
+tokens: 1
 performance: 0
 quality: 0
 ---
