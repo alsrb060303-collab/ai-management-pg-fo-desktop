@@ -1,6 +1,6 @@
 <div align="center">
 
-# AI Management
+# Encela
 
 **AI 编程工具的桌面助手：用积木块可视化地搭建 Claude Code 和 Codex 配置、管理 git 工作、为每个分支记笔记——就在你的终端旁边。**
 
@@ -13,7 +13,7 @@
 </div>
 
 > [!NOTE]
-> 项目处于早期开发阶段。"AI Management" 是暂定名称。目前优先支持 Windows，Linux 和 macOS 计划在之后支持。
+> 项目处于早期开发阶段。目前优先支持 Windows，Linux 和 macOS 计划在之后支持。
 >
 > 应用界面目前提供英文和韩文。
 
@@ -23,7 +23,7 @@
 
 AI 编程工具通过一大堆文件来配置：`CLAUDE.md`、`AGENTS.md`、规则、skill、subagent、hook、MCP 服务器，还有分三个作用域的设置文件。很难看清哪些真正生效了，手写也很费时。
 
-AI Management 把这些都放进一个窗口：
+Encela 把这些都放进一个窗口：
 
 - **看清**：项目里 AI 工具读取了什么、从哪里读取。
 - **搭建**：把积木块拼在一起生成指令文件，不必从零手写。

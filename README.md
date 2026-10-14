@@ -1,6 +1,6 @@
 <div align="center">
 
-# AI Management
+# Encela
 
 **A desktop companion for AI coding tools: build your Claude Code and Codex setup visually, manage git work, and keep notes per branch, right next to your terminal.**
 
@@ -13,7 +13,7 @@
 </div>
 
 > [!NOTE]
-> Early development. "AI Management" is a working name. Windows comes first; Linux and macOS are planned.
+> Early development. Windows comes first; Linux and macOS are planned.
 
 <!-- Screenshot: main window (document composer) — e.g. docs/images/composer.png -->
 
@@ -21,7 +21,7 @@
 
 AI coding tools are configured through a pile of files: `CLAUDE.md`, `AGENTS.md`, rules, skills, subagents, hooks, MCP servers, settings in three different scopes. It is hard to see which ones are actually in effect, and writing them by hand is slow.
 
-AI Management puts all of that in one window:
+Encela puts all of that in one window:
 
 - **See** what your AI tool reads in a project, and from where.
 - **Build** instruction files by snapping blocks together instead of writing them from scratch.

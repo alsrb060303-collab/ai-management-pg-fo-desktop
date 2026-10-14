@@ -1,6 +1,6 @@
 <div align="center">
 
-# AI Management
+# Encela (엔셀라)
 
 **AI 코딩 도구 옆에 붙는 데스크탑 앱. Claude Code·Codex 설정을 블록으로 만들고, git 작업을 관리하고, 브랜치마다 메모를 남겨요. 모두 터미널 바로 옆에서요.**
 
@@ -13,7 +13,7 @@
 </div>
 
 > [!NOTE]
-> 개발 초기 단계예요. "AI Management"는 임시 이름이에요. Windows를 먼저 지원하고, Linux·macOS는 나중에 지원할 예정이에요.
+> 개발 초기 단계예요. Windows를 먼저 지원하고, Linux·macOS는 나중에 지원할 예정이에요.
 
 <!-- 스크린샷: 메인 창 (문서 작성기) — 예: docs/images/composer.png -->
 
@@ -21,7 +21,7 @@
 
 AI 코딩 도구는 여러 파일로 설정해요. `CLAUDE.md`, `AGENTS.md`, 규칙, skill, subagent, hook, MCP 서버, 그리고 범위가 셋이나 되는 설정 파일까지요. 지금 어떤 게 실제로 적용되고 있는지 알기 어렵고, 손으로 쓰기도 번거로워요.
 
-AI Management는 이걸 한 화면에 모아요.
+Encela는 이걸 한 화면에 모아요.
 
 - **보기**: 프로젝트에서 AI 도구가 무엇을, 어디서 읽는지 한눈에 봐요.
 - **만들기**: 지침 파일을 처음부터 쓰지 않고 블록을 이어 붙여 만들어요.
