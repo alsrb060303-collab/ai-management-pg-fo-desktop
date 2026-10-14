@@ -806,6 +806,146 @@ impl From<RawCommitDetailTree> for RawCommitTree {
     }
 }
 
+// ---- activity log (work trees): pull request and workflow run history
+
+/// A pull request with the times the activity log draws.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PullRecord {
+    pub number: u64,
+    pub title: String,
+    /// "open", "closed" or "merged".
+    pub state: String,
+    pub url: String,
+    pub author: String,
+    pub head: String,
+    pub base: String,
+    pub head_sha: String,
+    pub created_at: String,
+    pub merged_at: Option<String>,
+    pub closed_at: Option<String>,
+}
+
+/// A GitHub Actions workflow run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunRecord {
+    pub id: u64,
+    pub name: String,
+    pub branch: Option<String>,
+    pub sha: String,
+    /// "queued", "in_progress" or "completed".
+    pub status: String,
+    /// "success", "failure", "cancelled", ... once completed.
+    pub conclusion: Option<String>,
+    pub url: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ActivityRemote {
+    pub pulls: Vec<PullRecord>,
+    pub runs: Vec<RunRecord>,
+    /// Why the runs are missing (rate limit, network, no access to Actions);
+    /// the pull requests are still good.
+    pub runs_warning: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawActivityPull {
+    number: u64,
+    title: String,
+    state: String,
+    html_url: String,
+    user: Option<RawUser>,
+    head: RawRef,
+    base: RawRef,
+    created_at: String,
+    merged_at: Option<String>,
+    closed_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawRun {
+    id: u64,
+    name: Option<String>,
+    display_title: Option<String>,
+    head_branch: Option<String>,
+    head_sha: String,
+    status: Option<String>,
+    conclusion: Option<String>,
+    html_url: String,
+    updated_at: String,
+}
+
+#[derive(Deserialize)]
+struct RawRuns {
+    workflow_runs: Vec<RawRun>,
+}
+
+/// The most pull requests and runs asked for (GitHub's page size limit).
+const ACTIVITY_PAGE: usize = 100;
+
+/// The repository's most recently updated pull requests (open, closed and
+/// merged, up to 100) and workflow runs (up to 100). Runs are best effort:
+/// Actions may be off, and a failure to read them (other than a revoked
+/// sign-in) is reported in `runs_warning` while the pull requests are kept.
+pub fn activity(api: &Api, slug: &str) -> Result<ActivityRemote> {
+    let raw: Vec<RawActivityPull> = api.get(&format!(
+        "/repos/{slug}/pulls?state=all&sort=updated&direction=desc&per_page={ACTIVITY_PAGE}"
+    ))?;
+    let pulls = raw
+        .into_iter()
+        .map(|p| PullRecord {
+            number: p.number,
+            title: p.title,
+            state: if p.merged_at.is_some() {
+                "merged".into()
+            } else {
+                p.state
+            },
+            url: p.html_url,
+            author: p.user.map(|u| u.login).unwrap_or_default(),
+            head: p.head.name,
+            base: p.base.name,
+            head_sha: p.head.sha,
+            created_at: p.created_at,
+            merged_at: p.merged_at,
+            closed_at: p.closed_at,
+        })
+        .collect();
+
+    let mut runs_warning = None;
+    let runs = match api.get_opt::<RawRuns>(&format!(
+        "/repos/{slug}/actions/runs?per_page={ACTIVITY_PAGE}"
+    )) {
+        Ok(runs) => runs.map(|r| r.workflow_runs).unwrap_or_default(),
+        Err(super::http::Error::Unauthorized) => return Err(super::http::Error::Unauthorized),
+        Err(e) => {
+            let message = String::from(e);
+            eprintln!("couldn't read the workflow runs of {slug}: {message}");
+            runs_warning = Some(message);
+            Vec::new()
+        }
+    };
+    let runs = runs
+        .into_iter()
+        .map(|r| RunRecord {
+            id: r.id,
+            name: r.name.or(r.display_title).unwrap_or_default(),
+            branch: r.head_branch,
+            sha: r.head_sha,
+            status: r.status.unwrap_or_default(),
+            conclusion: r.conclusion,
+            url: r.html_url,
+            updated_at: r.updated_at,
+        })
+        .collect();
+    Ok(ActivityRemote {
+        pulls,
+        runs,
+        runs_warning,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -816,6 +956,85 @@ mod tests {
             .http_status_as_error(false)
             .build()
             .into()
+    }
+
+    fn pulls_json() -> &'static str {
+        r#"[{"number":5,"title":"T","state":"open","html_url":"u5","user":{"login":"a"},"head":{"ref":"feat","sha":"s5"},"base":{"ref":"main","sha":"b"},"created_at":"2026-10-14T01:00:00Z","merged_at":null,"closed_at":null}]"#
+    }
+
+    #[test]
+    fn activity_asks_for_a_hundred_pulls_and_runs() {
+        let (base, seen) = serve(vec![
+            (200, pulls_json()),
+            (
+                200,
+                r#"{"workflow_runs":[{"id":1,"name":"CI","head_branch":"feat","head_sha":"s5","status":"completed","conclusion":"success","html_url":"r1","updated_at":"2026-10-14T02:00:00Z"}]}"#,
+            ),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = activity(&api, "o/r").unwrap();
+        assert_eq!((remote.pulls.len(), remote.runs.len()), (1, 1));
+        assert_eq!(remote.runs_warning, None);
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen[0].contains("/pulls?") && seen[0].contains("per_page=100"),
+            "{}",
+            seen[0]
+        );
+        assert!(
+            seen[1].contains("/actions/runs?per_page=100"),
+            "{}",
+            seen[1]
+        );
+    }
+
+    #[test]
+    fn a_failure_reading_runs_is_a_warning_and_keeps_the_pulls() {
+        for status in [403, 429, 500] {
+            let (base, _) = serve(vec![
+                (200, pulls_json()),
+                (status, r#"{"message":"API rate limit exceeded"}"#),
+            ]);
+            let agent = agent();
+            let api = Api {
+                agent: &agent,
+                base: &base,
+                token: "t",
+            };
+            let remote = activity(&api, "o/r").unwrap();
+            assert_eq!(remote.pulls.len(), 1, "{status}");
+            assert!(remote.runs.is_empty());
+            assert!(remote.runs_warning.is_some(), "{status}");
+        }
+    }
+
+    #[test]
+    fn actions_being_off_or_a_revoked_sign_in_are_not_warnings() {
+        let (base, _) = serve(vec![(200, pulls_json()), (404, "{}")]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = activity(&api, "o/r").unwrap();
+        assert!(remote.runs.is_empty() && remote.runs_warning.is_none());
+
+        let (base, _) = serve(vec![(200, pulls_json()), (401, "{}")]);
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        assert!(matches!(
+            activity(&api, "o/r"),
+            Err(super::super::http::Error::Unauthorized)
+        ));
     }
 
     #[test]

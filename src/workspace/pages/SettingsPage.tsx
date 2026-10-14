@@ -6,6 +6,7 @@ import { Button, Card, PageHeader, Row, Segmented, Switch } from "../../componen
 import { ModsCard } from "../../features/mods/ModsCard";
 import { type LocalePref, timeAgo, useLocaleStore, useT } from "../../i18n";
 import { useAccountStore } from "../../store/account";
+import { useActivityStore } from "../../store/activity";
 import { useDockStore } from "../../store/dock";
 import { FONT_SIZES, useFontSizeStore } from "../../store/fontSize";
 import { useLibraryStore } from "../../store/library";
@@ -110,6 +111,8 @@ export function SettingsPage() {
 
       <NotifyCard />
 
+      <ActivityCard />
+
       <SyncCard />
 
       <ModsCard />
@@ -169,6 +172,58 @@ function NotifyCard() {
       <Row title={t("settings.notifyGitHub")} description={t("settings.notifyGitHubHint")}>
         <Switch label={t("settings.notifyGitHub")} checked={on} onChange={setOn} />
       </Row>
+    </Card>
+  );
+}
+
+function ActivityCard() {
+  const t = useT();
+  const { settings, settingsError, loadSettings, saveSettings } = useActivityStore();
+
+  useEffect(() => {
+    void loadSettings();
+  }, [loadSettings]);
+
+  const retention = settings?.retentionDays == null ? "none" : String(settings.retentionDays);
+  const options = [
+    { value: "30", label: t("activity.settings.days30") },
+    { value: "90", label: t("activity.settings.days90") },
+    { value: "365", label: t("activity.settings.days365") },
+    { value: "none", label: t("activity.settings.forever") },
+  ];
+  return (
+    <Card title={t("activity.settings.title")}>
+      <Row
+        title={t("activity.settings.retention")}
+        description={t("activity.settings.retentionHint")}
+      >
+        <Segmented
+          label={t("activity.settings.retention")}
+          value={settings ? retention : ""}
+          options={options}
+          onChange={(v) => void saveSettings({ retentionDays: v === "none" ? null : Number(v) })}
+        />
+      </Row>
+      <Row
+        title={t("activity.settings.syncPrompts")}
+        description={t("activity.settings.syncPromptsHint")}
+      >
+        <Switch
+          label={t("activity.settings.syncPrompts")}
+          checked={settings?.syncPrompts ?? false}
+          disabled={!settings}
+          onChange={(syncPrompts) => void saveSettings({ syncPrompts })}
+        />
+      </Row>
+      {settingsError && (
+        <Row
+          title={
+            <span className="text-danger">
+              {t("activity.settings.failed", { error: settingsError })}
+            </span>
+          }
+        />
+      )}
     </Card>
   );
 }

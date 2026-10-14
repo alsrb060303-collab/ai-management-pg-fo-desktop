@@ -1,6 +1,6 @@
 [package]
 name = "ai-management"
-version = "0.1.43"
+version = "0.1.44"
 description = "Floating sidebar for managing AI coding work (Claude Code docs, git, memos)"
 authors = ["alsrb060303-collab"]
 license = "Apache-2.0"
@@ -28,6 +28,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
+regex = "1"
 globset = "0.4"
 toml_edit = "0.25"
 ureq = { version = "3", features = ["platform-verifier", "json"] }
@@ -37,6 +38,8 @@ uuid = { version = "1", features = ["v4"] }
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Codex compresses old session files (.jsonl.zst); read-only.
+zstd = { version = "0.13", default-features = false }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"

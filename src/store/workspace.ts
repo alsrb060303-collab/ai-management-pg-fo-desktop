@@ -9,6 +9,7 @@ export type Page =
   | "mcp"
   | "commands"
   | "work"
+  | "trees"
   | "memo"
   | "settings";
 
