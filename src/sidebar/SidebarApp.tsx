@@ -1,6 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { WorkTrees } from "../features/activity/WorkTrees";
 import { CommandsPanel } from "../features/commands/CommandsPanel";
 import { DocsTab } from "../features/docs/DocsTab";
@@ -56,17 +57,19 @@ export default function SidebarApp() {
       <TitleBar />
       <TabNav />
       <main className="flex-1 overflow-y-auto p-4">
-        {activeTab === "docs" ? (
-          <DocsTab />
-        ) : activeTab === "memo" ? (
-          <MemoPanel compact />
-        ) : activeTab === "trees" ? (
-          <WorkTrees compact />
-        ) : activeTab === "commands" ? (
-          <CommandsPanel compact />
-        ) : (
-          <WorkPanel compact />
-        )}
+        <ErrorBoundary resetKey={activeTab}>
+          {activeTab === "docs" ? (
+            <DocsTab />
+          ) : activeTab === "memo" ? (
+            <MemoPanel compact />
+          ) : activeTab === "trees" ? (
+            <WorkTrees compact />
+          ) : activeTab === "commands" ? (
+            <CommandsPanel compact />
+          ) : (
+            <WorkPanel compact />
+          )}
+        </ErrorBoundary>
       </main>
       <StatusBar />
       <SyncNotice />
