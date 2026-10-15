@@ -15,6 +15,7 @@ import { startUpdateChecks } from "../store/updater";
 import { type Page, useWorkspaceStore } from "../store/workspace";
 import { saveBeforeLeaving } from "./leave";
 import { NavSidebar } from "./NavSidebar";
+import { AutomationsPage } from "./pages/AutomationsPage";
 import { CommandsPage } from "./pages/CommandsPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { HomePage } from "./pages/HomePage";
@@ -44,6 +45,7 @@ const PAGES: Record<Page, () => React.ReactNode> = {
   work: () => <WorkPage />,
   trees: () => <TreesPage />,
   memo: () => <MemoPage />,
+  automations: () => <AutomationsPage />,
   settings: () => <SettingsPage />,
 };
 

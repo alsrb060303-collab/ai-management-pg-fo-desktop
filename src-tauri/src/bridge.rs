@@ -105,6 +105,17 @@ pub enum Request {
     SaveDoc {
         doc: Value,
     },
+    /// A new or changed automation (the MCP server's `save_automation`).
+    SaveAutomation {
+        automation: Value,
+    },
+    SetAutomationEnabled {
+        id: String,
+        enabled: bool,
+    },
+    RunAutomation {
+        id: String,
+    },
 }
 
 /// The bridge folder under the app's data folder.
@@ -201,7 +212,10 @@ pub fn apply(store: &Store, request: Request) -> Result<(String, String), String
         }
         Request::SetDone { id, done } => store.update_todo(&id, None, Some(done)),
         Request::DeleteTodo { id } => store.delete_todo(&id),
-        Request::SaveDoc { .. } => Err("not a memo request".into()),
+        Request::SaveDoc { .. }
+        | Request::SaveAutomation { .. }
+        | Request::SetAutomationEnabled { .. }
+        | Request::RunAutomation { .. } => Err("not a memo request".into()),
         Request::AppendNote {
             repo_key,
             branch,
@@ -272,6 +286,15 @@ pub fn manage(app: &AppHandle) {
                 for request in take_requests(&inbox) {
                     if let Request::SaveDoc { doc } = request {
                         let _ = crate::composer::save_new_doc(&app, doc);
+                        continue;
+                    }
+                    if matches!(
+                        request,
+                        Request::SaveAutomation { .. }
+                            | Request::SetAutomationEnabled { .. }
+                            | Request::RunAutomation { .. }
+                    ) {
+                        crate::automation::apply_request(&app, request);
                         continue;
                     }
                     if let Ok((repo, branch)) = apply(store, request) {

@@ -1,10 +1,13 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { Handle, type NodeProps, Position, useReactFlow } from "@xyflow/react";
 import { GripVertical, PencilLine, X } from "lucide-react";
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Switch } from "../../components/ui";
+import { AutomationForm } from "../../features/automation/AutomationForm";
+import { describeSchedule, when } from "../../features/automation/schedule";
 import { useT } from "../../i18n";
+import { type Automation, blankAutomation, useAutomationStore } from "../../store/automation";
 import {
   AGENTS_MD_BYTE_BUDGET,
   AGENTS_MD_BYTE_LIMIT,
@@ -242,6 +245,90 @@ function CustomFields({ id, data }: { id: string; data: OutputData }) {
   );
 }
 
+/** Automation outputs: what the automation does and when, and a button to set it up. */
+function AutomationFields({
+  id,
+  data,
+  inputs,
+}: {
+  id: string;
+  data: OutputData;
+  inputs: string[];
+}) {
+  const t = useT();
+  const doc = useComposerStore((s) => s.doc);
+  const blocks = useComposerStore((s) => s.blocks);
+  const setOutputData = useComposerStore((s) => s.setOutputData);
+  const item = useAutomationStore((s) => s.items.find((a) => a.id === data.automation?.id));
+  const [editing, setEditing] = useState(false);
+  const a = data.automation;
+
+  useEffect(() => {
+    if (!useAutomationStore.getState().loaded) void useAutomationStore.getState().load();
+  }, []);
+
+  // What the connected blocks give the automation (as compile.rs collects it).
+  const fromBlocks = { instructions: 0, agents: [] as string[] };
+  for (const nodeId of inputs) {
+    const node = doc?.nodes.find((n) => n.id === nodeId);
+    if (node?.type !== "block" || node.data.disabled) continue;
+    const block = blocks.get(node.data.blockId);
+    if (!block) continue;
+    if (block.kind === "agent") fromBlocks.agents.push(block.name);
+    else if (block.kind !== "hook")
+      fromBlocks.instructions += (node.data.body ?? block.body).length;
+  }
+
+  const save = async (automation: Automation) => {
+    if (!doc) return;
+    const saved = await invoke<Automation>("composer_save_automation", {
+      doc,
+      nodeId: id,
+      automation,
+    });
+    setOutputData(id, { automation: saved });
+    void useAutomationStore.getState().load();
+  };
+
+  return (
+    <div className="nodrag space-y-1.5 border-b border-border px-3.5 py-2.5 text-fs-11 text-text-muted">
+      {a ? (
+        <>
+          <div className="flex items-center gap-1.5 text-text">
+            <span className="font-medium">{describeSchedule(a.schedule)}</span>
+            {a.model && <span className="rounded bg-sunken px-1 text-text-muted">{a.model}</span>}
+          </div>
+          <p className="line-clamp-2">{a.prompt}</p>
+          {a.email && <p className="truncate">✉ {a.email}</p>}
+          <p className="text-text-subtle">
+            {item?.enabled && item.nextRunAt
+              ? t("auto.next", { time: when(item.nextRunAt) })
+              : t("auto.off")}
+          </p>
+        </>
+      ) : (
+        <p>{t("composer.automation.notSaved")}</p>
+      )}
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        disabled={!isTauri()}
+        className="w-full rounded-md bg-accent-soft px-2 py-1 font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+      >
+        {t("composer.automation.setUp")}
+      </button>
+      {editing && (
+        <AutomationForm
+          initial={a ?? { ...blankAutomation(), name: doc?.name ?? "" }}
+          fromBlocks={fromBlocks}
+          onSave={save}
+          onClose={() => setEditing(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 export const OutputNodeView = memo(function OutputNodeView({
   id,
   data,
@@ -318,7 +405,9 @@ export const OutputNodeView = memo(function OutputNodeView({
           <div className="truncate font-mono text-fs-13 font-semibold">
             {data.target === "custom" && !data.path?.trim()
               ? t("composer.target.custom")
-              : targetTitle(data.target, personal, tool, data.path)}
+              : data.target === "automation"
+                ? data.automation?.name || t("composer.target.automation")
+                : targetTitle(data.target, personal, tool, data.path)}
           </div>
           <div className="text-fs-11 text-text-subtle">
             {t("composer.node.accepts", {
@@ -331,50 +420,53 @@ export const OutputNodeView = memo(function OutputNodeView({
             })}
           </div>
         </div>
-        <fieldset
-          aria-label={t("composer.node.scope")}
-          className="nodrag flex rounded-md bg-sunken p-0.5 text-fs-11"
-        >
-          {(["team", "personal"] as const).map((scope) => {
-            // An output already set to "Just me" keeps showing it (the canvas
-            // warns), but can only be switched to "Team".
-            const locked = scope === "personal" && teamOnly;
-            return (
-              <button
-                key={scope}
-                type="button"
-                aria-pressed={data.scope === scope}
-                disabled={locked}
-                title={
-                  locked
-                    ? t("composer.node.teamOnlyHint", {
-                        tool: TOOLS[tool].name,
-                        file: targetTitle(data.target, false, tool),
-                      })
-                    : scope === "team"
-                      ? t("composer.node.teamHint")
-                      : t("composer.node.personalHint")
-                }
-                onClick={() => setScope(id, scope)}
-                className={`rounded px-1.5 py-0.5 font-medium disabled:cursor-not-allowed ${
-                  data.scope === scope
-                    ? "bg-surface-raised text-text shadow-card"
-                    : locked
-                      ? "text-text-subtle opacity-50"
-                      : "text-text-muted"
-                }`}
-              >
-                {scope === "team" ? t("composer.node.team") : t("composer.node.personal")}
-              </button>
-            );
-          })}
-        </fieldset>
+        {data.target !== "automation" && (
+          <fieldset
+            aria-label={t("composer.node.scope")}
+            className="nodrag flex rounded-md bg-sunken p-0.5 text-fs-11"
+          >
+            {(["team", "personal"] as const).map((scope) => {
+              // An output already set to "Just me" keeps showing it (the canvas
+              // warns), but can only be switched to "Team".
+              const locked = scope === "personal" && teamOnly;
+              return (
+                <button
+                  key={scope}
+                  type="button"
+                  aria-pressed={data.scope === scope}
+                  disabled={locked}
+                  title={
+                    locked
+                      ? t("composer.node.teamOnlyHint", {
+                          tool: TOOLS[tool].name,
+                          file: targetTitle(data.target, false, tool),
+                        })
+                      : scope === "team"
+                        ? t("composer.node.teamHint")
+                        : t("composer.node.personalHint")
+                  }
+                  onClick={() => setScope(id, scope)}
+                  className={`rounded px-1.5 py-0.5 font-medium disabled:cursor-not-allowed ${
+                    data.scope === scope
+                      ? "bg-surface-raised text-text shadow-card"
+                      : locked
+                        ? "text-text-subtle opacity-50"
+                        : "text-text-muted"
+                  }`}
+                >
+                  {scope === "team" ? t("composer.node.team") : t("composer.node.personal")}
+                </button>
+              );
+            })}
+          </fieldset>
+        )}
         <span className={selected ? "[&>button]:opacity-100" : ""}>
           <DeleteNodeButton id={id} label={t("composer.node.deleteOutput")} />
         </span>
       </div>
 
       {data.target === "custom" && <CustomFields id={id} data={data} />}
+      {data.target === "automation" && <AutomationFields id={id} data={data} inputs={inputs} />}
 
       {inputs.length === 0 ? (
         <p className="px-3.5 py-4 text-center text-xs text-text-subtle">
@@ -414,6 +506,8 @@ export const OutputNodeView = memo(function OutputNodeView({
                 : t("composer.node.lineBudget", { n: budget.used, max: budget.max })}
             </span>
           </>
+        ) : data.target === "automation" ? (
+          <span>{t("composer.automation.hint")}</span>
         ) : (
           <span>{t("composer.node.fileCount", { n: fileCount ?? 0 })}</span>
         )}

@@ -37,7 +37,8 @@ Encela 把这些都放进一个窗口：
 | 🧩 **文档编排器** | 把积木块拖到画布上，生成 `CLAUDE.md` / `AGENTS.md`、规则、skill、subagent、hook 和 `PLANS.md` |
 | 🗺️ **设置地图** | 显示工具加载的所有指令、规则、skill、subagent、命令、MCP 服务器和设置，以及作用域和状态 |
 | 📄 **项目文档** | 打开文件夹即可在应用内编辑 AI 配置文件，磁盘上的文件变化时会提醒你 |
-| 📚 **资源库** | 收藏常用的 skill 和 subagent，按项目启用或停用 |
+| 📚 **资源库** | 收藏常用的 skill 和 subagent，按项目启用或停用；一键安装 GitHub 上热门的开源扩展（插件、MCP 服务器） |
+| ⏰ **自动化** | 让你的 `claude` 按计划工作（例如每天早上用 Haiku 子代理收集新闻并发邮件给你）；可在文档编辑器中搭建，或让 Claude Code 创建 |
 | 🔌 **MCP 服务器** | 查看、添加、编辑、删除 MCP 服务器并检查连接；粘贴 JSON 片段或 `claude mcp add` 命令即可导入 |
 | 🌿 **工作** | 分支、worktree、diff、提交 / 推送 / 拉取、PR、CI 状态、合并冲突助手 |
 | 📝 **笔记** | 按仓库和分支记笔记和待办，可在多台设备间同步 |
@@ -105,6 +106,14 @@ flowchart LR
 
 - **项目文档** 会找出文件夹中的 `CLAUDE.md`（包括子文件夹）、`AGENTS.md`、规则、skill、agent、命令和设置文件，并允许在应用内编辑。
 - **资源库** 存放你常用的 skill 和 subagent，一键添加到项目或从项目移除。
+- **GitHub 扩展**：经过许可证检查的开源 Claude Code 扩展（REA、superpowers、compound-engineering、agent-skills、wshobson/agents、VoltAgent subagents），用你自己的 `claude` 命令安装。
+
+### ⏰ 自动化
+
+- 设定时间（每天、指定星期）或间隔、模型、允许使用的工具，以及接收结果的邮箱。
+- 在文档编辑器中把指令、规则、skill 和子代理块连接到 **自动化** 输出，它们会成为运行时的指令和子代理（例如用 Haiku 运行的抓取子代理）。
+- 在应用或托盘图标运行期间，用你自己的 `claude -p` 执行；应用关闭期间错过的运行，如在一天之内，会补跑一次。每次运行都会保存结果、费用和错误，并发送桌面通知。
+- 结果通过连接到 Claude Code 的邮件 MCP 服务器（如 Gmail）发送。Claude Code 也可以通过应用的 MCP 服务器查看、创建和运行自动化。
 
 ### 🔌 MCP 服务器
 

@@ -1054,7 +1054,7 @@ pub struct Recommended {
     pub config: Config,
 }
 
-fn npx(args: &[&str], env: &[(&str, &str)]) -> Config {
+pub(crate) fn npx(args: &[&str], env: &[(&str, &str)]) -> Config {
     let mut all: Vec<String> = Vec::new();
     // Claude Code's Windows docs launch npx through cmd /c.
     let command = if cfg!(windows) {

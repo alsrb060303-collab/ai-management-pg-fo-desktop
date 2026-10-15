@@ -1,5 +1,6 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
+  AlarmClock,
   Blocks,
   CircleUserRound,
   FileText,
@@ -40,6 +41,7 @@ const NAV: { page: Page; label: MessageKey; icon: LucideIcon; soon?: boolean }[]
   { page: "work", label: "shell.nav.work", icon: GitBranch },
   { page: "trees", label: "shell.nav.trees", icon: GitGraph },
   { page: "memo", label: "shell.nav.memo", icon: NotebookPen },
+  { page: "automations", label: "shell.nav.automations", icon: AlarmClock },
 ];
 
 export function NavSidebar() {
