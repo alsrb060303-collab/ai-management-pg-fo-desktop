@@ -14,6 +14,7 @@ import {
 import { create } from "zustand";
 import { onLocaleApplied, t, useLocaleStore } from "../i18n";
 import { TOOLS, type ToolId } from "../tools";
+import type { Automation } from "./automation";
 import type { Mode } from "./library";
 import { getPref, setPref } from "./prefs";
 import { useProjectStore } from "./project";
@@ -27,7 +28,15 @@ export type BlockKind = "instruction" | "rule" | "skill" | "agent" | "hook";
  * Output targets. `instructions` is the tool's always-loaded file (CLAUDE.md,
  * AGENTS.md); documents saved before tools existed call it `claudeMd`.
  */
-export type Target = "instructions" | "rules" | "skills" | "agents" | "custom" | "hooks" | "plans";
+export type Target =
+  | "instructions"
+  | "rules"
+  | "skills"
+  | "agents"
+  | "custom"
+  | "hooks"
+  | "plans"
+  | "automation";
 
 export interface Rating {
   tokens: number;
@@ -117,6 +126,8 @@ export type OutputData = {
   /** Custom outputs: the file's path and the user's own text. */
   path?: string;
   text?: string;
+  /** Automation outputs: the automation as last saved from this node. */
+  automation?: Automation;
 };
 /** Plan goals: `y` done, `p` in progress, `n` not yet. */
 export type PlanStatus = "y" | "p" | "n";
@@ -235,6 +246,8 @@ export function accepts(target: Target, tool: ToolId): BlockKind[] {
     // Plan nodes (main goals), not catalog blocks.
     case "plans":
       return [];
+    case "automation":
+      return ["instruction", "rule", "skill", "agent"];
   }
 }
 
@@ -360,7 +373,10 @@ interface ComposerState {
   setBody: (nodeId: string, body: string | undefined) => void;
   /** Merges into a block node's data; `undefined` values remove the key. */
   setBlockData: (nodeId: string, patch: Partial<Omit<BlockData, "blockId">>) => void;
-  setOutputData: (nodeId: string, patch: Partial<Pick<OutputData, "path" | "text">>) => void;
+  setOutputData: (
+    nodeId: string,
+    patch: Partial<Pick<OutputData, "path" | "text" | "automation">>,
+  ) => void;
   setScope: (nodeId: string, scope: Mode) => void;
   /** A new main goal; returns its node id. */
   addPlan: (position: XYPosition, title?: string) => string;

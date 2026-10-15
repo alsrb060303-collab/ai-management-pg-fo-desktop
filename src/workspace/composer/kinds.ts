@@ -1,4 +1,5 @@
 import {
+  AlarmClock,
   BookOpen,
   Bot,
   FilePen,
@@ -9,7 +10,7 @@ import {
   Sparkles,
   Webhook,
 } from "lucide-react";
-import type { MessageKey } from "../../i18n";
+import { type MessageKey, t } from "../../i18n";
 import type { BlockKind, Target } from "../../store/composer";
 import { TOOLS, type ToolId } from "../../tools";
 
@@ -44,6 +45,7 @@ export const TARGETS: { target: Target; label: MessageKey | null; icon: LucideIc
   { target: "hooks", label: "composer.target.hooks", icon: Webhook },
   { target: "plans", label: "composer.target.plans", icon: Flag },
   { target: "custom", label: "composer.target.custom", icon: FilePen },
+  { target: "automation", label: "composer.target.automation", icon: AlarmClock },
 ];
 
 /** The instructions output's palette name: its file without `.md`, uppercase (CLAUDE, AGENTS). */
@@ -80,5 +82,7 @@ export function targetTitle(
       return personal ? "PLANS.local.md" : "PLANS.md";
     case "custom":
       return path?.trim() || "…";
+    case "automation":
+      return path?.trim() || t("composer.target.automation");
   }
 }

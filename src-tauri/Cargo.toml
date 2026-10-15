@@ -1,6 +1,6 @@
 [package]
 name = "ai-management"
-version = "0.1.473"
+version = "0.1.474"
 description = "Floating sidebar for managing AI coding work (Claude Code docs, git, memos)"
 authors = ["alsrb060303-collab"]
 license = "Apache-2.0"
@@ -35,6 +35,8 @@ ureq = { version = "3", features = ["platform-verifier", "json"] }
 keyring = "4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
+# Local time for automation schedules.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"

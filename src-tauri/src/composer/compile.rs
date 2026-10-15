@@ -197,6 +197,9 @@ pub enum Target {
     Custom,
     Hooks,
     Plans,
+    /// Not a file: instructions, skills and subagents for an automation the
+    /// app runs on a schedule (`automation_parts`).
+    Automation,
 }
 
 impl Target {
@@ -220,6 +223,7 @@ impl Target {
             Target::Hooks => kind == BlockKind::Hook,
             // Plan nodes, not catalog blocks.
             Target::Plans => false,
+            Target::Automation => !matches!(kind, BlockKind::Hook),
         }
     }
 }
@@ -320,6 +324,84 @@ pub struct Compiled {
     pub warnings: Vec<Warning>,
 }
 
+/// What an automation output's connected blocks give its runs: instructions,
+/// rules and skills as added system prompt, subagents for `--agents`.
+#[derive(Debug, Default, PartialEq)]
+pub struct AutomationParts {
+    pub instructions: String,
+    pub agents: std::collections::BTreeMap<String, crate::automation::AgentDef>,
+}
+
+pub fn automation_parts(doc: &Doc, catalog: &[Block], output_id: &str) -> AutomationParts {
+    let mut parts = AutomationParts::default();
+    let Some(output) = doc.nodes.iter().find(|n| n.id == output_id) else {
+        return parts;
+    };
+    let mut sections: Vec<String> = Vec::new();
+    for node_id in inputs_of(doc, output) {
+        let Some(node) = doc.nodes.iter().find(|n| n.id == node_id) else {
+            continue;
+        };
+        if node.data.disabled {
+            continue;
+        }
+        let Some(block) = node
+            .data
+            .block_id
+            .as_deref()
+            .and_then(|id| catalog.iter().find(|b| b.id == id))
+        else {
+            continue;
+        };
+        let edited = node.data.body.as_deref().map(normalize);
+        let body = edited.as_deref().unwrap_or(&block.body).trim().to_string();
+        match block.kind {
+            BlockKind::Instruction | BlockKind::Rule => {
+                sections.push(format!("## {}\n\n{body}", block.display_title()));
+            }
+            BlockKind::Skill => {
+                let about = block.description.as_deref().unwrap_or(&block.summary);
+                sections.push(format!("## Skill: {}\n\n{about}\n\n{body}", block.name));
+            }
+            BlockKind::Agent => {
+                let model = node
+                    .data
+                    .model
+                    .as_deref()
+                    .filter(|m| !m.is_empty())
+                    .or(block.model.as_deref())
+                    .filter(|m| *m != "inherit")
+                    .unwrap_or_default();
+                let tools = block
+                    .tools
+                    .as_deref()
+                    .map(|t| {
+                        t.split(',')
+                            .map(|x| x.trim().to_string())
+                            .filter(|x| !x.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                parts.agents.insert(
+                    block.name.clone(),
+                    crate::automation::AgentDef {
+                        description: block
+                            .description
+                            .clone()
+                            .unwrap_or_else(|| block.summary.clone()),
+                        prompt: body,
+                        model: model.to_string(),
+                        tools,
+                    },
+                );
+            }
+            BlockKind::Hook => {}
+        }
+    }
+    parts.instructions = sections.join("\n\n");
+    parts
+}
+
 pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
     let blocks: HashMap<&str, &Block> = catalog.iter().map(|b| (b.id.as_str(), b)).collect();
     let nodes: HashMap<&str, &Node> = doc.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
@@ -342,7 +424,7 @@ pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
         };
         let personal = output.data.scope == Some(Mode::Personal);
         // After the others: steps check which skills and subagents are written.
-        if target == Target::Plans {
+        if matches!(target, Target::Plans | Target::Automation) {
             continue;
         }
         if !target.available(tool) {
@@ -359,26 +441,7 @@ pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
             continue;
         }
 
-        // Connected block nodes, in the node's saved order, then any others in
-        // edge order (e.g. connected after the order was last saved).
-        let mut inputs: Vec<&str> = Vec::new();
-        let connected: Vec<&str> = doc
-            .edges
-            .iter()
-            .filter(|e| e.target == output.id)
-            .map(|e| e.source.as_str())
-            .collect();
-        for id in output
-            .data
-            .order
-            .iter()
-            .map(String::as_str)
-            .chain(connected.iter().copied())
-        {
-            if connected.contains(&id) && !inputs.contains(&id) {
-                inputs.push(id);
-            }
-        }
+        let inputs = inputs_of(doc, output);
 
         let mut resolved: Vec<(&str, &Block, String)> = Vec::new();
         let mut seen_blocks = HashSet::new();
@@ -632,7 +695,7 @@ pub fn compile(doc: &Doc, catalog: &[Block], tool: ToolId) -> Compiled {
                     });
                 }
             }
-            Target::Plans => {}
+            Target::Plans | Target::Automation => {}
             Target::Rules | Target::Skills | Target::Agents => {
                 for (node_id, block, body) in &resolved {
                     if check_id(&block.name).is_err() {
@@ -2156,5 +2219,37 @@ mod tests {
         let out = compile(&d, &[agent], ToolId::Codex);
         assert!(out.warnings.is_empty(), "{:?}", out.warnings);
         assert!(!out.files[0].content.contains("sonnet"));
+    }
+
+    #[test]
+    fn automation_outputs_collect_instructions_and_subagents() {
+        let catalog = vec![
+            block("builtin:brief", BlockKind::Instruction, "Be brief."),
+            Block {
+                tools: Some("WebFetch, WebSearch".into()),
+                ..block("builtin:scraper", BlockKind::Agent, "Scrape the pages.")
+            },
+            block("builtin:hook", BlockKind::Hook, "echo"),
+        ];
+        let d = doc(&serde_json::json!({
+            "nodes": [
+                { "id": "a", "type": "block", "data": { "blockId": "builtin:brief" } },
+                { "id": "b", "type": "block", "data": { "blockId": "builtin:scraper", "model": "haiku" } },
+                { "id": "h", "type": "block", "data": { "blockId": "builtin:hook" } },
+                { "id": "o", "type": "output", "data": { "target": "automation", "order": ["b", "a"] } }
+            ],
+            "edges": [
+                { "source": "a", "target": "o" }, { "source": "b", "target": "o" }, { "source": "h", "target": "o" }
+            ]
+        })
+        .to_string());
+        let parts = automation_parts(&d, &catalog, "o");
+        assert!(parts.instructions.contains("Be brief."));
+        let agent = &parts.agents["scraper"];
+        assert_eq!(agent.model, "haiku");
+        assert_eq!(agent.tools, ["WebFetch", "WebSearch"]);
+        assert_eq!(agent.prompt, "Scrape the pages.");
+        // The automation output writes no files.
+        assert!(compile(&d, &catalog, ToolId::Claude).files.is_empty());
     }
 }

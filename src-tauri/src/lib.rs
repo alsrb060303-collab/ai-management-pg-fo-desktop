@@ -1,8 +1,10 @@
 mod activity;
+mod automation;
 mod bridge;
 mod claude_mod;
 mod composer;
 mod dock;
+mod extensions;
 mod git;
 mod github;
 mod i18n;
@@ -75,6 +77,7 @@ pub fn run() {
             composer::composer_doc_save,
             composer::composer_doc_delete,
             composer::composer_compile,
+            composer::composer_save_automation,
             composer::composer_plan,
             composer::composer_write,
             activity::activity_refresh,
@@ -120,6 +123,14 @@ pub fn run() {
             claude_mod::mcp_bridge_status,
             claude_mod::mcp_bridge_connect,
             claude_mod::mcp_bridge_disconnect,
+            automation::automations_overview,
+            automation::automation_save,
+            automation::automation_delete,
+            automation::automation_set_enabled,
+            automation::automation_run,
+            extensions::extensions_list,
+            extensions::extension_install,
+            extensions::extension_uninstall,
             prefs::prefs_all,
             prefs::prefs_set,
             sync::sync_status,
@@ -166,9 +177,11 @@ pub fn run() {
             memo::Memo::manage(handle)?;
             activity::Activity::manage(handle)?;
             prefs::Prefs::manage(handle)?;
+            automation::Automations::manage(handle)?;
             github::GitHub::manage(handle);
             sync::Sync::manage(handle);
             bridge::manage(handle);
+            automation::start_scheduler(handle);
             tray::create(handle)?;
             Dock::start(handle)?;
             tray::register_shortcut(handle);

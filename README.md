@@ -35,7 +35,8 @@ Encela puts all of that in one window:
 | 🧩 **Document composer** | Drag blocks onto a canvas and write `CLAUDE.md` / `AGENTS.md`, rules, skills, subagents, hooks and `PLANS.md` |
 | 🗺️ **Settings map** | See every instruction, rule, skill, subagent, command, MCP server and setting your tool loads, with its scope and status |
 | 📄 **Project docs** | Open a folder and edit its AI config files in the app; get told when they change on disk |
-| 📚 **Library** | Keep your favorite skills and subagents in one place and switch them on or off per project |
+| 📚 **Library** | Keep your favorite skills and subagents in one place and switch them on or off per project; install popular open-source extensions from GitHub (plugins, MCP servers) in one click |
+| ⏰ **Automations** | Run your `claude` on a schedule (e.g. every morning: collect news with a Haiku subagent and mail it to you); build one in the composer or ask Claude Code to |
 | 🔌 **MCP servers** | List, add, edit, remove and health-check MCP servers; paste a JSON snippet or `claude mcp add` command to import |
 | 🌿 **Work** | Branches, worktrees, diffs, commit / push / pull, pull requests, CI status, merge-conflict helper |
 | 📝 **Notes** | Notes and to-dos for each repository and branch, synced across your devices |
@@ -103,6 +104,14 @@ Shows everything the tool reads in the selected project: instructions, rules, sk
 
 - **Project docs** finds `CLAUDE.md` (including in subfolders), `AGENTS.md`, rules, skills, agents, commands and settings files in a folder and lets you edit them in the app.
 - **Library** keeps the skills and subagents you reuse. Add one to a project or remove it again with one click.
+- **GitHub extensions**: license-checked open-source Claude Code extensions (REA, superpowers, compound-engineering, agent-skills, wshobson/agents, VoltAgent subagents) installed with your own `claude` command.
+
+### ⏰ Automations
+
+- Pick a time (daily, on weekdays) or an interval, a model, the tools it may use, and an email address for the result.
+- In the document composer, connect instruction, rule, skill and subagent blocks to an **Automation** output: they become the run's instructions and subagents (e.g. a scraper subagent on Haiku).
+- Runs use your own `claude -p` while the app or its tray icon is running; a run missed while the app was closed runs once within a day. Results, cost and errors are kept per run, with a desktop notification.
+- Results are mailed through an email MCP server connected to Claude Code (e.g. Gmail). Claude Code can also list, create and run automations through the app's MCP server.
 
 ### 🔌 MCP servers
 
