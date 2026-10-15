@@ -26,7 +26,16 @@ const OPERATIONS = ["rebase", "merge", "cherry-pick", "revert", "bisect"] as con
 type Operation = (typeof OPERATIONS)[number];
 const isOperation = (op: string): op is Operation => (OPERATIONS as readonly string[]).includes(op);
 
-export type Tone = "done" | "wait" | "warn" | "bad" | "idle" | "open" | "merged" | "draft";
+export type Tone =
+  | "done"
+  | "wait"
+  | "warn"
+  | "bad"
+  | "idle"
+  | "open"
+  | "merged"
+  | "closed"
+  | "draft";
 
 /** Each tone's color, for the lines that blend from one step into the next. */
 const TONE_COLOR: Record<Tone, string> = {
@@ -37,6 +46,7 @@ const TONE_COLOR: Record<Tone, string> = {
   idle: "var(--c-border-strong)",
   open: "var(--c-success)",
   merged: "var(--c-merged)",
+  closed: "var(--c-danger)",
   draft: "var(--c-border-strong)",
 };
 
@@ -48,6 +58,7 @@ const TONE: Record<Tone, { dot: string; text: string }> = {
   idle: { dot: "border-border-strong bg-surface text-text-subtle", text: "text-text-subtle" },
   open: { dot: "border-success bg-success/15 text-success", text: "text-success" },
   merged: { dot: "border-merged bg-merged text-surface", text: "text-merged" },
+  closed: { dot: "border-danger bg-danger/15 text-danger", text: "text-danger" },
   draft: { dot: "border-border-strong bg-sunken text-text-muted", text: "text-text-muted" },
 };
 
