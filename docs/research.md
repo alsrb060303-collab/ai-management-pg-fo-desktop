@@ -414,3 +414,23 @@ AGPL 프로젝트는 아이디어만 참고하고 코드는 가져오지 않는�
 - 파일 수정: `response_item`의 `custom_tool_call`(`name:"apply_patch"`, `input`=패치 글) 또는 `function_call`. 경로는 `^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$`. 명령: `function_call` `exec_command`의 `arguments`(JSON 글)의 `cmd`, 또는 `local_shell_call.action.command`.
 - `history.jsonl`(`{session_id, ts, text}`)은 프롬프트 기록이지만 저장소 정보가 없어 쓰지 않는다.
 - 인증 토큰은 구조에 없지만 명령 출력·파일 내용이 들어 있으니 민감 자료로 다룬다.
+
+## 16. 확장 라이브러리 · 자동화 (2026-10-15, 저장소 clone 후 직접 확인, claude 2.1.300으로 격리 설치 확인)
+
+**확장 라이브러리** (앱은 설치 명령만 실행하고 코드를 포함하지 않음. 라이선스는 아래 커밋에서 LICENSE 확인)
+| 이름 | 종류 · 설치 | 저장소 @ 커밋 | 라이선스 | 비고 |
+|---|---|---|---|---|
+| REA | MCP 서버, `claude mcp add rea -s user -- npx -y rea-agents@6.5.0 mcp` (Windows는 `cmd /c npx …`) | morluto/rea @ d69acc3 | MIT | 리버스 엔지니어링. 버전 고정은 REA 문서 권장. 실행 기록 등 외부 전송 없음(소스에서 telemetry 검색) |
+| superpowers | plugin `superpowers@superpowers-marketplace` | obra/superpowers-marketplace @ 2cf27fa, obra/superpowers @ bb92a77 | MIT | 브레인스토밍 화면의 로고를 작성자 사이트에서 불러옴(버전만 전송). `SUPERPOWERS_DISABLE_TELEMETRY`나 Claude Code의 `DISABLE_TELEMETRY`로 끔 → 카드에 안내 |
+| compound-engineering | plugin `compound-engineering@compound-engineering-plugin` | EveryInc/compound-engineering-plugin @ 7a68002 | MIT | |
+| agent-skills | plugin `agent-skills@addy-agent-skills` | addyosmani/agent-skills @ aeac41d | MIT | |
+| claude-code-workflows | 마켓플레이스만 추가(plugin 94개 중 골라 설치) | wshobson/agents @ 46891e7 | MIT | |
+| voltagent-subagents | 마켓플레이스만 추가(plugin 10개) | VoltAgent/awesome-claude-code-subagents @ 408d3c9 | MIT | README에 스폰서 광고가 있지만 설치되는 plugin 내용에는 없음 |
+
+- 제외: ARTEX(AGPL-3.0, Claude Code 확장이 아닌 별도 서버), oraios/serena(앱 부분 GPL-3.0), P4nda0s/reverse-skills(LICENSE 파일 없음, README에만 MIT), czlonkowski/n8n-mcp(기본 telemetry + 추천 링크).
+- `claude plugin marketplace list --json`: `[{name, source, repo, installLocation}]`. 마켓플레이스 `add`는 이미 있으면 성공으로 끝난다.
+
+**자동화** (code.claude.com/docs/en/scheduled-tasks, desktop-scheduled-tasks, routines)
+- Claude Code의 예약 방식: 클라우드 routines(`/schedule`, claude.ai 로그인, 최소 1시간), Claude 데스크톱 앱의 로컬 예약 작업(`~/.claude/scheduled-tasks/<이름>/SKILL.md`, 일정·모델은 파일에 없음), `/loop`(세션 안에서만). 앱이 직접 만들고 고칠 수 있는 것은 없어서, 앱이 자체 스케줄러로 사용자의 `claude -p`를 실행한다(사용자 결정).
+- 실행 인자: `-p --output-format json --no-session-persistence --permission-mode dontAsk --allowedTools … --model … --append-system-prompt … --agents <file>`. 프롬프트는 stdin. `dontAsk`는 허용하지 않은 도구를 묻지 않고 거절해서 무인 실행이 멈추지 않는다.
+- 메일: Claude Code에 연결한 Gmail MCP(claude.ai 커넥터 등)를 허용 도구에 넣어 claude가 보낸다. claude.ai Gmail 커넥터는 초안 만들기만 있어서, 보내기 도구가 없으면 받는 사람을 채운 초안을 만든다.

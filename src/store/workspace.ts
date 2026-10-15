@@ -12,6 +12,7 @@ export type Page =
   | "work"
   | "trees"
   | "memo"
+  | "automations"
   | "settings";
 
 const COLLAPSED_KEY = "nav-collapsed";

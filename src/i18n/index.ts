@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { getPref, onPrefChanged, setPref } from "../store/prefs";
 import * as account from "./messages/account";
 import * as activity from "./messages/activity";
+import * as automation from "./messages/automation";
 import * as commands from "./messages/commands";
 import * as common from "./messages/common";
 import * as composer from "./messages/composer";
@@ -35,6 +36,7 @@ const KO = {
   ...account.ko,
   ...tools.ko,
   ...activity.ko,
+  ...automation.ko,
 };
 export type MessageKey = keyof typeof KO;
 const EN: Record<MessageKey, string> = {
@@ -50,6 +52,7 @@ const EN: Record<MessageKey, string> = {
   ...account.en,
   ...tools.en,
   ...activity.en,
+  ...automation.en,
 };
 const MESSAGES: Record<Locale, Record<MessageKey, string>> = { ko: KO, en: EN };
 

@@ -46,12 +46,12 @@ const MIN_VERSION: (u32, u32, u32) = (2, 1, 287);
 type Result<T> = std::result::Result<T, String>;
 
 /// The user's `claude`: on PATH, or where its installers put it.
-fn find_claude() -> Option<PathBuf> {
+pub(crate) fn find_claude() -> Option<PathBuf> {
     crate::tools::cli::find(crate::tools::ToolId::Claude)
 }
 
 /// Runs `claude` with `args`; stdout, or stderr (or stdout) as the error.
-fn claude(args: &[&str]) -> Result<String> {
+pub(crate) fn claude(args: &[&str]) -> Result<String> {
     let path = find_claude().ok_or_else(|| {
         crate::tr!(
             "Claude Code(claude 명령)를 찾지 못했어요. 설치한 뒤 다시 시도해 주세요",
@@ -124,7 +124,7 @@ pub struct ModStatus {
     pub installed: Vec<String>,
 }
 
-fn installed() -> Vec<String> {
+pub(crate) fn installed() -> Vec<String> {
     let Ok(json) = claude(&["plugin", "list", "--json"]) else {
         return Vec::new();
     };
@@ -177,7 +177,7 @@ fn write_files(dir: &Path) -> Result<()> {
 }
 
 /// Adds a marketplace; one already added is updated instead.
-fn add_marketplace(source: &str, name: &str) -> Result<()> {
+pub(crate) fn add_marketplace(source: &str, name: &str) -> Result<()> {
     match claude(&["plugin", "marketplace", "add", source]) {
         Ok(_) => Ok(()),
         Err(e) if e.to_lowercase().contains("already") => {
@@ -187,7 +187,7 @@ fn add_marketplace(source: &str, name: &str) -> Result<()> {
     }
 }
 
-fn install_plugin(id: &str) -> Result<()> {
+pub(crate) fn install_plugin(id: &str) -> Result<()> {
     match claude(&["plugin", "install", id, "--scope", "user"]) {
         Ok(_) => Ok(()),
         Err(e) if e.to_lowercase().contains("already installed") => Ok(()),

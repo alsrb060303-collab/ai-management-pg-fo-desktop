@@ -281,6 +281,32 @@ pub async fn composer_compile(
     .await
 }
 
+/// Saves the automation an automation output describes: its settings from
+/// the node, its instructions and subagents from the connected blocks.
+#[tauri::command]
+pub async fn composer_save_automation(
+    app: AppHandle,
+    doc: Value,
+    node_id: String,
+    automation: crate::automation::Automation,
+) -> Result<crate::automation::Automation, String> {
+    blocking(app, move |app| {
+        let doc_id = doc["id"].as_str().map(str::to_string);
+        let parsed = parse_doc(doc)?;
+        let parts = compile::automation_parts(&parsed, &catalog_for(app), &node_id);
+        let mut automation = automation;
+        automation.instructions = parts.instructions;
+        automation.agents = parts.agents;
+        automation.doc_id = doc_id;
+        let saved = app
+            .state::<crate::automation::Automations>()
+            .save(automation)?;
+        crate::automation::changed(app);
+        Ok(saved)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn composer_plan(
     app: AppHandle,

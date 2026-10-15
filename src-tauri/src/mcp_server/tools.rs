@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
+use crate::automation;
 use crate::bridge::{self, Request};
 use crate::composer::catalog::{self, Block, BlockKind};
 use crate::composer::compile;
@@ -131,6 +132,72 @@ pub fn definitions() -> Vec<Value> {
             ),
             false,
         ),
+        tool(
+            "list_automations",
+            "Automations saved in Encela: each one's schedule, model, prompt, subagents, allowed tools, email, whether it is on, the next run, and its latest runs.",
+            schema(json!({}), &[]),
+            true,
+        ),
+        tool(
+            "save_automation",
+            "Creates an automation in Encela, or changes one (pass its id). Encela runs it with the user's own `claude -p` on the schedule while Encela is running. Tools not in allowedTools are refused, so list every tool the task needs (e.g. WebSearch, WebFetch, Read). With an email, the result is mailed through the user's email MCP server (mailTool, default mcp__claude_ai_Gmail).",
+            schema(
+                json!({
+                    "id": { "type": "string", "description": "Omit to create a new one" },
+                    "name": { "type": "string" },
+                    "prompt": { "type": "string", "description": "What to do on each run" },
+                    "schedule": {
+                        "type": "object",
+                        "description": "{\"kind\":\"daily\",\"time\":\"10:00\",\"days\":[1,2,3,4,5]} (days 0=Sunday..6, empty = every day) or {\"kind\":\"interval\",\"minutes\":60} (at least 5)",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["daily", "interval"] },
+                            "time": { "type": "string" },
+                            "days": { "type": "array", "items": { "type": "integer" } },
+                            "minutes": { "type": "integer" },
+                        },
+                        "required": ["kind"],
+                    },
+                    "model": { "type": "string", "description": "haiku, sonnet, opus, fable or a model id; empty = default" },
+                    "instructions": { "type": "string", "description": "Added to the system prompt" },
+                    "agents": {
+                        "type": "object",
+                        "description": "Subagents by name (lowercase, digits, -): {description, prompt, model?, tools?}",
+                        "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                                "description": { "type": "string" },
+                                "prompt": { "type": "string" },
+                                "model": { "type": "string" },
+                                "tools": { "type": "array", "items": { "type": "string" } },
+                            },
+                            "required": ["description", "prompt"],
+                        },
+                    },
+                    "allowedTools": { "type": "array", "items": { "type": "string" } },
+                    "project": { "type": "string", "description": "Folder to run in; empty = the automation's own folder" },
+                    "email": { "type": "string", "description": "Mail the result here" },
+                    "mailTool": { "type": "string" },
+                    "enabled": { "type": "boolean" },
+                }),
+                &["name", "prompt", "schedule"],
+            ),
+            false,
+        ),
+        tool(
+            "set_automation_enabled",
+            "Turns an automation on or off.",
+            schema(
+                json!({ "id": { "type": "string" }, "enabled": { "type": "boolean" } }),
+                &["id", "enabled"],
+            ),
+            false,
+        ),
+        tool(
+            "run_automation",
+            "Runs an automation now in Encela (Encela must be running). Check list_automations later for the result.",
+            schema(json!({ "id": { "type": "string" } }), &["id"]),
+            false,
+        ),
     ]
 }
 
@@ -219,6 +286,10 @@ impl Server {
             "list_documents" => self.list_documents(),
             "preview_document" => self.preview_document(args),
             "create_document" => self.create_document(args),
+            "list_automations" => self.list_automations(),
+            "save_automation" => self.save_automation(args),
+            "set_automation_enabled" => self.set_automation_enabled(args),
+            "run_automation" => self.run_automation(args),
             _ => return Err((-32602, format!("Unknown tool: {name}"))),
         };
         Ok(match result {
@@ -443,6 +514,106 @@ impl Server {
             Request::SaveDoc { doc },
             json!({ "id": id, "name": name, "files": files, "warnings": compiled.warnings }),
         )
+    }
+
+    fn list_automations(&self) -> ToolResult {
+        let runs = automation::read_runs(&self.data_dir);
+        let list: Vec<Value> = automation::read_automations(&self.data_dir)
+            .into_iter()
+            .map(|a| {
+                let latest: Vec<&automation::Run> = runs
+                    .iter()
+                    .rev()
+                    .filter(|r| r.automation_id == a.id)
+                    .take(3)
+                    .collect();
+                let next = automation::next_run_at(&a);
+                let mut v = serde_json::to_value(&a).unwrap_or_default();
+                v["nextRunAt"] = json!(next);
+                v["latestRuns"] = serde_json::to_value(latest).unwrap_or_default();
+                v
+            })
+            .collect();
+        Ok(json!({
+            "appRunning": Self::app_running(self.state().as_ref()),
+            "automations": list,
+        }))
+    }
+
+    fn save_automation(&self, args: &Value) -> ToolResult {
+        let mut value = args.clone();
+        let existing = str_arg(args, "id").and_then(|id| {
+            automation::read_automations(&self.data_dir)
+                .into_iter()
+                .find(|a| a.id == id)
+        });
+        if str_arg(args, "id").is_some() && existing.is_none() {
+            return Err("No automation with that id; use list_automations".into());
+        }
+        // A change keeps what it doesn't mention.
+        if let Some(old) = &existing
+            && let (Some(fields), Ok(Value::Object(mut base))) =
+                (args.as_object(), serde_json::to_value(old))
+        {
+            for (k, v) in fields {
+                base.insert(k.clone(), v.clone());
+            }
+            value = Value::Object(base);
+        }
+        if value
+            .get("id")
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            value["id"] = json!(format!(
+                "auto-{}",
+                &uuid::Uuid::new_v4().simple().to_string()[..12]
+            ));
+        }
+        let parsed: automation::Automation = serde_json::from_value(value.clone())
+            .map_err(|e| format!("Invalid automation: {e}"))?;
+        // Checked here too, so mistakes come back to Claude now.
+        let checked = automation::normalize(parsed, existing.as_ref(), automation::now_ms())?;
+        let next = automation::next_run_at(&checked);
+        self.send(
+            Request::SaveAutomation { automation: value },
+            json!({ "id": checked.id, "name": checked.name, "nextRunAt": next, "allowedTools": checked.allowed_tools }),
+        )
+    }
+
+    fn set_automation_enabled(&self, args: &Value) -> ToolResult {
+        let id = required(args, "id")?.to_string();
+        let enabled = args["enabled"]
+            .as_bool()
+            .ok_or("`enabled` must be true or false")?;
+        self.known_automation(&id)?;
+        self.send(
+            Request::SetAutomationEnabled {
+                id: id.clone(),
+                enabled,
+            },
+            json!({ "id": id, "enabled": enabled }),
+        )
+    }
+
+    fn run_automation(&self, args: &Value) -> ToolResult {
+        let id = required(args, "id")?.to_string();
+        self.known_automation(&id)?;
+        if !Self::app_running(self.state().as_ref()) {
+            return Err("Encela isn't running; open it to run automations".into());
+        }
+        self.send(
+            Request::RunAutomation { id: id.clone() },
+            json!({ "started": id }),
+        )
+    }
+
+    fn known_automation(&self, id: &str) -> Result<(), String> {
+        automation::read_automations(&self.data_dir)
+            .iter()
+            .any(|a| a.id == id)
+            .then_some(())
+            .ok_or_else(|| "No automation with that id; use list_automations".into())
     }
 }
 
@@ -772,5 +943,45 @@ mod tests {
             .find(|n| n["type"] == "output")
             .unwrap();
         assert_eq!(output["data"]["target"], "instructions");
+    }
+
+    #[test]
+    fn automations_are_checked_then_left_for_the_app() {
+        let dir = temp();
+        let server = Server::new(dir.clone());
+        let bad = server
+            .call(
+                "save_automation",
+                &json!({ "name": "x", "prompt": "y", "schedule": { "kind": "interval", "minutes": 1 } }),
+            )
+            .unwrap();
+        assert_eq!(bad["isError"], true);
+        assert!(!bridge::dir_in(&dir).join("inbox").exists());
+
+        let ok = server
+            .call(
+                "save_automation",
+                &json!({
+                    "name": "News", "prompt": "Collect AI news",
+                    "schedule": { "kind": "daily", "time": "10:00" },
+                    "agents": { "scraper": { "description": "d", "prompt": "p", "model": "haiku" } },
+                    "allowedTools": ["WebSearch"], "email": "me@example.com",
+                }),
+            )
+            .unwrap();
+        let reply = text(&ok);
+        let id = reply["id"].as_str().unwrap().to_string();
+        assert!(id.starts_with("auto-"));
+        assert_eq!(reply["allowedTools"], json!(["WebSearch"]));
+        let sent = inbox(&dir);
+        assert_eq!(sent[0]["op"], "saveAutomation");
+        assert_eq!(sent[0]["automation"]["id"], id.as_str());
+
+        // Unknown ids are refused before anything is sent.
+        let missing = server
+            .call("run_automation", &json!({ "id": "auto-nope" }))
+            .unwrap();
+        assert_eq!(missing["isError"], true);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
