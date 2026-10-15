@@ -82,6 +82,7 @@ pub fn run() {
             composer::composer_write,
             activity::activity_refresh,
             activity::activity_git_log,
+            activity::activity_local,
             activity::activity_prompt_log,
             activity::activity_settings,
             activity::activity_set_settings,

@@ -1,11 +1,13 @@
-//! The GitHub log's sources: the local `git` (commits on every branch, merges,
-//! pushes seen through remote-tracking branches, branch tips) and the GitHub
-//! API (pull requests, CI runs, through the existing sign-in).
+//! The GitHub log's sources: the GitHub API (commits and branches, pull
+//! requests, CI runs, through the existing sign-in), which is what the log
+//! stores, and the local `git` for what is not on GitHub yet (commits no
+//! remote-tracking branch has, uncommitted changes), read live and not stored.
 //!
-//! Event ids follow `activity::GitEvent::id`: `git:<kind>:<sha or pr number>[:<extra>]`
-//! with the kind spelled as serialized (`commit`, `merge`, `push`, `prOpened`,
+//! Event ids follow `activity::GitEvent::id`: `git:<repo>:<kind>:<sha or pr number>[:<extra>]`
+//! with the kind spelled as serialized (`commit`, `merge`, `prOpened`,
 //! `prMerged`, `prClosed`, `ci`), so collecting again gives the same ids.
-//! They do not contain the repository key; the store keys events by repo too.
+//! Commits from GitHub end in `:gh` (`GITHUB_MARK`); older versions stored
+//! local commits (and `push` events) without it, and those are not shown.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
@@ -14,8 +16,11 @@ use std::path::Path;
 use tauri::AppHandle;
 
 use super::sessions::parse_iso_ms;
-use super::{BranchTip, GitEvent, GitKind};
+use super::{BranchTip, GitEvent, GitKind, LocalLog};
 use crate::git;
+
+/// Last part of the id of a commit read from GitHub.
+pub const GITHUB_MARK: &str = "gh";
 
 const FIELD: char = '\x1f';
 const RECORD: char = '\x1e';
@@ -295,81 +300,6 @@ fn local_events(
     (events, index)
 }
 
-/// Subject and time (ms) of commits, in one git call per chunk instead of
-/// one per commit. Commits git does not know are left out.
-fn commit_times(root: &Path, shas: &[&str]) -> HashMap<String, (i64, String)> {
-    let mut out = HashMap::new();
-    for chunk in shas.chunks(200) {
-        let mut args: Vec<&str> = vec!["log", "--no-walk=unsorted", "--format=%H%x1f%ct%x1f%s%x1e"];
-        args.extend_from_slice(chunk);
-        let Ok(raw) = git::run_raw(root, &args) else {
-            continue;
-        };
-        for record in String::from_utf8_lossy(&raw).split(RECORD) {
-            let mut f = record.trim_start_matches('\n').split(FIELD);
-            let (Some(sha), Some(ct)) = (f.next().filter(|h| !h.is_empty()), f.next()) else {
-                continue;
-            };
-            let Ok(secs) = ct.trim().parse::<i64>() else {
-                continue;
-            };
-            out.insert(
-                sha.to_string(),
-                (secs * 1000, f.next().unwrap_or_default().to_string()),
-            );
-        }
-    }
-    out
-}
-
-/// A push per branch whose remote-tracking tip is a commit we know. Git keeps
-/// no record of when a push happened, so the event carries the time of the
-/// commit that is now the remote tip.
-fn push_events(
-    root: &Path,
-    repo: &str,
-    tips: &[BranchTip],
-    events: &[GitEvent],
-    index: &HashMap<String, usize>,
-) -> Vec<GitEvent> {
-    // Tips older than the commits read: ask git for their times, all at once.
-    let mut older: Vec<&str> = tips
-        .iter()
-        .filter_map(|t| t.remote.as_deref())
-        .filter(|sha| !index.contains_key(*sha))
-        .collect();
-    older.sort_unstable();
-    older.dedup();
-    let known = if older.is_empty() {
-        HashMap::new()
-    } else {
-        commit_times(root, &older)
-    };
-
-    let mut out = Vec::new();
-    for tip in tips {
-        let Some(sha) = &tip.remote else { continue };
-        let (at, title) = match index.get(sha) {
-            Some(&i) => (events[i].at, events[i].title.clone()),
-            None => match known.get(sha) {
-                Some((at, subject)) => (*at, subject.clone()),
-                None => continue,
-            },
-        };
-        let mut e = event(
-            repo,
-            GitKind::Push,
-            at,
-            &format!("{}:{sha}", tip.name),
-            title,
-        );
-        e.branch = Some(tip.name.clone());
-        e.sha = Some(sha.clone());
-        out.push(e);
-    }
-    out
-}
-
 /// Children before their parents, newest first otherwise. `git log` without
 /// `--date-order`/`--topo-order` stops after `-n` commits (those two have to
 /// walk the whole history first), but then a commit can come before its
@@ -418,61 +348,154 @@ fn children_first(commits: Vec<LogCommit>) -> Vec<LogCommit> {
     order.into_iter().filter_map(|i| slots[i].take()).collect()
 }
 
-/// Commits (newest first, at most `limit`), merges and pushes of every
-/// branch, and the branch tips.
-pub fn collect_local(
-    root: &Path,
-    repo: &str,
-    limit: usize,
-) -> Result<(Vec<GitEvent>, Vec<BranchTip>), String> {
+/// What is here but not on GitHub yet: commits on local branches (and a
+/// detached HEAD) that no remote-tracking branch has, newest first and at
+/// most `limit`, and how many files have uncommitted changes. Read on every
+/// look, never stored: the GitHub log itself comes from GitHub.
+pub fn collect_local(root: &Path, repo: &str, limit: usize) -> Result<LocalLog, String> {
+    let mut out = LocalLog {
+        repo: repo.to_string(),
+        ..Default::default()
+    };
+    out.changes = git::run_raw(root, &["status", "--porcelain"])
+        .map(|raw| raw.split(|b| *b == b'\n').filter(|l| !l.is_empty()).count())
+        .unwrap_or(0);
+    let Some(head) = git::run(root, &["rev-parse", "-q", "--verify", "HEAD"])
+        .ok()
+        .filter(|h| !h.is_empty())
+    else {
+        // No commits yet.
+        return Ok(out);
+    };
+    out.head = Some(head);
+
     let refs = parse_refs(&git::run(
         root,
         &["for-each-ref", REF_FORMAT, "refs/heads", "refs/remotes"],
     )?);
-    if refs.is_empty() {
-        // No commits yet (or a detached HEAD only): nothing to draw.
-        return Ok((Vec::new(), Vec::new()));
-    }
     let default_ref = git::run(root, &["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]).ok();
     let tips = branch_tips(&refs, default_ref.as_deref());
+    out.branch = tips.iter().find(|t| t.is_current).map(|t| t.name.clone());
 
     let n = format!("-n{}", limit.max(1));
     let log = git::run_raw(
         root,
         &[
             "log",
-            "--all",
             "--decorate=full",
             "--source",
             &n,
             LOG_FORMAT,
+            "HEAD",
+            "--branches",
+            "--not",
+            "--remotes",
         ],
     )?;
     let commits = children_first(parse_log(&String::from_utf8_lossy(&log)));
-    let (mut events, index) = local_events(repo, &commits, &tips);
-    let pushes = push_events(root, repo, &tips, &events, &index);
-    events.extend(pushes);
-    Ok((events, tips))
+    let (mut events, _) = local_events(repo, &commits, &tips);
+    for e in &mut events {
+        // Not on GitHub: there is no page to open.
+        e.url = None;
+    }
+    out.commits = events;
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- GitHub
 
-/// Pull requests (opened, merged, closed) and CI results from GitHub. Empty
-/// when not signed in to GitHub or when the repository is not on github.com.
-/// The second value is a soft warning (CI results could not be read; the
-/// pull requests are still there).
-pub fn collect_github(
-    app: &AppHandle,
-    _root: &Path,
-    repo: &str,
-) -> Result<(Vec<GitEvent>, Option<String>), String> {
+/// What the GitHub log stores from one read of GitHub.
+pub struct GithubLog {
+    pub events: Vec<GitEvent>,
+    /// Branches on GitHub (`remote` = their tip), the default one marked.
+    pub tips: Vec<BranchTip>,
+    /// Something was left out (CI results, commits); the rest is still good.
+    pub warning: Option<String>,
+}
+
+/// Commits, pull requests (opened, merged, closed) and CI results from
+/// GitHub. `None` when not signed in to GitHub or when the repository is not
+/// on github.com.
+pub fn collect_github(app: &AppHandle, repo: &str) -> Result<Option<GithubLog>, String> {
     let Some(slug) = github_slug(repo) else {
-        return Ok((Vec::new(), None));
+        return Ok(None);
     };
     let Some(remote) = crate::github::activity(app, &slug)? else {
-        return Ok((Vec::new(), None));
+        return Ok(None);
     };
-    Ok((github_events(repo, &remote), remote.runs_warning))
+    let warning = match (&remote.commits_warning, &remote.runs_warning) {
+        (Some(c), Some(r)) => Some(format!("{c}; {r}")),
+        (c, r) => c.clone().or_else(|| r.clone()),
+    };
+    Ok(Some(GithubLog {
+        events: github_events(repo, &remote),
+        tips: github_tips(&remote),
+        warning,
+    }))
+}
+
+fn github_tips(remote: &crate::github::ActivityRemote) -> Vec<BranchTip> {
+    remote
+        .branches
+        .iter()
+        .map(|b| BranchTip {
+            name: b.name.clone(),
+            local: None,
+            remote: Some(b.sha.clone()),
+            is_default: remote.default_branch.as_ref() == Some(&b.name),
+            is_current: false,
+        })
+        .collect()
+}
+
+/// The branch each GitHub commit is drawn on. The default branch keeps its
+/// first-parent line; then each other branch (newest first) and each pull
+/// request's head (its branch may be deleted since) claims the commits it
+/// reaches that nobody claimed yet. The rest belongs to the default branch.
+fn commit_branches(remote: &crate::github::ActivityRemote) -> HashMap<&str, &str> {
+    let parents: HashMap<&str, &[String]> = remote
+        .commits
+        .iter()
+        .map(|c| (c.sha.as_str(), c.parents.as_slice()))
+        .collect();
+    let default = remote.default_branch.as_deref();
+    let mut out: HashMap<&str, &str> = HashMap::new();
+    if let Some(default) = default
+        && let Some(tip) = remote.branches.iter().find(|b| b.name == default)
+    {
+        let mut at = Some(tip.sha.as_str());
+        while let Some(sha) = at {
+            let Some(ps) = parents.get(sha) else { break };
+            if out.insert(sha, default).is_some() {
+                break;
+            }
+            at = ps.first().map(String::as_str);
+        }
+    }
+    let labels = remote
+        .branches
+        .iter()
+        .filter(|b| Some(b.name.as_str()) != default)
+        .map(|b| (b.name.as_str(), b.sha.as_str()))
+        .chain(
+            remote
+                .pulls
+                .iter()
+                .filter(|p| !p.head_sha.is_empty())
+                .map(|p| (p.head.as_str(), p.head_sha.as_str())),
+        );
+    for (name, tip) in labels {
+        let mut stack = vec![tip];
+        while let Some(sha) = stack.pop() {
+            if out.contains_key(sha) {
+                continue;
+            }
+            let Some(ps) = parents.get(sha) else { continue };
+            out.insert(sha, name);
+            stack.extend(ps.iter().map(String::as_str));
+        }
+    }
+    out
 }
 
 fn ci_state(conclusion: &str) -> Option<&'static str> {
@@ -487,6 +510,38 @@ fn ci_state(conclusion: &str) -> Option<&'static str> {
 
 fn github_events(repo: &str, remote: &crate::github::ActivityRemote) -> Vec<GitEvent> {
     let mut out = Vec::new();
+    let branches = commit_branches(remote);
+    for c in &remote.commits {
+        let Some(at) = parse_iso_ms(&c.committed_at) else {
+            continue;
+        };
+        let kind = if c.parents.len() > 1 {
+            GitKind::Merge
+        } else {
+            GitKind::Commit
+        };
+        // `:gh` tells these from the local commits older versions stored.
+        let mut e = event(
+            repo,
+            kind,
+            at,
+            &format!("{}:{GITHUB_MARK}", c.sha),
+            c.title.clone(),
+        );
+        e.branch = branches
+            .get(c.sha.as_str())
+            .copied()
+            .or(remote.default_branch.as_deref())
+            .map(str::to_string);
+        e.sha = Some(c.sha.clone());
+        e.parents = c.parents.clone();
+        e.author = Some(c.author.clone()).filter(|a| !a.is_empty());
+        e.url = Some(c.url.clone()).filter(|u| !u.is_empty());
+        if kind == GitKind::Merge {
+            e.state = e.branch.clone();
+        }
+        out.push(e);
+    }
     for p in &remote.pulls {
         let number = p.number.to_string();
         let base = |kind: GitKind, at: &str| {
@@ -542,7 +597,7 @@ fn github_events(repo: &str, remote: &crate::github::ActivityRemote) -> Vec<GitE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::{ActivityRemote, PullRecord, RunRecord};
+    use crate::github::{ActivityRemote, BranchRecord, CommitRecord, PullRecord, RunRecord};
     use std::path::PathBuf;
 
     #[test]
@@ -722,6 +777,7 @@ mod tests {
                 run(13, "in_progress", None),
             ],
             runs_warning: None,
+            ..Default::default()
         };
         let events = github_events("github.com/o/r", &remote);
         let ids: Vec<_> = events.iter().map(|e| e.id.as_str()).collect();
@@ -786,78 +842,49 @@ mod tests {
     #[test]
     fn an_empty_repository_has_no_events() {
         let (_tmp, root) = repo_dir();
-        let (events, tips) = collect_local(&root, "k", 50).unwrap();
-        assert!(events.is_empty() && tips.is_empty());
+        let log = collect_local(&root, "k", 50).unwrap();
+        assert!(log.commits.is_empty() && log.head.is_none());
+        assert_eq!(log.changes, 0);
+        std::fs::write(root.join("new.txt"), "x").unwrap();
+        assert_eq!(collect_local(&root, "k", 50).unwrap().changes, 1);
     }
 
     #[test]
-    fn local_history_is_collected_from_a_real_repository() {
+    fn local_log_has_only_what_no_remote_branch_has() {
         let (_tmp, root) = repo_dir();
         commit(&root, "a.txt", "init");
-        git_in(&root, &["checkout", "-q", "-b", "feat"]);
-        commit(&root, "b.txt", "feat one");
-        commit(&root, "c.txt", "feat two");
-        git_in(&root, &["checkout", "-q", "main"]);
-        commit(&root, "d.txt", "main two");
-        git_in(
-            &root,
-            &["merge", "-q", "--no-ff", "-m", "Merge feat", "feat"],
-        );
+        commit(&root, "b.txt", "pushed");
         // A remote-tracking ref as a fetch or push would leave it.
-        let main_sha = git::run(&root, &["rev-parse", "main~1"]).unwrap();
-        git_in(
-            &root,
-            &["update-ref", "refs/remotes/origin/main", &main_sha],
-        );
-        git_in(&root, &["config", "branch.main.remote", "origin"]);
-        git_in(&root, &["config", "branch.main.merge", "refs/heads/main"]);
-        git_in(
-            &root,
-            &[
-                "symbolic-ref",
-                "refs/remotes/origin/HEAD",
-                "refs/remotes/origin/main",
-            ],
-        );
+        let pushed = git::run(&root, &["rev-parse", "HEAD"]).unwrap();
+        git_in(&root, &["update-ref", "refs/remotes/origin/main", &pushed]);
+        commit(&root, "c.txt", "main local");
+        git_in(&root, &["checkout", "-q", "-b", "feat"]);
+        commit(&root, "d.txt", "feat one");
+        commit(&root, "e.txt", "feat two");
+        std::fs::write(root.join("a.txt"), "changed").unwrap();
+        std::fs::write(root.join("f.txt"), "untracked").unwrap();
 
-        let (events, tips) = collect_local(&root, "github.com/o/r", 50).unwrap();
-
-        let by_title = |t: &str| events.iter().find(|e| e.title == t).unwrap();
+        let log = collect_local(&root, "github.com/o/r", 50).unwrap();
+        let titles: Vec<_> = log.commits.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(titles, ["feat two", "feat one", "main local"]);
+        assert_eq!(log.commits[0].branch.as_deref(), Some("feat"));
+        assert_eq!(log.commits[2].branch.as_deref(), Some("main"));
+        assert_eq!(log.commits[2].parents, [pushed]);
+        assert!(log.commits.iter().all(|e| e.url.is_none()));
+        assert_eq!(log.branch.as_deref(), Some("feat"));
         assert_eq!(
-            events.iter().filter(|e| e.kind == GitKind::Commit).count(),
-            4
+            log.head,
+            Some(git::run(&root, &["rev-parse", "HEAD"]).unwrap())
         );
-        let merge = by_title("Merge feat");
-        assert_eq!(merge.kind, GitKind::Merge);
-        assert_eq!(merge.parents.len(), 2);
-        assert_eq!(merge.branch.as_deref(), Some("main"));
-        assert_eq!(by_title("feat two").branch.as_deref(), Some("feat"));
-        assert_eq!(by_title("feat one").branch.as_deref(), Some("feat"));
-        assert_eq!(by_title("main two").branch.as_deref(), Some("main"));
-        assert_eq!(by_title("init").branch.as_deref(), Some("main"));
-        assert_eq!(
-            merge.id,
-            format!("git:{}:merge:{}", merge.repo, merge.sha.as_deref().unwrap())
-        );
-
-        let main = tips.iter().find(|t| t.name == "main").unwrap();
-        assert!(main.is_default && main.is_current);
-        assert_eq!(main.remote.as_deref(), Some(main_sha.as_str()));
-        let feat = tips.iter().find(|t| t.name == "feat").unwrap();
-        assert!(!feat.is_default && feat.remote.is_none());
-
-        let pushes: Vec<_> = events.iter().filter(|e| e.kind == GitKind::Push).collect();
-        assert_eq!(pushes.len(), 1);
-        assert_eq!(
-            pushes[0].id,
-            format!("git:{}:push:main:{main_sha}", pushes[0].repo)
-        );
-        assert_eq!(pushes[0].title, "main two");
-        assert_eq!(pushes[0].at, by_title("main two").at);
+        assert_eq!(log.changes, 2);
 
         // The limit counts commits.
-        let (events, _) = collect_local(&root, "k", 2).unwrap();
-        assert_eq!(events.iter().filter(|e| e.kind != GitKind::Push).count(), 2);
+        assert_eq!(collect_local(&root, "k", 2).unwrap().commits.len(), 2);
+
+        // Everything pushed: nothing local.
+        let tip = git::run(&root, &["rev-parse", "HEAD"]).unwrap();
+        git_in(&root, &["update-ref", "refs/remotes/origin/feat", &tip]);
+        assert!(collect_local(&root, "k", 50).unwrap().commits.is_empty());
     }
 
     #[test]
@@ -890,45 +917,98 @@ mod tests {
         assert_eq!(order, ["m", "kid", "old", "side", "root", "far"]);
     }
 
-    #[test]
-    fn old_remote_tips_are_looked_up_in_one_batch() {
-        let (_tmp, root) = repo_dir();
-        for i in 1..=4 {
-            commit(&root, &format!("f{i}.txt"), &format!("commit {i}"));
+    fn gh_commit(sha: &str, parents: &[&str], minute: u32) -> CommitRecord {
+        CommitRecord {
+            sha: sha.into(),
+            parents: parents.iter().map(|p| p.to_string()).collect(),
+            author: "ada".into(),
+            committed_at: format!("2026-10-14T01:{minute:02}:00Z"),
+            title: format!("commit {sha}"),
+            url: format!("https://github.com/o/r/commit/{sha}"),
         }
-        let shas: Vec<String> = ["HEAD~3", "HEAD~2", "HEAD~1"]
-            .iter()
-            .map(|r| git::run(&root, &["rev-parse", r]).unwrap())
-            .collect();
-        let refs: Vec<&str> = shas.iter().map(String::as_str).collect();
-        let got = commit_times(&root, &refs);
-        assert_eq!(got.len(), 3);
-        assert_eq!(got[&shas[0]].1, "commit 1");
-        assert_eq!(got[&shas[2]].1, "commit 3");
-        assert!(got[&shas[0]].0 > 0);
-        // Unknown commits are left out, the rest still answered.
-        let mut with_bad = refs.clone();
-        with_bad.push("0123456789012345678901234567890123456789");
-        assert!(
-            commit_times(&root, &with_bad).is_empty(),
-            "a bad sha fails its chunk only"
-        );
-        assert_eq!(commit_times(&root, &[]).len(), 0);
+    }
 
-        // Tips beyond the commits read (limit 1) still become pushes.
-        for (i, sha) in shas.iter().enumerate() {
-            git_in(
-                &root,
-                &["update-ref", &format!("refs/remotes/origin/b{i}"), sha],
-            );
+    #[test]
+    fn github_commits_get_their_branches() {
+        // main: m1 - m2 - M (merges f2, from the deleted branch of PR 7) - m3
+        // live branch `wip` forks off m3; f1 - f2 was PR 7's branch.
+        let remote = ActivityRemote {
+            commits: vec![
+                gh_commit("w1", &["m3"], 9),
+                gh_commit("m3", &["M"], 8),
+                gh_commit("M", &["m2", "f2"], 7),
+                gh_commit("f2", &["f1"], 6),
+                gh_commit("f1", &["m1"], 5),
+                gh_commit("m2", &["m1"], 4),
+                gh_commit("m1", &[], 3),
+                gh_commit("x", &["m1"], 2),
+            ],
+            branches: vec![
+                BranchRecord {
+                    name: "main".into(),
+                    sha: "m3".into(),
+                },
+                BranchRecord {
+                    name: "wip".into(),
+                    sha: "w1".into(),
+                },
+            ],
+            default_branch: Some("main".into()),
+            pulls: vec![PullRecord {
+                number: 7,
+                title: "Feature".into(),
+                state: "merged".into(),
+                url: "u7".into(),
+                author: "ada".into(),
+                head: "feature".into(),
+                base: "main".into(),
+                head_sha: "f2".into(),
+                created_at: "2026-10-14T01:05:00Z".into(),
+                merged_at: Some("2026-10-14T01:07:00Z".into()),
+                closed_at: Some("2026-10-14T01:07:00Z".into()),
+            }],
+            ..Default::default()
+        };
+        let branches = commit_branches(&remote);
+        for (sha, branch) in [
+            ("m3", "main"),
+            ("M", "main"),
+            ("m2", "main"),
+            ("m1", "main"),
+            ("w1", "wip"),
+            ("f2", "feature"),
+            ("f1", "feature"),
+        ] {
+            assert_eq!(branches.get(sha), Some(&branch), "{sha}");
         }
-        let (events, _) = collect_local(&root, "k", 1).unwrap();
-        let mut titles: Vec<_> = events
-            .iter()
-            .filter(|e| e.kind == GitKind::Push)
-            .map(|e| e.title.clone())
-            .collect();
-        titles.sort();
-        assert_eq!(titles, ["commit 1", "commit 2", "commit 3"]);
+        assert_eq!(branches.get("x"), None, "reached by no branch");
+
+        let events = github_events("github.com/o/r", &remote);
+        let commit = |sha: &str| {
+            events
+                .iter()
+                .find(|e| e.sha.as_deref() == Some(sha) && e.pr.is_none())
+                .unwrap()
+        };
+        let merge = commit("M");
+        assert_eq!(merge.kind, GitKind::Merge);
+        assert_eq!(merge.id, "git:github.com/o/r:merge:M:gh");
+        assert_eq!(merge.state.as_deref(), Some("main"));
+        assert_eq!(commit("f1").kind, GitKind::Commit);
+        assert_eq!(commit("f1").id, "git:github.com/o/r:commit:f1:gh");
+        assert_eq!(commit("x").branch.as_deref(), Some("main"), "falls back");
+        assert_eq!(
+            commit("w1").at,
+            parse_iso_ms("2026-10-14T01:09:00Z").unwrap()
+        );
+        assert_eq!(
+            commit("w1").url.as_deref(),
+            Some("https://github.com/o/r/commit/w1")
+        );
+
+        let tips = github_tips(&remote);
+        assert_eq!(tips.len(), 2);
+        assert!(tips[0].is_default && tips[0].remote.as_deref() == Some("m3"));
+        assert!(!tips[1].is_default && tips[1].local.is_none());
     }
 }

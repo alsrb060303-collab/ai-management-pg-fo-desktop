@@ -482,7 +482,7 @@ mod tests {
             deleted: false,
             device_id: "laptop".into(),
             event: Event::Git(GitEvent {
-                id: "git:commit:zzz".into(),
+                id: "git:commit:zzz:gh".into(),
                 repo: "github.com/o/r".into(),
                 kind: GitKind::Commit,
                 at: 5,
@@ -496,7 +496,7 @@ mod tests {
                 author: None,
             }),
         });
-        let doc = doc_id("git:commit:zzz");
+        let doc = doc_id("git:commit:zzz:gh");
         let remote = json!([{ "document": {
             "name": format!("projects/p/databases/(default)/documents/users/u1/activity/{doc}"),
             "fields": theirs.as_object().unwrap().iter().map(|(k, v)| (k.clone(), v.clone()))

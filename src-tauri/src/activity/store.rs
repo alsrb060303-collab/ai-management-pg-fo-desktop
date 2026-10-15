@@ -472,6 +472,8 @@ impl Store {
     // ---- reading ----
 
     /// Live commits and other GitHub events of a repository, newest first.
+    /// Only commits read from GitHub (id ending in `:gh`): older versions
+    /// stored local commits and pushes, which other devices may still send.
     /// The cursor is `(before, before_id)`: events strictly older, or at the
     /// same time with a smaller id (commit times tie often); with only
     /// `before`, events strictly older.
@@ -487,6 +489,8 @@ impl Store {
             .prepare(
                 "SELECT * FROM git_events
                  WHERE repo = ?1 AND deleted = 0
+                   AND kind NOT IN ('push', 'branch')
+                   AND (kind NOT IN ('commit', 'merge') OR id LIKE '%:gh')
                    AND (at < ?2 OR (at = ?2 AND ?4 IS NOT NULL AND id < ?4))
                  ORDER BY at DESC, id DESC LIMIT ?3",
             )
@@ -744,11 +748,13 @@ mod tests {
     use super::*;
     use crate::tools::ToolId;
 
+    /// A CI result: any kind the log shows works here (commits need a
+    /// GitHub id, see `only_github_commits_are_shown`).
     fn git(id: &str, repo: &str, at: i64) -> GitEvent {
         GitEvent {
             id: id.into(),
             repo: repo.into(),
-            kind: GitKind::Commit,
+            kind: GitKind::Ci,
             at,
             branch: Some("main".into()),
             sha: Some(id.into()),
@@ -827,6 +833,36 @@ mod tests {
         s.upsert(&[g(e.clone()), Event::Prompt(p.clone())]).unwrap();
         assert_eq!(s.git_page("r", 10, None, None).unwrap(), [e]);
         assert_eq!(s.prompt_page("r", 10, None, None).unwrap(), [p]);
+    }
+
+    #[test]
+    fn only_github_commits_are_shown() {
+        let s = Store::in_memory().unwrap();
+        let with = |id: &str, kind: GitKind| {
+            let mut e = git(id, "r", 10);
+            e.kind = kind;
+            g(e)
+        };
+        s.upsert(&[
+            with("git:r:commit:a:gh", GitKind::Commit),
+            with("git:r:merge:b:gh", GitKind::Merge),
+            with("git:r:commit:c", GitKind::Commit),
+            with("git:r:merge:d", GitKind::Merge),
+            with("git:r:push:main:e", GitKind::Push),
+            with("git:r:prOpened:1", GitKind::PrOpened),
+        ])
+        .unwrap();
+        let mut ids: Vec<_> = s
+            .git_page("r", 10, None, None)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            ["git:r:commit:a:gh", "git:r:merge:b:gh", "git:r:prOpened:1"]
+        );
     }
 
     #[test]
