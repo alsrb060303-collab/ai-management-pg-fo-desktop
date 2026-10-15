@@ -68,6 +68,17 @@ export interface GitLog {
   branches: BranchTip[];
 }
 
+/** What the local repository has that GitHub does not (read live, not stored). */
+export interface LocalLog {
+  repo: string;
+  branch: string | null;
+  head: string | null;
+  /** Commits no remote-tracking branch has, newest first. */
+  commits: GitEvent[];
+  /** Files with uncommitted changes. */
+  changes: number;
+}
+
 export interface PromptLog {
   repo: string;
   events: PromptEvent[];
@@ -106,6 +117,7 @@ function loadView(): TreeView {
 interface ActivityState {
   project: string | null;
   git: GitLog | null;
+  local: LocalLog | null;
   prompts: PromptLog | null;
   /** Older entries may exist beyond what is loaded. */
   moreGit: boolean;
@@ -145,8 +157,9 @@ export const useActivityStore = create<ActivityState>((set, get) => {
 
   /** Fetches the newest `limit` entries of both logs. */
   const fetchLogs = async (project: string, limit: number) => {
-    const [git, prompts] = await Promise.all([
+    const [git, local, prompts] = await Promise.all([
       invoke<GitLog>("activity_git_log", { project, limit, before: null, beforeId: null }),
+      invoke<LocalLog>("activity_local", { project }),
       invoke<PromptLog>("activity_prompt_log", {
         project,
         limit,
@@ -154,12 +167,13 @@ export const useActivityStore = create<ActivityState>((set, get) => {
         beforeId: null,
       }),
     ]);
-    return { git, prompts };
+    return { git, local, prompts };
   };
 
   return {
     project: null,
     git: null,
+    local: null,
     prompts: null,
     moreGit: false,
     morePrompts: false,
@@ -189,6 +203,7 @@ export const useActivityStore = create<ActivityState>((set, get) => {
         set({
           project,
           git: null,
+          local: null,
           prompts: null,
           moreGit: false,
           morePrompts: false,
@@ -215,6 +230,7 @@ export const useActivityStore = create<ActivityState>((set, get) => {
         if (id !== seq || get().project !== project) return;
         set({
           git: next.git,
+          local: next.local,
           prompts: next.prompts,
           moreGit: next.git.events.length >= limit,
           morePrompts: next.prompts.events.length >= limit,

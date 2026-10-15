@@ -1,8 +1,9 @@
 //! Work trees: two separate logs per repository, drawn as time-ordered trees.
 //!
-//! - GitHub log (`GitEvent`): commits on every branch, pushes, merges, and
-//!   GitHub pull requests and CI results, collected from the local `git` and
-//!   the GitHub API (`collect_git`).
+//! - GitHub log (`GitEvent`): commits on GitHub's branches, merges, pull
+//!   requests and CI results, read from the GitHub API (`git_log`). What is
+//!   only here (commits not pushed, uncommitted changes) is read from the
+//!   local `git` on every look (`LocalLog`) and never stored.
 //! - Prompt log (`PromptEvent`): the user's prompts to Claude Code and Codex,
 //!   read from their own session files (`sessions`), with the files each
 //!   prompt changed and the commits made while it ran.
@@ -30,8 +31,8 @@ pub use store::{Event, Settings, Store};
 
 /// Emitted (payload `{ repo }`) when a repository's logs changed here or by sync.
 pub const ACTIVITY_EVENT: &str = "activity-changed";
-/// Commits read per refresh.
-const COLLECT_LIMIT: usize = 500;
+/// Local commits not on GitHub read per look.
+const LOCAL_LIMIT: usize = 200;
 
 /// The store opens lazily, so a broken database never blocks app start.
 pub struct Activity {
@@ -136,6 +137,22 @@ pub struct GitLog {
     pub events: Vec<GitEvent>,
     /// Branch names with their current local / remote tips, for lanes.
     pub branches: Vec<BranchTip>,
+}
+
+/// What the local repository has that GitHub does not, drawn as its own line
+/// beside the GitHub log.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalLog {
+    pub repo: String,
+    /// The checked out branch (`None` when detached).
+    pub branch: Option<String>,
+    /// The commit checked out.
+    pub head: Option<String>,
+    /// Commits no remote-tracking branch has, newest first.
+    pub commits: Vec<GitEvent>,
+    /// Files with uncommitted changes (untracked included).
+    pub changes: usize,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -265,13 +282,27 @@ fn refresh(
     let root = PathBuf::from(crate::git::run(project, &["rev-parse", "--show-toplevel"])?);
     let dirs = worktree_dirs(&root);
 
-    let (mut git_events, tips) = git_log::collect_local(&root, &repo, COLLECT_LIMIT)?;
+    let mut git_events = Vec::new();
     let mut warning = None;
     if github {
-        // Offline or signed out: the local log is still worth keeping.
-        if let Ok((more, soft)) = git_log::collect_github(app, &root, &repo) {
-            git_events.extend(more);
-            warning = soft;
+        match git_log::collect_github(app, &repo) {
+            Ok(Some(log)) => {
+                git_events = log.events;
+                warning = log.warning;
+                let current = crate::git::run(&root, &["branch", "--show-current"]).ok();
+                let tips: Vec<BranchTip> = log
+                    .tips
+                    .into_iter()
+                    .map(|mut t| {
+                        t.is_current = current.as_deref() == Some(t.name.as_str());
+                        t
+                    })
+                    .collect();
+                store.set_tips(&repo, &tips)?;
+            }
+            Ok(None) => {}
+            // Offline: what is stored stays; the prompts are still read.
+            Err(e) => warning = Some(e),
         }
     }
 
@@ -283,7 +314,6 @@ fn refresh(
     let settings = store.settings()?;
     let (git, prompt_count) = ingest(store, &settings, store::now_ms(), git_events, prompts)?;
     store.set_scan_state(&repo, &state)?;
-    store.set_tips(&repo, &tips)?;
     let pruned = match settings.cutoff(store::now_ms()) {
         Some(cutoff) => store.prune(cutoff)?,
         None => 0,
@@ -298,8 +328,7 @@ fn refresh(
     })
 }
 
-/// Reads the project's git history, GitHub (when `github`) and tool session
-/// files into the log. Safe to call often; unchanged events are not rewritten.
+/// Reads GitHub (when `github`) and tool session files into the logs. Safe to call often; unchanged events are not rewritten.
 #[tauri::command]
 pub async fn activity_refresh(
     app: AppHandle,
@@ -335,6 +364,26 @@ pub async fn activity_git_log(
         })
     })
     .await
+}
+
+/// The project's commits that are not on GitHub yet and its uncommitted
+/// changes, read now from the local `git`.
+#[tauri::command]
+pub async fn activity_local(project: String) -> Result<LocalLog, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = Path::new(&project);
+        let info = crate::memo::repo::inspect(project)?;
+        if !info.is_git {
+            return Ok(LocalLog {
+                repo: info.key,
+                ..Default::default()
+            });
+        }
+        let root = PathBuf::from(crate::git::run(project, &["rev-parse", "--show-toplevel"])?);
+        git_log::collect_local(&root, &info.key, LOCAL_LIMIT)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

@@ -22,8 +22,13 @@ export const ko = {
   "activity.collapse": "접기",
 
   // GitHub tree
-  "activity.git.empty": "아직 기록이 없어요. 커밋을 하면 여기에 쌓여요.",
-  "activity.git.legend": "속이 빈 점은 아직 GitHub에 없는 커밋이에요.",
+  "activity.git.empty":
+    "아직 기록이 없어요. GitHub에 올라간 커밋과 이 컴퓨터의 변경이 여기에 보여요.",
+  "activity.git.signIn":
+    "GitHub에 로그인하면 GitHub의 커밋, PR, CI 기록이 보여요. 지금은 이 컴퓨터에만 있는 변경만 보여요.",
+  "activity.git.changes": "커밋 안 된 변경 · 파일 {n}개",
+  "activity.git.legend":
+    "GitHub 기록 기준이에요. 색이 다른 줄과 속이 빈 점은 아직 이 컴퓨터에만 있는 커밋과 변경이에요.",
   "activity.git.merge": "병합",
   "activity.git.branchCreated": "브랜치 만듦: {name}",
   "activity.git.push": "push",
@@ -94,8 +99,13 @@ export const en: Messages<typeof ko> = {
   "activity.expand": "Expand",
   "activity.collapse": "Collapse",
 
-  "activity.git.empty": "Nothing here yet. Commits show up here as you make them.",
-  "activity.git.legend": "A hollow dot is a commit that isn't on GitHub yet.",
+  "activity.git.empty":
+    "Nothing here yet. Commits on GitHub and changes on this computer show up here.",
+  "activity.git.signIn":
+    "Sign in to GitHub to see its commits, PRs and CI. For now only what is on this computer shows.",
+  "activity.git.changes": "Uncommitted changes · {n} files",
+  "activity.git.legend":
+    "This follows GitHub. The other-colored line and hollow dots are commits and changes only on this computer.",
   "activity.git.merge": "Merge",
   "activity.git.branchCreated": "Branch created: {name}",
   "activity.git.push": "push",

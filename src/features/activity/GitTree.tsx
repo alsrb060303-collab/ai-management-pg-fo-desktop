@@ -12,10 +12,10 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { intlLocale, type MessageKey, timeAgo, useT } from "../../i18n";
-import { type GitEvent, useActivityStore } from "../../store/activity";
+import { type GitEvent, type LocalLog, useActivityStore } from "../../store/activity";
 import { useGitHubStore } from "../../store/github";
 import { open as openUrl } from "../work/GitHubSection";
-import { type GraphRow, layoutGraph, reachableFrom } from "./layout";
+import { type GraphRow, layoutGraph } from "./layout";
 import { Rail } from "./Rail";
 
 type Ci = "passed" | "failed" | "pending";
@@ -30,35 +30,27 @@ interface Row {
   id: string;
   /** A commit (dot on its branch's lane) or a stand-alone event. */
   commit: boolean;
+  /** Only on this computer: a commit not on GitHub, or the uncommitted changes. */
+  local: boolean;
+  /** For the uncommitted changes row: how many files. */
+  changes?: number;
   event: GitEvent;
   badges: GitEvent[];
-  pushed: boolean;
 }
 
-/** Builds the rows, newest first: commits with their push/PR/CI events attached. */
-function buildRows(events: GitEvent[], tips: (string | null)[]): Row[] {
-  const sorted = [...events].sort((a, b) => b.at - a.at);
-  const commits = sorted.filter((e) => (e.kind === "commit" || e.kind === "merge") && e.sha);
-  const seen = new Set<string>();
-  const unique = commits.filter((e) => {
-    const sha = e.sha as string;
-    if (seen.has(sha)) return false;
-    seen.add(sha);
-    return true;
-  });
-  const parentsOf = new Map(unique.map((e) => [e.sha as string, e.parents]));
-  const pushTips = sorted.filter((e) => e.kind === "push").map((e) => e.sha);
-  const pushed = reachableFrom([...tips, ...pushTips], parentsOf);
+/** Stands in for the sha of the uncommitted changes, so their line reaches HEAD. */
+const WORKTREE = "worktree";
 
+/**
+ * Builds the rows, newest first: GitHub's commits with their PR/CI events
+ * attached, then what is only here (commits not on GitHub, uncommitted changes).
+ */
+function buildRows(events: GitEvent[], local: LocalLog | null): Row[] {
+  const sorted = [...events].sort((a, b) => b.at - a.at);
   const rows = new Map<string, Row>();
-  for (const e of unique) {
-    rows.set(e.sha as string, {
-      id: e.id,
-      commit: true,
-      event: e,
-      badges: [],
-      pushed: pushed.has(e.sha as string),
-    });
+  for (const e of sorted) {
+    if ((e.kind !== "commit" && e.kind !== "merge") || !e.sha || rows.has(e.sha)) continue;
+    rows.set(e.sha, { id: e.id, commit: true, local: false, event: e, badges: [] });
   }
   const standalone: Row[] = [];
   for (const e of sorted) {
@@ -69,16 +61,49 @@ function buildRows(events: GitEvent[], tips: (string | null)[]): Row[] {
       : undefined;
     if (target && e.kind !== "branch") target.badges.push(e);
     else if (e.kind !== "push" && e.kind !== "ci") {
-      standalone.push({ id: e.id, commit: false, event: e, badges: [], pushed: true });
+      standalone.push({ id: e.id, commit: false, local: false, event: e, badges: [] });
     }
   }
-  return [...rows.values(), ...standalone].sort((a, b) => b.event.at - a.event.at);
+
+  const here: Row[] = [];
+  for (const e of local?.commits ?? []) {
+    if (!e.sha || rows.has(e.sha)) continue;
+    here.push({ id: `local:${e.sha}`, commit: true, local: true, event: e, badges: [] });
+  }
+  const all = [...rows.values(), ...standalone, ...here].sort((a, b) => b.event.at - a.event.at);
+  if (local?.changes) {
+    const top = Math.max(Date.now(), ...all.map((r) => r.event.at + 1));
+    all.unshift({
+      id: "local:changes",
+      commit: true,
+      local: true,
+      changes: local.changes,
+      badges: [],
+      event: {
+        id: "local:changes",
+        repo: local.repo,
+        kind: "commit",
+        at: top,
+        branch: local.branch,
+        sha: WORKTREE,
+        parents: local.head ? [local.head] : [],
+        pr: null,
+        title: null,
+        state: null,
+        url: null,
+        author: null,
+      },
+    });
+  }
+  return all;
 }
 
 /** The GitHub tree: commits on branch lanes, with pushes, PRs and CI beside them. */
 export function GitTree({ compact }: { compact: boolean }) {
   const t = useT();
   const log = useActivityStore((s) => s.git);
+  const local = useActivityStore((s) => s.local);
+  const signedIn = useGitHubStore((s) => !!s.status?.account);
   const more = useActivityStore((s) => s.moreGit);
   const loadingMore = useActivityStore((s) => s.loadingMore === "git");
   const loadMore = useActivityStore((s) => s.loadMore);
@@ -92,23 +117,18 @@ export function GitTree({ compact }: { compact: boolean }) {
   const refs = useRef(new Map<string, HTMLElement>());
 
   const trunk = log?.branches.find((b) => b.isDefault)?.name ?? null;
-  const rows = useMemo(
-    () =>
-      log
-        ? buildRows(
-            log.events,
-            log.branches.map((b) => b.remote),
-          )
-        : [],
-    [log],
-  );
+  const rows = useMemo(() => (log ? buildRows(log.events, local) : []), [log, local]);
   const layout = useMemo(() => {
-    const graph: GraphRow[] = rows.map((r) => ({
-      sha: r.commit ? r.event.sha : null,
-      parents: r.event.parents,
-      group: r.event.branch ?? trunk ?? "",
-      tone: r.pushed ? "pushed" : "local",
-    }));
+    const graph: GraphRow[] = rows.map((r) => {
+      const branch = r.event.branch ?? trunk ?? "";
+      return {
+        sha: r.commit ? r.event.sha : null,
+        parents: r.event.parents,
+        // What is only here gets a line of its own beside the branch's GitHub line.
+        group: r.local ? `local:${branch}` : branch,
+        tone: r.local ? "local" : "pushed",
+      };
+    });
     return layoutGraph(graph, trunk);
   }, [rows, trunk]);
 
@@ -148,10 +168,23 @@ export function GitTree({ compact }: { compact: boolean }) {
   }, [highlight]);
 
   if (!log) return null;
-  if (!rows.length) return <p className="text-xs text-text-subtle">{t("activity.git.empty")}</p>;
+  const signInNote = !signedIn && (
+    <p className="mb-2 rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-text-muted">
+      {t("activity.git.signIn")}
+    </p>
+  );
+  if (!rows.length) {
+    return (
+      <div>
+        {signInNote}
+        <p className="text-xs text-text-subtle">{t("activity.git.empty")}</p>
+      </div>
+    );
+  }
 
   return (
     <div>
+      {signInNote}
       <p className={`mb-2 text-text-subtle ${compact ? "text-fs-11" : "text-xs"}`}>
         {t("activity.git.legend")}
       </p>
@@ -222,6 +255,9 @@ const PR_LABEL: Record<string, MessageKey> = {
 
 function Dot({ row }: { row: Row }) {
   const e = row.event;
+  if (row.changes !== undefined) {
+    return <span className="size-3 rounded-full border-2 border-dashed border-accent bg-surface" />;
+  }
   if (row.commit) {
     if (e.kind === "merge" || e.parents.length > 1) {
       return (
@@ -233,7 +269,7 @@ function Dot({ row }: { row: Row }) {
     return (
       <span
         className={`size-3 rounded-full border-2 ${
-          row.pushed ? "border-success bg-success" : "border-accent bg-surface"
+          row.local ? "border-accent bg-surface" : "border-success bg-success"
         }`}
       />
     );
@@ -266,7 +302,7 @@ function RowBody({
   const [copied, setCopied] = useState(false);
   const text = compact ? "text-xs" : "text-sm";
   const sha = e.sha ?? "";
-  const url = e.url ?? (sha ? commitUrl(sha) : null);
+  const url = e.url ?? (sha && !row.local ? commitUrl(sha) : null);
 
   const copy = () => {
     void navigator.clipboard
@@ -277,6 +313,21 @@ function RowBody({
       })
       .catch(() => {});
   };
+
+  if (row.changes !== undefined) {
+    return (
+      <div className={`min-w-0 flex-1 pb-2 ${text}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 pt-px">
+          <span className="min-w-0 truncate text-accent">
+            {t("activity.git.changes", { n: row.changes })}
+          </span>
+          {e.branch && (
+            <span className="max-w-32 truncate text-fs-11 text-text-subtle">{e.branch}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (!row.commit) {
     const label =
@@ -340,7 +391,7 @@ function RowBody({
             {t("activity.git.merge")}
           </span>
         )}
-        {!row.pushed && (
+        {row.local && (
           <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-fs-10 text-accent">
             {t("activity.git.notPushed")}
           </span>

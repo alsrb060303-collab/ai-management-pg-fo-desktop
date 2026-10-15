@@ -107,7 +107,7 @@ impl GitHub {
 
 pub(crate) use api::ActivityRemote;
 #[cfg(test)]
-pub(crate) use api::{PullRecord, RunRecord};
+pub(crate) use api::{BranchRecord, CommitRecord, PullRecord, RunRecord};
 
 /// Pull requests and workflow runs of `owner/repo` for the activity log;
 /// `None` when not signed in to GitHub.

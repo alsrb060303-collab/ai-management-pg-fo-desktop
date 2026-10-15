@@ -1,10 +1,12 @@
 //! What the work panel shows from GitHub: the current branch's pull request
 //! and its checks, open pull requests and open issues; and opening a PR.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::http::{Api, Result};
+use super::http::{Api, Error, Result};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -806,7 +808,7 @@ impl From<RawCommitDetailTree> for RawCommitTree {
     }
 }
 
-// ---- activity log (work trees): pull request and workflow run history
+// ---- activity log (work trees): commits, pull requests and workflow runs
 
 /// A pull request with the times the activity log draws.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -840,6 +842,25 @@ pub struct RunRecord {
     pub updated_at: String,
 }
 
+/// A commit on GitHub, from a branch's history.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommitRecord {
+    pub sha: String,
+    pub parents: Vec<String>,
+    pub author: String,
+    pub committed_at: String,
+    /// The first line of the message.
+    pub title: String,
+    pub url: String,
+}
+
+/// A branch on GitHub and the commit it points at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BranchRecord {
+    pub name: String,
+    pub sha: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ActivityRemote {
     pub pulls: Vec<PullRecord>,
@@ -847,6 +868,14 @@ pub struct ActivityRemote {
     /// Why the runs are missing (rate limit, network, no access to Actions);
     /// the pull requests are still good.
     pub runs_warning: Option<String>,
+    /// Commits of the default branch and the most recently updated branches,
+    /// each once.
+    pub commits: Vec<CommitRecord>,
+    /// The default branch first, then the others, most recently updated first.
+    pub branches: Vec<BranchRecord>,
+    pub default_branch: Option<String>,
+    /// Why the commits are missing; the pull requests are still good.
+    pub commits_warning: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -883,6 +912,184 @@ struct RawRuns {
 
 /// The most pull requests and runs asked for (GitHub's page size limit).
 const ACTIVITY_PAGE: usize = 100;
+/// Branches read besides the default one, and commits read per branch.
+const ACTIVITY_BRANCHES: usize = 30;
+const BRANCH_COMMITS: usize = 30;
+const DEFAULT_COMMITS: usize = 100;
+
+/// One GraphQL request for the default branch's and the newest branches'
+/// histories (REST would take a request per branch).
+const COMMITS_QUERY: &str = "query($owner: String!, $name: String!, $branches: Int!, $perBranch: Int!, $perDefault: Int!) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef { name target { ...history } }
+    refs(refPrefix: \"refs/heads/\", first: $branches, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {
+      nodes { name target { ...branch } }
+    }
+  }
+}
+fragment history on Commit {
+  oid
+  history(first: $perDefault) { nodes { ...commit } }
+}
+fragment branch on Commit {
+  oid
+  history(first: $perBranch) { nodes { ...commit } }
+}
+fragment commit on Commit {
+  oid url messageHeadline committedDate
+  author { name user { login } }
+  parents(first: 4) { nodes { oid } }
+}";
+
+#[derive(Deserialize)]
+struct Gql<T> {
+    data: Option<T>,
+    #[serde(default)]
+    errors: Vec<GqlError>,
+}
+
+#[derive(Deserialize)]
+struct GqlError {
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct GqlRepoData {
+    repository: Option<GqlRepo>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlRepo {
+    default_branch_ref: Option<GqlRef>,
+    refs: GqlRefs,
+}
+
+#[derive(Deserialize)]
+struct GqlRefs {
+    nodes: Vec<GqlRef>,
+}
+
+#[derive(Deserialize)]
+struct GqlRef {
+    name: String,
+    /// Empty for a ref that does not point at a commit.
+    target: Option<GqlTarget>,
+}
+
+#[derive(Deserialize)]
+struct GqlTarget {
+    oid: Option<String>,
+    history: Option<GqlHistory>,
+}
+
+#[derive(Deserialize)]
+struct GqlHistory {
+    nodes: Vec<GqlCommit>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GqlCommit {
+    oid: String,
+    url: String,
+    message_headline: String,
+    committed_date: String,
+    author: Option<GqlAuthor>,
+    parents: GqlParents,
+}
+
+#[derive(Deserialize)]
+struct GqlAuthor {
+    name: Option<String>,
+    user: Option<RawUser>,
+}
+
+#[derive(Deserialize)]
+struct GqlParents {
+    nodes: Vec<GqlOid>,
+}
+
+#[derive(Deserialize)]
+struct GqlOid {
+    oid: String,
+}
+
+/// Commits and branch tips of `owner/repo`: the default branch's newest
+/// commits and those of the most recently updated other branches.
+fn commits(
+    api: &Api,
+    slug: &str,
+) -> Result<(Vec<CommitRecord>, Vec<BranchRecord>, Option<String>)> {
+    let (owner, name) = slug.split_once('/').unwrap_or((slug, ""));
+    let reply: Gql<GqlRepoData> = api.post(
+        "/graphql",
+        &json!({
+            "query": COMMITS_QUERY,
+            "variables": {
+                "owner": owner,
+                "name": name,
+                "branches": ACTIVITY_BRANCHES,
+                "perBranch": BRANCH_COMMITS,
+                "perDefault": DEFAULT_COMMITS,
+            },
+        }),
+    )?;
+    let Some(repo) = reply.data.and_then(|d| d.repository) else {
+        let message = reply
+            .errors
+            .into_iter()
+            .map(|e| e.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(Error::Other(if message.is_empty() {
+            crate::tr!(
+                "GitHub에서 커밋을 읽지 못했어요",
+                "Couldn't read the commits from GitHub"
+            )
+        } else {
+            message
+        }));
+    };
+
+    let default = repo.default_branch_ref.as_ref().map(|r| r.name.clone());
+    let mut seen = HashSet::new();
+    let mut commits = Vec::new();
+    let mut branches = Vec::new();
+    let refs = repo.default_branch_ref.into_iter().chain(
+        repo.refs
+            .nodes
+            .into_iter()
+            .filter(|r| Some(&r.name) != default.as_ref()),
+    );
+    for r in refs {
+        let Some(target) = r.target else { continue };
+        let Some(tip) = target.oid else { continue };
+        branches.push(BranchRecord {
+            name: r.name,
+            sha: tip,
+        });
+        for c in target.history.map(|h| h.nodes).unwrap_or_default() {
+            if !seen.insert(c.oid.clone()) {
+                continue;
+            }
+            let author = c
+                .author
+                .map(|a| a.name.filter(|n| !n.is_empty()).or(a.user.map(|u| u.login)))
+                .unwrap_or_default()
+                .unwrap_or_default();
+            commits.push(CommitRecord {
+                sha: c.oid,
+                parents: c.parents.nodes.into_iter().map(|p| p.oid).collect(),
+                author,
+                committed_at: c.committed_date,
+                title: c.message_headline,
+                url: c.url,
+            });
+        }
+    }
+    Ok((commits, branches, default))
+}
 
 /// The repository's most recently updated pull requests (open, closed and
 /// merged, up to 100) and workflow runs (up to 100). Runs are best effort:
@@ -939,11 +1146,27 @@ pub fn activity(api: &Api, slug: &str) -> Result<ActivityRemote> {
             updated_at: r.updated_at,
         })
         .collect();
-    Ok(ActivityRemote {
+
+    let mut remote = ActivityRemote {
         pulls,
         runs,
         runs_warning,
-    })
+        ..Default::default()
+    };
+    match commits(api, slug) {
+        Ok((commits, branches, default)) => {
+            remote.commits = commits;
+            remote.branches = branches;
+            remote.default_branch = default;
+        }
+        Err(super::http::Error::Unauthorized) => return Err(super::http::Error::Unauthorized),
+        Err(e) => {
+            let message = String::from(e);
+            eprintln!("couldn't read the commits of {slug}: {message}");
+            remote.commits_warning = Some(message);
+        }
+    }
+    Ok(remote)
 }
 
 #[cfg(test)]
@@ -990,6 +1213,85 @@ mod tests {
             seen[1].contains("/actions/runs?per_page=100"),
             "{}",
             seen[1]
+        );
+    }
+
+    #[test]
+    fn activity_reads_branch_histories_in_one_graphql_request() {
+        let commit = |sha: &str, parents: &str| {
+            format!(
+                r#"{{"oid":"{sha}","url":"https://github.com/o/r/commit/{sha}","messageHeadline":"c {sha}","committedDate":"2026-10-14T01:00:00Z","author":{{"name":"Ada","user":{{"login":"ada"}}}},"parents":{{"nodes":[{parents}]}}}}"#
+            )
+        };
+        let graphql: &'static str = Box::leak(
+            format!(
+                r#"{{"data":{{"repository":{{
+                    "defaultBranchRef":{{"name":"main","target":{{"oid":"m2","history":{{"nodes":[{},{}]}}}}}},
+                    "refs":{{"nodes":[
+                        {{"name":"main","target":{{"oid":"m2","history":{{"nodes":[{}]}}}}}},
+                        {{"name":"feat","target":{{"oid":"f1","history":{{"nodes":[{},{}]}}}}}},
+                        {{"name":"odd","target":{{}}}}
+                    ]}}}}}}}}"#,
+                commit("m2", r#"{"oid":"m1"}"#),
+                commit("m1", ""),
+                commit("m2", r#"{"oid":"m1"}"#),
+                commit("f1", r#"{"oid":"m1"}"#),
+                commit("m1", ""),
+            )
+            .into_boxed_str(),
+        );
+        let (base, seen) = serve(vec![
+            (200, pulls_json()),
+            (200, r#"{"workflow_runs":[]}"#),
+            (200, graphql),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = activity(&api, "o/r").unwrap();
+        assert_eq!(remote.commits_warning, None);
+        assert_eq!(remote.default_branch.as_deref(), Some("main"));
+        let shas: Vec<_> = remote.commits.iter().map(|c| c.sha.as_str()).collect();
+        assert_eq!(shas, ["m2", "m1", "f1"], "each commit once");
+        assert_eq!(remote.commits[0].parents, ["m1"]);
+        assert_eq!(remote.commits[0].author, "Ada");
+        assert_eq!(remote.commits[0].title, "c m2");
+        let branches: Vec<_> = remote
+            .branches
+            .iter()
+            .map(|b| (b.name.as_str(), b.sha.as_str()))
+            .collect();
+        assert_eq!(branches, [("main", "m2"), ("feat", "f1")]);
+        let seen = seen.lock().unwrap();
+        assert!(seen[2].starts_with("POST /graphql"), "{}", seen[2]);
+        assert!(seen[2].contains("\"owner\": \"o\""), "{}", seen[2]);
+    }
+
+    #[test]
+    fn graphql_errors_are_a_warning_and_keep_the_pulls() {
+        let (base, _) = serve(vec![
+            (200, pulls_json()),
+            (200, r#"{"workflow_runs":[]}"#),
+            (
+                200,
+                r#"{"data":{"repository":null},"errors":[{"message":"Could not resolve to a Repository"}]}"#,
+            ),
+        ]);
+        let agent = agent();
+        let api = Api {
+            agent: &agent,
+            base: &base,
+            token: "t",
+        };
+        let remote = activity(&api, "o/r").unwrap();
+        assert_eq!(remote.pulls.len(), 1);
+        assert!(remote.commits.is_empty());
+        assert_eq!(
+            remote.commits_warning.as_deref(),
+            Some("Could not resolve to a Repository")
         );
     }
 

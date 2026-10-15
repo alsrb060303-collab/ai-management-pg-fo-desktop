@@ -155,19 +155,3 @@ export function layoutSessions(rows: SessionRow[]): Layout {
   }
   return { lanes: Math.max(1, ...gutter.map((g) => g.lane + 1)), gutter };
 }
-
-/** Commits reachable from the given tips, following the parents we know. */
-export function reachableFrom(
-  tips: (string | null | undefined)[],
-  parentsOf: Map<string, string[]>,
-): Set<string> {
-  const seen = new Set<string>();
-  const stack = tips.filter((t): t is string => !!t);
-  while (stack.length) {
-    const sha = stack.pop() as string;
-    if (seen.has(sha)) continue;
-    seen.add(sha);
-    for (const p of parentsOf.get(sha) ?? []) stack.push(p);
-  }
-  return seen;
-}
