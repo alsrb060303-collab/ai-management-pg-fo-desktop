@@ -14,6 +14,7 @@ Tauri 2 desktop app (a main window plus a sidebar that docks next to the user's 
 - `src-tauri/`: Rust backend (Tauri 2.12, Rust >= 1.90). `shell.rs` switches main/sidebar windows.
   - `tools/`: one adapter per AI tool (`claude/`, `codex/`) plus `ToolId` file layout and project detection. `src/tools.ts` mirrors it; add a tool in both.
   - `capabilities/default.json`: every frontend-callable window/plugin API must be allowed here
+- `src-tauri/src/mcp_server/`: the app's own MCP server (`<app> mcp`, stdio) for Claude Code: reads `<app data>/bridge/state.json`, documents and the catalog, and sends changes through the bridge inbox. Registered from Settings (`claude mcp add --scope user encela`).
 - `claude-mod/branch-notes/`: the Claude Code mod (talks to the app through `<app data>/bridge`, see `src-tauri/src/bridge.rs`). Check with `claude plugin validate` and `claude plugin test` in that folder.
 - `.github/workflows/ci.yml`: lint/build on Linux, clippy + NSIS installer on Windows
 - `.github/workflows/release.yml`: each new version on main becomes a GitHub Release the app updates from (`docs/release-setup.md`)

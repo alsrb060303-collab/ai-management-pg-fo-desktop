@@ -249,6 +249,21 @@ impl Library {
     }
 }
 
+/// The library's items read straight from `data_dir`, for the MCP server,
+/// which runs without the app. Reads only: a broken config means the default
+/// folder.
+pub(crate) fn items_at(data_dir: &Path) -> Vec<LibraryItem> {
+    let config: Config = fs::read(data_dir.join("config.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
+    let dir = config
+        .library_dir
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("library"));
+    list(&dir)
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers (testable without the app)
 

@@ -12,6 +12,16 @@ export const ko = {
   "mods.own.title": "브랜치 메모 mod",
   "mods.own.description":
     "Claude Code 입력창 위에 이 브랜치의 할 일·PR·CI를 한 줄로 보여주고, 메모와 할 일 패널(/notes), /todo · /memo 명령을 더해요. Claude도 메모와 할 일을 알고 작업해요. 앱이 켜져 있어야 반영돼요.",
+  "mods.mcp.title": "Encela MCP 서버",
+  "mods.mcp.description":
+    "Claude Code가 이 앱의 브랜치 메모·할 일·PR/CI 상태를 직접 읽고 고치고, 블록 카탈로그로 작성기 문서를 만들 수 있게 해요. 모든 프로젝트에 적용돼요. 바뀐 내용은 앱이 켜져 있을 때 반영돼요.",
+  "mods.mcp.connected": "연결됨",
+  "mods.mcp.outdated": "예전 설치 경로로 연결돼 있어요. 다시 연결하세요.",
+  "mods.mcp.connect": "연결",
+  "mods.mcp.reconnect": "다시 연결",
+  "mods.mcp.disconnect": "연결 해제",
+  "mods.mcp.done": "연결했어요. 새 Claude Code 세션부터 /mcp 에 encela 가 보여요.",
+  "mods.mcp.removed": "연결을 해제했어요.",
   "mods.install": "설치",
   "mods.uninstall": "제거",
   "mods.working": "진행 중…",
@@ -119,6 +129,16 @@ export const en: Messages<typeof ko> = {
   "mods.own.title": "Branch notes mod",
   "mods.own.description":
     "Shows this branch's to-dos, PR and CI in one line above Claude Code's prompt, and adds a notes pane (/notes) and /todo · /memo commands. Claude reads the note and to-dos too. Changes apply while the app is running.",
+  "mods.mcp.title": "Encela MCP server",
+  "mods.mcp.description":
+    "Lets Claude Code read and update this app's branch notes, to-dos and PR/CI status, and build composer documents from the block catalog. Applies to all projects. Changes land while the app is running.",
+  "mods.mcp.connected": "Connected",
+  "mods.mcp.outdated": "Connected with an older install's path. Connect again.",
+  "mods.mcp.connect": "Connect",
+  "mods.mcp.reconnect": "Reconnect",
+  "mods.mcp.disconnect": "Disconnect",
+  "mods.mcp.done": "Connected. New Claude Code sessions list encela under /mcp.",
+  "mods.mcp.removed": "Disconnected.",
   "mods.install": "Install",
   "mods.uninstall": "Remove",
   "mods.working": "Working…",

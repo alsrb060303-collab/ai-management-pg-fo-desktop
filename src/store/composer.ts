@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   addEdge,
   applyEdgeChanges,
@@ -575,6 +576,8 @@ function localized(raw: Block[]): Pick<ComposerState, "catalog" | "blocks"> {
   return { catalog, blocks: new Map(catalog.map((b) => [b.id, b])) };
 }
 
+let listeningForDocs = false;
+
 export const useComposerStore = create<ComposerState>((set, get) => {
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   let compileTimer: ReturnType<typeof setTimeout> | undefined;
@@ -705,6 +708,13 @@ export const useComposerStore = create<ComposerState>((set, get) => {
     future: [],
 
     init: async () => {
+      if (isTauri() && !listeningForDocs) {
+        listeningForDocs = true;
+        // Documents made outside the window (the MCP server, through the app).
+        void listen<string[]>("composer-docs-changed", ({ payload }) =>
+          get().reloadFromDisk(payload),
+        );
+      }
       await Promise.all([get().loadCatalog(), get().loadDocs()]);
       if (get().doc) return;
       const latest = get().docs[0];

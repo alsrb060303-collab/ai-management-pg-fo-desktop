@@ -302,6 +302,95 @@ pub async fn claude_mod_uninstall(id: String) -> Result<()> {
     blocking(move || uninstall(&id)).await
 }
 
+/// The name the app's MCP server (`mcp_server`) is registered under.
+pub const MCP_NAME: &str = "encela";
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpStatus {
+    pub claude_found: bool,
+    /// Registered for the user (all projects).
+    pub registered: bool,
+    /// Registered with this app's current executable (an older install's path
+    /// needs connecting again).
+    pub current: bool,
+}
+
+/// `claude mcp add` arguments for this executable and data folder.
+fn mcp_add_args(exe: &str, data_dir: &str) -> Vec<String> {
+    [
+        "mcp",
+        "add",
+        MCP_NAME,
+        "--scope",
+        "user",
+        "--",
+        exe,
+        "mcp",
+        "--data-dir",
+        data_dir,
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect()
+}
+
+fn mcp_status() -> McpStatus {
+    if find_claude().is_none() {
+        return McpStatus {
+            claude_found: false,
+            registered: false,
+            current: false,
+        };
+    }
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match claude(&["mcp", "get", MCP_NAME]) {
+        Ok(out) => McpStatus {
+            claude_found: true,
+            registered: true,
+            current: !exe.is_empty() && out.contains(&exe),
+        },
+        Err(_) => McpStatus {
+            claude_found: true,
+            registered: false,
+            current: false,
+        },
+    }
+}
+
+fn mcp_connect(data_dir: &Path) -> Result<()> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Replaces an older registration (another install's path).
+    let _ = claude(&["mcp", "remove", MCP_NAME, "--scope", "user"]);
+    let args = mcp_add_args(&exe.to_string_lossy(), &data_dir.to_string_lossy());
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    claude(&args).map(drop)
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_status() -> McpStatus {
+    tauri::async_runtime::spawn_blocking(mcp_status)
+        .await
+        .unwrap_or(McpStatus {
+            claude_found: false,
+            registered: false,
+            current: false,
+        })
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_connect(app: AppHandle) -> Result<()> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    blocking(move || mcp_connect(&data_dir)).await
+}
+
+#[tauri::command]
+pub async fn mcp_bridge_disconnect() -> Result<()> {
+    blocking(|| claude(&["mcp", "remove", MCP_NAME, "--scope", "user"]).map(drop)).await
+}
+
 /// Mods the app recommends, checked against their repositories (sources and
 /// licenses in docs/research.md). Only these can be installed from the app;
 /// the list the UI shows is `src/features/mods/recommended.ts`.
@@ -347,6 +436,17 @@ pub const RECOMMENDED: &[Recommended] = &[
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_mcp_server_is_added_by_name_first() {
+        let args = super::mcp_add_args("C:/Apps/Encela.exe", "C:/data");
+        assert_eq!(&args[..3], ["mcp", "add", "encela"]);
+        let dash = args.iter().position(|a| a == "--").unwrap();
+        assert_eq!(
+            &args[dash + 1..],
+            ["C:/Apps/Encela.exe", "mcp", "--data-dir", "C:/data"]
+        );
+    }
+
     use super::*;
 
     #[test]

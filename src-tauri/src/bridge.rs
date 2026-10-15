@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::memo::{Memo, Store};
@@ -79,8 +80,8 @@ struct Export {
     repos: BTreeMap<String, BTreeMap<String, ExportBranch>>,
 }
 
-/// A request from the mod.
-#[derive(Debug, Deserialize, PartialEq)]
+/// A request from the mod or the MCP server (`mcp_server`).
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Request {
     AddTodo {
@@ -100,6 +101,36 @@ pub enum Request {
         branch: String,
         text: String,
     },
+    /// A new composer document (the MCP server's `create_document`).
+    SaveDoc {
+        doc: Value,
+    },
+}
+
+/// The bridge folder under the app's data folder.
+pub fn dir_in(data_dir: &Path) -> PathBuf {
+    data_dir.join("bridge")
+}
+
+/// Leaves a request in the inbox for the app to apply, written whole before
+/// it gets the name the app reads.
+pub fn enqueue(bridge: &Path, request: &Request) -> std::io::Result<()> {
+    let inbox = bridge.join("inbox");
+    fs::create_dir_all(&inbox)?;
+    let text = serde_json::to_string(request)?;
+    if text.len() as u64 > MAX_REQUEST_BYTES {
+        return Err(std::io::Error::other("request too large"));
+    }
+    // Names sort in the order requests were made, also within a millisecond.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let name = format!(
+        "{:013}-{:08}-{seq:06}-{}",
+        now_ms(),
+        std::process::id(),
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    );
+    write_atomic(&inbox.join(format!("{name}.json")), &text)
 }
 
 fn now_ms() -> i64 {
@@ -170,6 +201,7 @@ pub fn apply(store: &Store, request: Request) -> Result<(String, String), String
         }
         Request::SetDone { id, done } => store.update_todo(&id, None, Some(done)),
         Request::DeleteTodo { id } => store.delete_todo(&id),
+        Request::SaveDoc { .. } => Err("not a memo request".into()),
         Request::AppendNote {
             repo_key,
             branch,
@@ -221,7 +253,7 @@ fn take_requests(inbox: &Path) -> Vec<Request> {
 }
 
 fn dir(app: &AppHandle) -> Option<PathBuf> {
-    Some(app.path().app_data_dir().ok()?.join("bridge"))
+    Some(dir_in(&app.path().app_data_dir().ok()?))
 }
 
 pub fn manage(app: &AppHandle) {
@@ -238,6 +270,10 @@ pub fn manage(app: &AppHandle) {
         loop {
             if let Ok(store) = app.state::<Memo>().store() {
                 for request in take_requests(&inbox) {
+                    if let Request::SaveDoc { doc } = request {
+                        let _ = crate::composer::save_new_doc(&app, doc);
+                        continue;
+                    }
                     if let Ok((repo, branch)) = apply(store, request) {
                         crate::memo::notify(&app, repo, branch);
                     }
@@ -341,6 +377,20 @@ mod tests {
         assert!(main.todos[0].done);
         let json = serde_json::to_string(&data).unwrap();
         assert!(json.contains(r#""heartbeat":"#) && json.contains(r#""todos":"#));
+    }
+
+    #[test]
+    fn enqueued_requests_come_back_in_order() {
+        let dir = std::env::temp_dir().join(format!("aim-enqueue-{}", uuid::Uuid::new_v4()));
+        let first = Request::DeleteTodo { id: "a".into() };
+        let doc = serde_json::json!({ "id": "dx", "nodes": [] });
+        enqueue(&dir, &first).unwrap();
+        enqueue(&dir, &Request::SaveDoc { doc: doc.clone() }).unwrap();
+        assert_eq!(
+            take_requests(&dir.join("inbox")),
+            [first, Request::SaveDoc { doc }]
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
