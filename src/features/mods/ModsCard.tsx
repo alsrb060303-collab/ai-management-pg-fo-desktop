@@ -14,6 +14,13 @@ interface ModStatus {
 
 const OWN = "branch-notes@ai-management";
 
+// Mirrors `McpStatus` in src-tauri/src/claude_mod.rs.
+interface McpStatus {
+  claudeFound: boolean;
+  registered: boolean;
+  current: boolean;
+}
+
 /**
  * Mods the app can install, checked against their repositories (licenses in
  * docs/research.md). The ids must match `RECOMMENDED` in claude_mod.rs.
@@ -66,13 +73,32 @@ const open = (url: string) => {
 export function ModsCard() {
   const t = useT();
   const [status, setStatus] = useState<ModStatus | null>(null);
+  const [mcp, setMcp] = useState<McpStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   const reload = useCallback(async () => {
     if (!isTauri()) return;
-    setStatus(await invoke<ModStatus>("claude_mod_status"));
+    const [mods, server] = await Promise.all([
+      invoke<ModStatus>("claude_mod_status"),
+      invoke<McpStatus>("mcp_bridge_status"),
+    ]);
+    setStatus(mods);
+    setMcp(server);
   }, []);
+
+  const runMcp = async (connect: boolean) => {
+    setBusy("mcp");
+    setMessage(null);
+    try {
+      await invoke(connect ? "mcp_bridge_connect" : "mcp_bridge_disconnect");
+      setMessage({ text: t(connect ? "mods.mcp.done" : "mods.mcp.removed"), error: false });
+    } catch (e) {
+      setMessage({ text: String(e), error: true });
+    }
+    setBusy(null);
+    await reload();
+  };
 
   useEffect(() => {
     void reload();
@@ -129,6 +155,46 @@ export function ModsCard() {
       </Row>
       <Row title={t("mods.own.title")} description={t("mods.own.description")}>
         {toggle(OWN)}
+      </Row>
+      <Row
+        title={
+          <span className="flex items-center gap-1.5">
+            {t("mods.mcp.title")}
+            {mcp?.registered && (
+              <span
+                className={`text-fs-11 font-normal ${mcp.current ? "text-success" : "text-warning"}`}
+              >
+                {mcp.current ? t("mods.mcp.connected") : t("mods.mcp.outdated")}
+              </span>
+            )}
+          </span>
+        }
+        description={t("mods.mcp.description")}
+      >
+        <div className="flex gap-1.5">
+          {mcp?.registered && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() => void runMcp(false)}
+            >
+              {t("mods.mcp.disconnect")}
+            </Button>
+          )}
+          {!mcp?.current && (
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!mcp?.claudeFound || busy !== null}
+              onClick={() => void runMcp(true)}
+            >
+              {busy === "mcp"
+                ? t("mods.working")
+                : t(mcp?.registered ? "mods.mcp.reconnect" : "mods.mcp.connect")}
+            </Button>
+          )}
+        </div>
       </Row>
       {message && (
         <p

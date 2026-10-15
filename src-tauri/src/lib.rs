@@ -8,6 +8,7 @@ mod github;
 mod i18n;
 mod library;
 mod mcp;
+mod mcp_server;
 mod memo;
 mod prefs;
 mod project_docs;
@@ -22,6 +23,11 @@ use tauri::{Manager, WindowEvent};
 use dock::{Dock, SIDEBAR_LABEL};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// `<app> mcp`: the MCP server for Claude Code, without any window.
+pub fn run_mcp_server(args: &[String]) -> i32 {
+    mcp_server::run(args)
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Must be registered first: a second launch just shows the running app.
@@ -111,6 +117,9 @@ pub fn run() {
             claude_mod::claude_mod_install,
             claude_mod::claude_mod_install_recommended,
             claude_mod::claude_mod_uninstall,
+            claude_mod::mcp_bridge_status,
+            claude_mod::mcp_bridge_connect,
+            claude_mod::mcp_bridge_disconnect,
             prefs::prefs_all,
             prefs::prefs_set,
             sync::sync_status,

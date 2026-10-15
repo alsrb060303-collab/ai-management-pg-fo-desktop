@@ -19,7 +19,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::library::{Library, ops};
 use crate::tools::ToolId;
@@ -100,7 +100,7 @@ pub struct DocMeta {
     pub updated_at: f64,
 }
 
-fn list_docs(dir: &Path) -> Vec<DocMeta> {
+pub(crate) fn list_docs(dir: &Path) -> Vec<DocMeta> {
     let mut docs: Vec<DocMeta> = fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -126,12 +126,42 @@ fn list_docs(dir: &Path) -> Vec<DocMeta> {
     docs
 }
 
+/// Tells the windows that documents were added outside them (`docIds`).
+pub const DOCS_EVENT: &str = "composer-docs-changed";
+
+/// Saves a new document made outside the app (the MCP server, through the
+/// bridge). An existing document is never replaced.
+pub fn save_new_doc(app: &AppHandle, doc: Value) -> ops::Result<String> {
+    let id = doc["id"]
+        .as_str()
+        .ok_or_else(|| crate::tr!("문서 id가 없어요", "The document has no id"))?
+        .to_string();
+    parse_doc(doc.clone())?;
+    let path = app.state::<Composer>().doc_path(&id)?;
+    if path.exists() {
+        return Err(crate::tr!(
+            "이미 있는 문서예요: {id}",
+            "The document already exists: {id}"
+        ));
+    }
+    let text = serde_json::to_string(&doc).map_err(|e| e.to_string())?;
+    ops::write_atomic(&path, text)?;
+    crate::sync::changed(app);
+    let _ = app.emit(DOCS_EVENT, vec![id.clone()]);
+    Ok(id)
+}
+
+/// Document ids are checked the same way inside and outside the app.
+pub fn valid_doc_id(id: &str) -> bool {
+    check_doc_id(id).is_ok()
+}
+
 fn catalog_for(app: &AppHandle) -> Vec<Block> {
     let cache = app.state::<Composer>().cache_dir();
     catalog::all(&app.state::<Library>().items(), Some(&cache))
 }
 
-fn parse_doc(doc: Value) -> ops::Result<Doc> {
+pub(crate) fn parse_doc(doc: Value) -> ops::Result<Doc> {
     serde_json::from_value(doc).map_err(|e| {
         crate::tr!(
             "문서를 읽지 못했어요: {e}",
